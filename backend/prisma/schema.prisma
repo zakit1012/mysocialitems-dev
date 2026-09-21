@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("USER")
+  city      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deals      Deal[]
+  favorites  Favorite[]
+  vouchers   Voucher[]
+  reviews    Review[]
+  widgets    Widget[]
+  sources    Source[]
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  deals     Deal[]
+}
+
+model Deal {
+  id            String   @id @default(cuid())
+  title         String
+  slug          String   @unique
+  description   String
+  highlights    String   @default("[]")
+  imageUrl      String
+  originalPrice Float
+  dealPrice     Float
+  city          String
+  location      String
+  stock         Int      @default(50)
+  soldCount     Int      @default(0)
+  validUntil    DateTime
+  featured      Boolean  @default(false)
+  published     Boolean  @default(true)
+  categoryId    String
+  merchantId    String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  category  Category   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  merchant  User       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  favorites Favorite[]
+  vouchers  Voucher[]
+  reviews   Review[]
+
+  @@index([city])
+  @@index([categoryId])
+  @@index([featured])
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  dealId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deal Deal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dealId])
+}
+
+model Voucher {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  status      String    @default("ACTIVE")
+  quantity    Int       @default(1)
+  totalPaid   Float
+  userId      String
+  dealId      String
+  purchasedAt DateTime  @default(now())
+  redeemedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deal Deal @relation(fields: [dealId], references: [id], onDelete: Restrict)
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int
+  comment   String
+  userId    String
+  dealId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deal Deal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dealId])
+}
+
+model Widget {
+  id           String   @id @default(cuid())
+  // Public key goes in the embed snippet. The widget id stays private so a
+  // leaked key cannot be used against the authenticated API.
+  publicKey    String   @unique
+  placeId      String
+  placeName    String
+  placeAddress String?
+  userId       String
+  settings     Json?    @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sources Source[]
+
+  @@index([userId])
+}
+
+/// A domain the user is allowed to embed a widget on. The public endpoint
+/// checks the request's Origin against these, so a copied snippet does not
+/// work anywhere else.
+model Source {
+  id        String   @id @default(cuid())
+  domain    String
+  userId    String
+  widgetId  String?
+  createdAt DateTime @default(now())
+  lastSeen  DateTime?
+  hits      Int      @default(0)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  widget Widget? @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, domain])
+  @@index([widgetId])
+  @@index([domain])
+}

@@ -1,0 +1,13 @@
+node_modules
+dist
+.next
+.env
+.env.local
+*.log
+.DS_Store
+
+# Redis dump that landed in the project root
+dump.rdb
+
+# Prisma
+/backend/prisma/migrations/.TEMP
