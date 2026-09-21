@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { IsObject, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateWidgetDto {
   @IsString()
@@ -10,5 +10,6 @@ export class CreateWidgetDto {
   sessionToken?: string;
 
   @IsOptional()
-  settings?: any;
+  @IsObject()
+  settings?: Record<string, unknown>;
 }

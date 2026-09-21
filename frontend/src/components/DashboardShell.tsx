@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import {
   ArrowLeft,
+  CreditCard,
   Globe,
   LayoutGrid,
   LogOut,
@@ -18,6 +19,7 @@ const LINKS = [
   { href: "/dashboard", label: "Widgets", icon: LayoutGrid },
   { href: "/dashboard/sources", label: "Sources", icon: Globe },
   { href: "/dashboard/widgets/new", label: "New widget", icon: Plus },
+  { href: "/dashboard/billing", label: "Billing", icon: CreditCard },
 ];
 
 const ADMIN_LINK = { href: "/dashboard/admin", label: "Admin", icon: Shield };
@@ -51,35 +53,48 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   const links = user.role === "ADMIN" ? [...LINKS, ADMIN_LINK] : LINKS;
+  // The widget editor needs every pixel for its live preview.
+  const wide = pathname.startsWith("/dashboard/widgets/");
+  // Labels hide while the rail is slim and fade in when it opens on hover.
+  // Keyboard users open it too (focus-visible), but a mouse click on a link
+  // must not leave it stuck open.
+  const label =
+    "whitespace-nowrap md:opacity-0 md:transition-opacity md:duration-150 md:group-hover/rail:opacity-100 md:group-has-[:focus-visible]/rail:opacity-100";
 
   return (
-    /* 196px instead of 260: the labels are short and the content needs the room */
-    <div className="flex-1 flex flex-col md:grid md:grid-cols-[196px_1fr]">
-      <aside className="flex flex-col border-b border-line bg-card text-ink md:sticky md:top-0 md:h-dvh md:border-b-0 md:border-r">
-        <div className="px-4 pb-1 pt-5">
-          <Link href="/" className="text-[15px] font-black gradient-brand-text">
-            My Social Items
+    <div className="flex flex-1 flex-col md:block md:pl-[68px]">
+      {/* A slim icon rail that opens over the page on hover, so content keeps its width. */}
+      <aside className="group/rail flex flex-col overflow-hidden border-b border-line bg-card text-ink md:fixed md:inset-y-0 md:left-0 md:z-40 md:w-[68px] md:border-b-0 md:border-r md:transition-[width,box-shadow] md:duration-200 md:ease-out md:hover:w-[224px] md:hover:shadow-panel md:has-[:focus-visible]:w-[224px] md:has-[:focus-visible]:shadow-panel">
+        <div className="flex h-16 shrink-0 items-center px-[18px]">
+          <Link href="/" className="flex items-center gap-3" title="My Social Items">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg gradient-brand text-[13px] font-black text-white shadow-glow">
+              M
+            </span>
+            <span className={`${label} text-[15px] font-black gradient-brand-text`}>My Social Items</span>
           </Link>
         </div>
 
-        <nav className="mt-4 space-y-0.5 px-2">
+        <nav className="mt-2 space-y-1 px-[12px]">
           {links.map((link) => {
             const active =
               pathname === link.href ||
-              (link.href !== "/dashboard" && pathname.startsWith(link.href));
+              (link.href !== "/dashboard" && pathname.startsWith(link.href)) ||
+              // A widget's own page belongs under Widgets.
+              (link.href === "/dashboard" && wide && pathname !== "/dashboard/widgets/new");
             return (
               <Link
                 key={link.href}
                 href={link.href}
+                title={link.label}
                 aria-current={active ? "page" : undefined}
-                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] font-medium transition ${
+                className={`flex items-center gap-3 rounded-xl px-[12px] py-2.5 text-[13.5px] font-medium transition ${
                   active
-                    ? "gradient-brand text-white"
-                    : "text-ink hover:bg-brand-wash hover:text-brand"
+                    ? "gradient-brand text-white shadow-glow"
+                    : "text-ink-soft hover:bg-brand-wash hover:text-brand"
                 }`}
               >
-                <link.icon className="h-4 w-4 shrink-0" />
-                {link.label}
+                <link.icon className="h-[18px] w-[18px] shrink-0" />
+                <span className={label}>{link.label}</span>
               </Link>
             );
           })}
@@ -87,39 +102,44 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
         <Link
           href="/"
-          className="mx-2 mt-4 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-muted transition hover:bg-brand-wash hover:text-ink"
+          title="Back to site"
+          className="mx-[12px] mt-4 flex items-center gap-3 rounded-xl px-[12px] py-2.5 text-[13px] text-muted transition hover:bg-brand-wash hover:text-ink"
         >
-          <ArrowLeft className="h-4 w-4 shrink-0" />
-          Back to site
+          <ArrowLeft className="h-[18px] w-[18px] shrink-0" />
+          <span className={label}>Back to site</span>
         </Link>
 
         {/* Account, pinned to the bottom of the rail */}
-        <div className="mt-auto border-t border-line p-3 max-md:mt-4">
-          <div className="flex items-center gap-2.5">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-white">
+        <div className="mt-auto border-t border-line px-[12px] py-3 max-md:mt-4">
+          <div className="flex items-center gap-3 px-[6px]">
+            <span
+              title={user.email}
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-white"
+            >
               {user.name.trim().charAt(0).toUpperCase()}
             </span>
-            <div className="min-w-0 flex-1">
+            <div className={`min-w-0 flex-1 ${label}`}>
               <p className="truncate text-[13px] font-medium text-ink">{user.name}</p>
               <p className="truncate text-[11px] text-muted">{user.email}</p>
             </div>
           </div>
           <button
             type="button"
+            title="Log out"
             onClick={() => {
               logout();
               router.push("/login");
             }}
-            className="mt-2 flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-muted transition hover:bg-brand-wash hover:text-brand"
+            className="mt-2 flex w-full items-center gap-3 rounded-xl px-[12px] py-2 text-[13px] text-muted transition hover:bg-brand-wash hover:text-brand"
           >
-            <LogOut className="h-4 w-4" />
-            Log out
+            <LogOut className="h-[18px] w-[18px] shrink-0" />
+            <span className={label}>Log out</span>
           </button>
         </div>
       </aside>
 
-      <section className="flex-1 bg-sand p-5 text-sm md:p-8">
-        <div className="mx-auto max-w-5xl">{children}</div>
+      <section className="min-h-dvh flex-1 bg-sand p-5 text-sm md:p-8">
+        <div className={`mx-auto ${wide ? "max-w-[1480px]" : "max-w-6xl"}`}>{children}</div>
       </section>
     </div>
   );

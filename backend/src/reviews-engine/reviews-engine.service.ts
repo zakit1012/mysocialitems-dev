@@ -9,6 +9,9 @@ export type EngineReview = {
   text: string;
   published_at_text: string | null;
   images: string[];
+  /** An object from Apify and the fixed scraper; older cached rows may hold a string. */
+  owner_response?:
+    { text: string; responded_at?: string | null } | string | null;
 };
 
 export type EngineResult = {
@@ -28,6 +31,10 @@ export type EngineResult = {
   error?: string;
 };
 
+/** What the engine accepts; anything else would come back as a 422. */
+const SORTS = ['mostRelevant', 'newest', 'highestRanking', 'lowestRanking'];
+const MAX_COUNT = 50;
+
 @Injectable()
 export class ReviewsEngineService {
   private readonly log = new Logger(ReviewsEngineService.name);
@@ -46,10 +53,14 @@ export class ReviewsEngineService {
     count = 5,
     sort = 'mostRelevant',
   ): Promise<EngineResult> {
+    const safeCount = Math.min(
+      MAX_COUNT,
+      Math.max(1, Math.floor(Number(count)) || 5),
+    );
     const url = new URL(`${this.baseUrl()}/v1/reviews`);
     url.searchParams.set('place_id', placeId);
-    url.searchParams.set('count', String(count));
-    url.searchParams.set('sort', sort);
+    url.searchParams.set('count', String(safeCount));
+    url.searchParams.set('sort', SORTS.includes(sort) ? sort : 'mostRelevant');
 
     const started = Date.now();
     const empty = (error: string): EngineResult => ({
@@ -65,9 +76,11 @@ export class ReviewsEngineService {
     });
 
     try {
-      // The engine scrapes on a cold cache, which can take a while.
+      // A cold place can take a minute on the engine side. Nobody should stare
+      // at a spinner that long, so give up waiting after 20s and report
+      // "fetching" - the engine keeps working and the caller simply asks again.
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 60_000);
+      const timer = setTimeout(() => controller.abort(), 20_000);
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timer);
 
@@ -83,6 +96,10 @@ export class ReviewsEngineService {
       );
       return { ...data, took_ms: took };
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        this.log.warn(`Review engine still working on ${placeId} after 20s`);
+        return { ...empty(''), error: undefined, served: 'fetching' };
+      }
       const reason = err instanceof Error ? err.message : String(err);
       this.log.error(`Review engine failed for ${placeId}: ${reason}`);
       return empty(reason);

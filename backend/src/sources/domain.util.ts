@@ -3,8 +3,9 @@
  * Users paste all of those, and a mismatch here means a widget silently
  * refusing to load on a site they did register.
  */
-export function normalizeDomain(input: string): string | null {
-  let value = (input ?? '').trim().toLowerCase();
+export function normalizeDomain(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  let value = input.trim().toLowerCase();
   if (!value) return null;
 
   if (!value.includes('://')) value = `https://${value}`;
@@ -27,7 +28,9 @@ const ALWAYS_OK = new Set(['localhost', '127.0.0.1', '[::1]']);
 export function hostFrom(originOrReferer: string | undefined): string | null {
   if (!originOrReferer) return null;
   try {
-    return new URL(originOrReferer).hostname.toLowerCase().replace(/^www\./, '');
+    return new URL(originOrReferer).hostname
+      .toLowerCase()
+      .replace(/^www\./, '');
   } catch {
     return null;
   }

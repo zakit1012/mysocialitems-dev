@@ -1,6 +1,7 @@
-import { IsOptional } from 'class-validator';
+import { IsObject, IsOptional } from 'class-validator';
 
 export class UpdateWidgetDto {
   @IsOptional()
-  settings?: any;
+  @IsObject()
+  settings?: Record<string, unknown>;
 }

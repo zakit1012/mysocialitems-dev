@@ -16,10 +16,11 @@ export class VouchersService {
   list(user: AuthUser) {
     if (user.role === 'MERCHANT' || user.role === 'ADMIN') {
       return this.prisma.voucher.findMany({
-        where:
-          user.role === 'ADMIN' ? {} : { deal: { merchantId: user.id } },
+        where: user.role === 'ADMIN' ? {} : { deal: { merchantId: user.id } },
         include: {
-          deal: { select: { id: true, title: true, imageUrl: true, city: true } },
+          deal: {
+            select: { id: true, title: true, imageUrl: true, city: true },
+          },
           user: { select: { id: true, name: true, email: true } },
         },
         orderBy: { purchasedAt: 'desc' },

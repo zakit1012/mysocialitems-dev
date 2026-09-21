@@ -21,8 +21,10 @@ model User {
   favorites  Favorite[]
   vouchers   Voucher[]
   reviews    Review[]
-  widgets    Widget[]
-  sources    Source[]
+  widgets      Widget[]
+  sources      Source[]
+  subscription Subscription?
+  usage        Usage[]
 }
 
 model Category {
@@ -138,9 +140,88 @@ model Source {
   hits      Int      @default(0)
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  widget Widget? @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+  // Deleting a widget keeps the domain (it becomes account-wide) - the user
+  // registered that site on purpose.
+  widget Widget? @relation(fields: [widgetId], references: [id], onDelete: SetNull)
 
   @@unique([userId, domain])
   @@index([widgetId])
   @@index([domain])
+}
+
+
+/// One per user. Created lazily on the FREE plan, so existing accounts need no backfill.
+model Subscription {
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  /// FREE | PRO | BUSINESS - see src/billing/plans.ts
+  plan                 String    @default("FREE")
+  /// ACTIVE | PENDING | CANCELLED | SUSPENDED | EXPIRED
+  status               String    @default("ACTIVE")
+  paypalSubscriptionId String?   @unique
+  /// Plan the user is checking out for, until PayPal confirms it.
+  pendingPlan          String?
+  currentPeriodEnd     DateTime?
+  /// Cancelled on PayPal, but paid up until currentPeriodEnd.
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Widget views per user per calendar month ("2026-09").
+model Usage {
+  id        String  @id @default(cuid())
+  userId    String
+  period    String
+  views     Int     @default(0)
+  warned80  Boolean @default(false)
+  warned100 Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, period])
+}
+
+/// Every PayPal webhook we have processed, keyed by PayPal's event id so a
+/// redelivered event is recognised and skipped.
+model BillingEvent {
+  id        String   @id
+  type      String
+  userId    String?
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+
+/// Plans live in the database so the super admin can change prices and limits
+/// without a deploy. `key` is what Subscription.plan stores.
+model BillingPlan {
+  key                 String   @id
+  name                String
+  priceUsd            Float    @default(0)
+  sources             Int      @default(1)
+  widgets             Int      @default(1)
+  reviews             Int      @default(3)
+  /// null = unlimited
+  views               Int?
+  active              Boolean  @default(true)
+  sortOrder           Int      @default(0)
+  /// PayPal keeps its own copy of each paid plan, one per environment.
+  paypalPlanIdSandbox String?
+  paypalPlanIdLive    String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+/// Runtime settings edited from the admin panel (PayPal keys, mode, ...).
+/// Secret values are stored encrypted - see SettingsService.
+model AppSetting {
+  key       String   @id
+  value     String
+  secret    Boolean  @default(false)
+  updatedAt DateTime @updatedAt
 }

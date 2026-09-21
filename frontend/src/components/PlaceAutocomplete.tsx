@@ -63,7 +63,7 @@ export function PlaceAutocomplete({ onSelect }: Props) {
               searchQuery = placeName;
             }
           }
-        } catch (e) {
+        } catch {
           // Ignore URL parse error
         }
       }

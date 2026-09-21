@@ -1,26 +1,37 @@
 import { randomBytes } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlacesService } from '../places/places.service';
+import { BillingService } from '../billing/billing.service';
 import { CreateWidgetDto } from './dto/create-widget.dto';
+import { UpdateWidgetDto } from './dto/update-widget.dto';
+import { mergeSettings, normalizeSettings } from './widget-settings';
+
+/** Stored settings may predate the current format; always hand out the current one. */
+function withSettings<T extends { settings: unknown }>(widget: T): T {
+  return { ...widget, settings: normalizeSettings(widget.settings) };
+}
 
 @Injectable()
 export class WidgetsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly places: PlacesService,
+    private readonly billing: BillingService,
   ) {}
 
-  list(userId: string) {
-    return this.prisma.widget.findMany({
+  async list(userId: string) {
+    const rows = await this.prisma.widget.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map(withSettings);
   }
 
   async create(userId: string, dto: CreateWidgetDto) {
+    await this.billing.assertCanAdd(userId, 'widgets');
     const place = await this.places.details(dto.placeId, dto.sessionToken);
-    return this.prisma.widget.create({
+    const widget = await this.prisma.widget.create({
       data: {
         userId,
         // Goes in the embed snippet; the widget id stays private.
@@ -28,27 +39,37 @@ export class WidgetsService {
         placeId: place.placeId,
         placeName: place.name,
         placeAddress: place.address,
-        settings: dto.settings ?? {},
+        settings: normalizeSettings(dto.settings),
       },
     });
+    return withSettings(widget);
   }
 
-  get(userId: string, id: string) {
-    return this.prisma.widget.findUnique({
+  async get(userId: string, id: string) {
+    const widget = await this.prisma.widget.findUnique({
       where: { id, userId },
     });
+    return widget && withSettings(widget);
   }
 
-  update(userId: string, id: string, dto: { settings?: any }) {
-    return this.prisma.widget.update({
+  async update(userId: string, id: string, dto: UpdateWidgetDto) {
+    const current = await this.prisma.widget.findUnique({
       where: { id, userId },
-      data: { settings: dto.settings },
     });
+    if (!current) throw new NotFoundException('Widget not found.');
+    if (dto.settings === undefined) return withSettings(current);
+    const widget = await this.prisma.widget.update({
+      where: { id, userId },
+      data: { settings: mergeSettings(current.settings, dto.settings) },
+    });
+    return withSettings(widget);
   }
 
-  delete(userId: string, id: string) {
-    return this.prisma.widget.delete({
+  async delete(userId: string, id: string) {
+    const { count } = await this.prisma.widget.deleteMany({
       where: { id, userId },
     });
+    if (!count) throw new NotFoundException('Widget not found.');
+    return { ok: true };
   }
 }

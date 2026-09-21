@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Everything the super admin panel shows. Read-only apart from role changes. */
@@ -7,19 +7,32 @@ export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
   async overview() {
-    const [users, widgets, sources, deals, vouchers, reviews] = await Promise.all([
-      this.prisma.user.count(),
-      this.prisma.widget.count(),
-      this.prisma.source.count(),
-      this.prisma.deal.count(),
-      this.prisma.voucher.count(),
-      this.prisma.review.count(),
-    ]);
+    const [users, widgets, sources, deals, vouchers, reviews] =
+      await Promise.all([
+        this.prisma.user.count(),
+        this.prisma.widget.count(),
+        this.prisma.source.count(),
+        this.prisma.deal.count(),
+        this.prisma.voucher.count(),
+        this.prisma.review.count(),
+      ]);
     const since = new Date(Date.now() - 7 * 24 * 3600 * 1000);
     const newUsers = await this.prisma.user.count({
       where: { createdAt: { gte: since } },
     });
-    return { users, widgets, sources, deals, vouchers, reviews, newUsers };
+    const paying = await this.prisma.subscription.count({
+      where: { status: 'ACTIVE', plan: { not: 'FREE' } },
+    });
+    return {
+      users,
+      widgets,
+      sources,
+      deals,
+      vouchers,
+      reviews,
+      newUsers,
+      paying,
+    };
   }
 
   users() {
@@ -32,7 +45,12 @@ export class AdminService {
         role: true,
         city: true,
         createdAt: true,
-        _count: { select: { widgets: true, sources: true, deals: true, vouchers: true } },
+        _count: {
+          select: { widgets: true, sources: true, deals: true, vouchers: true },
+        },
+        subscription: {
+          select: { plan: true, status: true, currentPeriodEnd: true },
+        },
       },
     });
   }
@@ -57,12 +75,17 @@ export class AdminService {
     });
   }
 
-  setRole(userId: string, role: string) {
+  setRole(userId: string, role: unknown) {
     const allowed = ['USER', 'MERCHANT', 'ADMIN'];
-    const next = allowed.includes(role) ? role : 'USER';
+    // A missing or mistyped role must not quietly demote someone.
+    if (typeof role !== 'string' || !allowed.includes(role)) {
+      throw new BadRequestException(
+        `Role must be one of ${allowed.join(', ')}.`,
+      );
+    }
     return this.prisma.user.update({
       where: { id: userId },
-      data: { role: next },
+      data: { role },
       select: { id: true, email: true, role: true },
     });
   }

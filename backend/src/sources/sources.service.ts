@@ -1,10 +1,19 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { BillingService } from '../billing/billing.service';
 import { normalizeDomain } from './domain.util';
 
 @Injectable()
 export class SourcesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly billing: BillingService,
+  ) {}
 
   list(userId: string) {
     return this.prisma.source.findMany({
@@ -14,7 +23,7 @@ export class SourcesService {
     });
   }
 
-  async create(userId: string, domainInput: string, widgetId?: string) {
+  async create(userId: string, domainInput: unknown, widgetId?: string) {
     const domain = normalizeDomain(domainInput);
     if (!domain) {
       throw new BadRequestException(
@@ -34,13 +43,17 @@ export class SourcesService {
     });
     if (existing) throw new ConflictException(`${domain} is already added`);
 
+    await this.billing.assertCanAdd(userId, 'sources');
+
     return this.prisma.source.create({
       data: { userId, domain, widgetId: widgetId ?? null },
     });
   }
 
   async remove(userId: string, id: string) {
-    const source = await this.prisma.source.findFirst({ where: { id, userId } });
+    const source = await this.prisma.source.findFirst({
+      where: { id, userId },
+    });
     if (!source) throw new NotFoundException('Source not found');
     await this.prisma.source.delete({ where: { id } });
     return { ok: true };

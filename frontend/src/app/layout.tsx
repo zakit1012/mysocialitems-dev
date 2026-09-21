@@ -15,9 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "My Social Items — local deals at a better price",
+  title: "My Social Items — Google Review Widgets for Your Website",
   description:
-    "Find restaurants, hotels, wellness and days out nearby. Buy a voucher and enjoy the My Social Items price.",
+    "Embed beautiful Google review widgets on your website. Auto-sync reviews, boost credibility, and convert more visitors — in minutes.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

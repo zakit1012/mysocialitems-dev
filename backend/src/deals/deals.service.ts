@@ -61,7 +61,10 @@ export class DealsService {
       }),
     ]);
 
-    const favoriteIds = await this.favoriteIds(userId, items.map((d) => d.id));
+    const favoriteIds = await this.favoriteIds(
+      userId,
+      items.map((d) => d.id),
+    );
 
     return {
       items: items.map((deal) => this.shape(deal, favoriteIds.has(deal.id))),
@@ -177,7 +180,7 @@ export class DealsService {
       return '[]';
     }
     try {
-      const parsed = JSON.parse(value);
+      const parsed: unknown = JSON.parse(value);
       if (Array.isArray(parsed)) {
         return JSON.stringify(parsed);
       }

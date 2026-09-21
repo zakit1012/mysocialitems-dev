@@ -5,6 +5,9 @@ import { Globe, LayoutGrid, ShieldAlert, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
+import { PlansTab } from "./PlansTab";
+import { SubscriptionsTab } from "./SubscriptionsTab";
+import { PaypalTab } from "./PaypalTab";
 
 type Overview = {
   users: number;
@@ -14,6 +17,7 @@ type Overview = {
   vouchers: number;
   reviews: number;
   newUsers: number;
+  paying: number;
 };
 
 type AdminUser = {
@@ -24,6 +28,7 @@ type AdminUser = {
   city: string | null;
   createdAt: string;
   _count: { widgets: number; sources: number; deals: number; vouchers: number };
+  subscription: { plan: string; status: string; currentPeriodEnd: string | null } | null;
 };
 
 type AdminWidget = {
@@ -44,7 +49,7 @@ type AdminSource = {
   widget: { placeName: string } | null;
 };
 
-const TABS = ["Users", "Widgets", "Sources"] as const;
+const TABS = ["Users", "Subscriptions", "Plans", "PayPal", "Widgets", "Sources"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function AdminPage() {
@@ -123,7 +128,7 @@ export default function AdminPage() {
         <Kpi icon={<Users className="h-4 w-4" />} label="Users" value={overview?.users} hint={`+${overview?.newUsers ?? 0} this week`} />
         <Kpi icon={<LayoutGrid className="h-4 w-4" />} label="Widgets" value={overview?.widgets} />
         <Kpi icon={<Globe className="h-4 w-4" />} label="Sources" value={overview?.sources} />
-        <Kpi label="Deals" value={overview?.deals} />
+        <Kpi label="Paying" value={overview?.paying} />
         <Kpi label="Vouchers" value={overview?.vouchers} />
         <Kpi label="Reviews" value={overview?.reviews} />
       </div>
@@ -147,7 +152,7 @@ export default function AdminPage() {
 
       <div className="overflow-hidden rounded-2xl border border-line bg-card shadow-card">
         {tab === "Users" && (
-          <Table head={["User", "Role", "Widgets", "Sources", "Deals", "Joined"]}>
+          <Table head={["User", "Role", "Plan", "Widgets", "Sources", "Joined"]}>
             {users.map((u) => (
               <tr key={u.id} className="border-b border-line/60 last:border-0">
                 <td className="px-4 py-3">
@@ -165,9 +170,14 @@ export default function AdminPage() {
                     <option value="ADMIN">ADMIN</option>
                   </select>
                 </td>
+                <td className="px-4 py-3">
+                  <span className="font-semibold">{u.subscription?.plan ?? "FREE"}</span>
+                  {u.subscription && u.subscription.status !== "ACTIVE" && (
+                    <span className="ml-1.5 text-[11.5px] text-coral">{u.subscription.status.toLowerCase()}</span>
+                  )}
+                </td>
                 <td className="px-4 py-3">{u._count.widgets}</td>
                 <td className="px-4 py-3">{u._count.sources}</td>
-                <td className="px-4 py-3">{u._count.deals}</td>
                 <td className="px-4 py-3 text-muted">
                   {new Date(u.createdAt).toLocaleDateString()}
                 </td>
@@ -175,6 +185,10 @@ export default function AdminPage() {
             ))}
           </Table>
         )}
+
+        {tab === "Subscriptions" && <SubscriptionsTab token={token} />}
+        {tab === "Plans" && <PlansTab token={token} />}
+        {tab === "PayPal" && <PaypalTab token={token} />}
 
         {tab === "Widgets" && (
           <Table head={["Place", "Owner", "Domains", "Key", "Created"]}>

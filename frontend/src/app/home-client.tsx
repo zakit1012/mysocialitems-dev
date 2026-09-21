@@ -1,200 +1,244 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { SlidersHorizontal, Sparkles, Ticket, Wallet } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import {
+  ArrowRight,
+  Code2,
+  Globe,
+  LayoutDashboard,
+  Palette,
+  RefreshCw,
+  Shield,
+  Sparkles,
+  Star,
+  Zap,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { Category, Deal } from "@/lib/types";
-import { DealCard } from "@/components/DealCard";
+
+/* ─── Mock review data for the live preview ─── */
+const MOCK_REVIEWS = [
+  {
+    author: "Sarah Mitchell",
+    initial: "S",
+    rating: 5,
+    time: "2 weeks ago",
+    text: "Absolutely fantastic experience! The team went above and beyond to make sure everything was perfect. Would highly recommend to anyone looking for top-quality service.",
+    color: "bg-indigo",
+  },
+  {
+    author: "James Rodriguez",
+    initial: "J",
+    rating: 5,
+    time: "1 month ago",
+    text: "Professional, friendly, and incredibly efficient. This is the best service I've ever used. Five stars all the way!",
+    color: "bg-emerald",
+  },
+  {
+    author: "Emily Chen",
+    initial: "E",
+    rating: 4,
+    time: "3 weeks ago",
+    text: "Great overall experience. The booking process was seamless and the quality exceeded my expectations. Will definitely return.",
+    color: "bg-amber",
+  },
+];
+
+const STEPS = [
+  {
+    icon: Globe,
+    title: "Connect your Google Place",
+    description:
+      "Search for your business or paste a Google Maps URL. We'll pull your reviews instantly.",
+    accent: "bg-indigo-wash text-indigo",
+  },
+  {
+    icon: Palette,
+    title: "Customize your widget",
+    description:
+      "Choose how many reviews to show, pick a layout, and match your brand's look and feel.",
+    accent: "bg-brand-wash text-brand",
+  },
+  {
+    icon: Code2,
+    title: "Embed on your site",
+    description:
+      "Copy one line of code. Paste it anywhere — WordPress, Shopify, Wix, or plain HTML.",
+    accent: "bg-emerald-wash text-emerald",
+  },
+];
+
+const FEATURES = [
+  {
+    icon: RefreshCw,
+    title: "Auto-sync reviews",
+    description:
+      "New Google reviews appear on your site automatically. No manual updates needed.",
+    gradient: "from-indigo/10 to-indigo/5",
+  },
+  {
+    icon: Zap,
+    title: "Lightning fast",
+    description:
+      "Lightweight embed script loads in milliseconds. Zero impact on your page speed.",
+    gradient: "from-amber/10 to-amber/5",
+  },
+  {
+    icon: Shield,
+    title: "SEO-friendly",
+    description:
+      "Rich review markup helps search engines see your ratings. Boost your local ranking.",
+    gradient: "from-emerald/10 to-emerald/5",
+  },
+  {
+    icon: Palette,
+    title: "Fully customizable",
+    description:
+      "Match your website's design. Control colors, layout, review count, and sorting.",
+    gradient: "from-brand/10 to-brand/5",
+  },
+];
+
+type PublicPlan = {
+  id: string;
+  name: string;
+  priceUsd: number;
+  sources: number;
+  widgets: number;
+  reviews: number;
+  views: number | null;
+};
+
+/** Shown until the live plans load, and if the API is unreachable. */
+const DEFAULT_PLANS: PublicPlan[] = [
+  { id: "FREE", name: "Free", priceUsd: 0, sources: 1, widgets: 1, reviews: 3, views: 200 },
+  { id: "PRO", name: "Pro", priceUsd: 5, sources: 3, widgets: 3, reviews: 10, views: null },
+  { id: "BUSINESS", name: "Business", priceUsd: 10, sources: 8, widgets: 8, reviews: 50, views: null },
+];
+
+const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+
+function toCard(p: PublicPlan, index: number, count: number) {
+  const free = p.priceUsd <= 0;
+  return {
+    name: p.name,
+    price: `$${Number.isInteger(p.priceUsd) ? p.priceUsd : p.priceUsd.toFixed(2)}`,
+    period: free ? "forever" : "/month",
+    features: [
+      plural(p.widgets, "widget"),
+      plural(p.sources, "website"),
+      `${p.reviews} reviews shown`,
+      p.views === null ? "Unlimited views" : `${p.views.toLocaleString()} views/month`,
+    ],
+    cta: free ? "Get started free" : `Choose ${p.name}`,
+    href: "/register",
+    // The middle plan of three is the one we point people at.
+    highlighted: count === 3 ? index === 1 : false,
+  };
+}
 
 export default function HomePage() {
-  const searchParams = useSearchParams();
-  const q = searchParams.get("q") ?? "";
-  const { token } = useAuth();
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [cities, setCities] = useState<string[]>([]);
-  const [deals, setDeals] = useState<Deal[]>([]);
-  const [city, setCity] = useState("");
-  const [category, setCategory] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api<Category[]>("/categories").then(setCategories).catch(() => setCategories([]));
-  }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (q) params.set("q", q);
-    if (city) params.set("city", city);
-    if (category) params.set("category", category);
-    setLoading(true);
-    api<{ items: Deal[]; cities: string[] }>(`/deals?${params.toString()}`, {
-      token,
-    })
-      .then((data) => {
-        setDeals(data.items);
-        setCities(data.cities);
-      })
-      .catch(() => setDeals([]))
-      .finally(() => setLoading(false));
-  }, [q, city, category, token]);
-
-  const featured = useMemo(
-    () => deals.filter((deal) => deal.featured).slice(0, 4),
-    [deals],
-  );
-  const filtered = Boolean(q || city || category);
-  const showFeatured = !filtered && featured.length > 0;
+  const { user } = useAuth();
 
   return (
     <div>
-      <Hero />
-
-      <div className="mx-auto max-w-6xl px-4">
-        <FilterBar
-          cities={cities}
-          categories={categories}
-          city={city}
-          category={category}
-          onCity={setCity}
-          onCategory={setCategory}
-        />
-      </div>
-
-      <div className="mx-auto max-w-6xl space-y-12 px-4 pb-16">
-        {q && (
-          <p className="text-sm text-muted">
-            Results for <span className="font-semibold text-ink">&ldquo;{q}&rdquo;</span>
-          </p>
-        )}
-
-        {showFeatured && (
-          <section className="animate-fade-in-up">
-            <SectionHead
-              icon={<Sparkles className="h-4 w-4" />}
-              eyebrow="Handpicked"
-              title="Today's picks"
-              subtitle="The deals our team would book themselves this week."
-              accentColor="text-amber"
-            />
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-              {featured.map((deal) => (
-                <DealCard key={deal.id} deal={deal} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        <section className="animate-fade-in-up delay-200">
-          <SectionHead
-            icon={<Ticket className="h-4 w-4" />}
-            eyebrow={filtered ? "Filtered" : "All deals"}
-            title={
-              loading
-                ? "Finding deals..."
-                : `${deals.length} ${deals.length === 1 ? "deal" : "deals"}`
-            }
-            subtitle={
-              filtered
-                ? "Matching your search and filters."
-                : "Everything live right now."
-            }
-            accentColor="text-brand"
-          />
-
-          {loading ? (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({ length: 6 }, (_, i) => (
-                <DealSkeleton key={i} />
-              ))}
-            </div>
-          ) : deals.length === 0 ? (
-            <EmptyState
-              canReset={Boolean(city || category)}
-              onReset={() => {
-                setCity("");
-                setCategory("");
-              }}
-            />
-          ) : (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {deals.map((deal) => (
-                <DealCard key={deal.id} deal={deal} />
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
+      <Hero isLoggedIn={!!user} />
+      <WidgetPreview />
+      <HowItWorks />
+      <Features />
+      <Pricing isLoggedIn={!!user} />
+      <FinalCTA isLoggedIn={!!user} />
     </div>
   );
 }
 
-/* ─────────── Hero ─────────── */
-function Hero() {
+/* ═══════════════════════════════════════════════
+   Hero
+   ═══════════════════════════════════════════════ */
+function Hero({ isLoggedIn }: { isLoggedIn: boolean }) {
   return (
-    <section className="relative overflow-hidden gradient-hero">
-      {/* Floating decorative orbs */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-        <div className="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-brand/10 blur-3xl animate-float" />
+    <section className="relative overflow-hidden gradient-hero-landing">
+      {/* Animated decorative orbs */}
+      <div
+        className="absolute inset-0 overflow-hidden pointer-events-none"
+        aria-hidden
+      >
+        <div className="absolute -top-24 -right-24 h-80 w-80 rounded-full bg-brand/10 blur-3xl animate-float" />
         <div
-          className="absolute bottom-0 -left-20 h-56 w-56 rounded-full bg-indigo/10 blur-3xl animate-float"
+          className="absolute bottom-0 -left-20 h-64 w-64 rounded-full bg-indigo/12 blur-3xl animate-float"
           style={{ animationDelay: "2s" }}
         />
         <div
-          className="absolute top-1/2 right-1/4 h-40 w-40 rounded-full bg-amber/8 blur-2xl animate-float"
+          className="absolute top-1/3 right-1/4 h-48 w-48 rounded-full bg-amber/8 blur-2xl animate-float"
           style={{ animationDelay: "4s" }}
+        />
+        <div
+          className="absolute bottom-1/4 left-1/3 h-36 w-36 rounded-full bg-emerald/8 blur-2xl animate-float"
+          style={{ animationDelay: "3s" }}
         />
       </div>
 
-      <div className="relative mx-auto max-w-6xl px-4 py-16 md:py-24">
-        <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-brand-light backdrop-blur-sm">
-          Nearby · discounted · voucher in your pocket
-        </p>
-        <h1 className="mt-5 max-w-3xl text-4xl font-black leading-[1.05] tracking-tight text-white md:text-6xl">
-          Discover your city at a{" "}
-          <span className="gradient-brand-text">My Social Items</span> price.
-        </h1>
-        <p className="mt-5 max-w-xl text-lg leading-relaxed text-dark-text">
-          Restaurants, hotels, spas and days out — usually 30–70 % off. Buy a
-          voucher, show it at the door, and go.
+      <div className="relative mx-auto max-w-6xl px-4 py-20 md:py-32">
+        {/* Pill badge */}
+        <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-brand-light backdrop-blur-sm animate-fade-in-up">
+          <Star className="h-3.5 w-3.5 star-gold" />
+          Google Review Widgets for Your Website
         </p>
 
-        <dl className="mt-10 flex flex-wrap gap-x-12 gap-y-6 pb-4">
-          <HeroStat
-            icon={<Wallet className="h-4 w-4" />}
-            value="30–70%"
-            label="off local favourites"
-          />
-          <HeroStat
-            icon={<Ticket className="h-4 w-4" />}
-            value="Instant"
-            label="voucher, no printing"
-          />
-          <HeroStat
-            icon={<Sparkles className="h-4 w-4" />}
-            value="Handpicked"
-            label="by our local team"
-          />
+        <h1 className="mt-6 max-w-3xl text-4xl font-black leading-[1.05] tracking-tight text-white md:text-6xl lg:text-7xl animate-fade-in-up delay-100">
+          Showcase your{" "}
+          <span className="gradient-brand-text">Google Reviews</span>{" "}
+          everywhere.
+        </h1>
+
+        <p className="mt-6 max-w-xl text-lg leading-relaxed text-dark-text animate-fade-in-up delay-200">
+          Embed a beautiful, auto-updating review widget on your website in
+          under 2 minutes. Build trust, boost SEO, and convert more visitors
+          into customers.
+        </p>
+
+        {/* CTA buttons */}
+        <div className="mt-10 flex flex-wrap gap-4 animate-fade-in-up delay-300">
+          <Link
+            href={isLoggedIn ? "/dashboard" : "/register"}
+            className="group inline-flex items-center gap-2 rounded-full gradient-brand px-7 py-3.5 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:shadow-[0_0_32px_rgba(232,68,109,0.4)] hover:scale-[1.02]"
+          >
+            {isLoggedIn ? (
+              <>
+                <LayoutDashboard className="h-4 w-4" />
+                Go to Dashboard
+              </>
+            ) : (
+              <>
+                Get started free
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </>
+            )}
+          </Link>
+          <a
+            href="#preview"
+            className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-7 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-all duration-300 hover:bg-white/10 hover:border-white/25"
+          >
+            See it in action
+          </a>
+        </div>
+
+        {/* Trust stats */}
+        <dl className="mt-14 flex flex-wrap gap-x-12 gap-y-6 pb-4 animate-fade-in-up delay-500">
+          <HeroStat value="30 sec" label="to embed" />
+          <HeroStat value="Auto-sync" label="new reviews" />
+          <HeroStat value="Free plan" label="no card needed" />
         </dl>
       </div>
     </section>
   );
 }
 
-function HeroStat({
-  icon,
-  value,
-  label,
-}: {
-  icon: React.ReactNode;
-  value: string;
-  label: string;
-}) {
+function HeroStat({ value, label }: { value: string; label: string }) {
   return (
     <div>
-      <dt className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-dark-muted">
-        <span className="text-brand-light">{icon}</span>
+      <dt className="text-xs uppercase tracking-wide text-dark-muted">
         {label}
       </dt>
       <dd className="mt-1 text-2xl font-black text-white">{value}</dd>
@@ -202,162 +246,352 @@ function HeroStat({
   );
 }
 
-/* ─────────── Filter bar ─────────── */
-function FilterBar({
-  cities,
-  categories,
-  city,
-  category,
-  onCity,
-  onCategory,
-}: {
-  cities: string[];
-  categories: Category[];
-  city: string;
-  category: string;
-  onCity: (value: string) => void;
-  onCategory: (value: string) => void;
-}) {
+/* ═══════════════════════════════════════════════
+   Widget Preview
+   ═══════════════════════════════════════════════ */
+function WidgetPreview() {
   return (
-    <div className="relative -mt-8 z-10 rounded-4xl border border-line/60 bg-card/90 p-5 shadow-panel backdrop-blur-md">
-      <p className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted">
-        <SlidersHorizontal className="h-3.5 w-3.5" />
-        Narrow it down
-      </p>
+    <section id="preview" className="relative gradient-mesh">
+      <div className="mx-auto max-w-6xl px-4 py-20 md:py-28">
+        <div className="text-center animate-fade-in-up">
+          <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand">
+            <Sparkles className="h-3.5 w-3.5" />
+            Live Preview
+          </p>
+          <h2 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">
+            This is what your visitors see
+          </h2>
+          <p className="mx-auto mt-3 max-w-lg text-muted">
+            A real-time, responsive widget that blends naturally with your
+            site&apos;s design. Here&apos;s a preview with sample data.
+          </p>
+        </div>
 
-      <FilterRow label="City">
-        <FilterChip active={!city} onClick={() => onCity("")} label="All cities" />
-        {cities.map((item) => (
-          <FilterChip
-            key={item}
-            active={city === item}
-            onClick={() => onCity(item)}
-            label={item}
-          />
-        ))}
-      </FilterRow>
+        {/* Widget preview card */}
+        <div className="mx-auto mt-12 max-w-3xl widget-preview-card rounded-3xl p-6 md:p-8 animate-fade-in-up delay-200">
+          {/* Widget header */}
+          <div className="flex items-center gap-3 flex-wrap mb-5">
+            <span className="text-3xl font-black tracking-tight text-ink">
+              4.8
+            </span>
+            <div className="flex gap-0.5 star-gold text-lg">
+              {"★★★★★".split("").map((s, i) => (
+                <span key={i} className={i === 4 ? "opacity-40" : ""}>
+                  {s}
+                </span>
+              ))}
+            </div>
+            <span className="text-sm text-muted">127 reviews on Google</span>
+          </div>
 
-      <FilterRow label="Category">
-        <FilterChip
-          active={!category}
-          onClick={() => onCategory("")}
-          label="All categories"
-        />
-        {categories.map((item) => (
-          <FilterChip
-            key={item.id}
-            active={category === item.slug}
-            onClick={() => onCategory(item.slug)}
-            label={item.name}
-          />
-        ))}
-      </FilterRow>
-    </div>
-  );
-}
+          {/* Review cards */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {MOCK_REVIEWS.map((review) => (
+              <div
+                key={review.author}
+                className="rounded-2xl border border-line/60 bg-white p-4 transition-shadow hover:shadow-card"
+              >
+                <div className="flex items-center gap-2.5 mb-2">
+                  <span
+                    className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${review.color} text-xs font-bold text-white`}
+                  >
+                    {review.initial}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-ink truncate">
+                      {review.author}
+                    </p>
+                    <p className="text-xs text-muted">
+                      <span className="star-gold">
+                        {"★".repeat(review.rating)}
+                        {"☆".repeat(5 - review.rating)}
+                      </span>{" "}
+                      {review.time}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs leading-relaxed text-ink-soft line-clamp-4">
+                  {review.text}
+                </p>
+              </div>
+            ))}
+          </div>
 
-function FilterRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-2 border-t border-line/60 pt-3 first:border-t-0 first:pt-0 sm:flex-row sm:items-center sm:gap-4">
-      <span className="w-20 shrink-0 text-sm font-semibold text-ink">{label}</span>
-      <div className="flex flex-wrap gap-2">{children}</div>
-    </div>
-  );
-}
+          {/* Widget footer */}
+          <div className="mt-4 text-center">
+            <span className="text-xs font-medium text-indigo cursor-pointer hover:underline">
+              See all reviews on Google →
+            </span>
+          </div>
+        </div>
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-all duration-200 ${
-        active
-          ? "gradient-brand text-white shadow-card"
-          : "border border-line bg-sand text-ink hover:border-brand/40 hover:bg-brand-wash hover:text-brand-dark"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function SectionHead({
-  icon,
-  eyebrow,
-  title,
-  subtitle,
-  accentColor = "text-brand",
-}: {
-  icon: React.ReactNode;
-  eyebrow: string;
-  title: string;
-  subtitle: string;
-  accentColor?: string;
-}) {
-  return (
-    <div className="mb-5">
-      <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${accentColor}`}>
-        {icon}
-        {eyebrow}
-      </p>
-      <h2 className="mt-1.5 text-2xl font-black tracking-tight md:text-3xl">{title}</h2>
-      <p className="mt-1 text-sm text-muted">{subtitle}</p>
-    </div>
-  );
-}
-
-function DealSkeleton() {
-  return (
-    <div className="overflow-hidden rounded-4xl border border-line/60 bg-card shadow-card">
-      <div className="aspect-[16/10] animate-shimmer" />
-      <div className="space-y-3 p-4">
-        <div className="h-3 w-24 animate-shimmer rounded-full" />
-        <div className="h-4 w-full animate-shimmer rounded-full" />
-        <div className="h-4 w-2/3 animate-shimmer rounded-full" />
-        <div className="h-6 w-28 animate-shimmer rounded-full" />
+        {/* Embed code teaser */}
+        <div className="mx-auto mt-8 max-w-lg text-center animate-fade-in-up delay-300">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-3">
+            Just one line of code
+          </p>
+          <div className="rounded-xl bg-dark px-5 py-3.5 font-mono text-xs text-dark-text overflow-x-auto">
+            <span className="text-brand-light">&lt;script</span>{" "}
+            <span className="text-amber">src</span>
+            <span className="text-white">=</span>
+            <span className="text-emerald">
+              &quot;https://your-domain.com/embed/widget.js&quot;
+            </span>
+            <span className="text-brand-light">&gt;&lt;/script&gt;</span>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
-function EmptyState({
-  onReset,
-  canReset,
-}: {
-  onReset: () => void;
-  canReset: boolean;
-}) {
+/* ═══════════════════════════════════════════════
+   How It Works
+   ═══════════════════════════════════════════════ */
+function HowItWorks() {
   return (
-    <div className="rounded-4xl border border-dashed border-line bg-card p-12 text-center animate-fade-in-up">
-      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-wash">
-        <Ticket className="h-7 w-7 text-brand" />
+    <section className="border-t border-line/60 bg-sand">
+      <div className="mx-auto max-w-6xl px-4 py-20 md:py-28">
+        <div className="text-center animate-fade-in-up">
+          <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-indigo">
+            <Zap className="h-3.5 w-3.5" />
+            Simple setup
+          </p>
+          <h2 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">
+            Up and running in 3 steps
+          </h2>
+          <p className="mx-auto mt-3 max-w-md text-muted">
+            No developers needed. No complex configuration. Just connect, customize, and embed.
+          </p>
+        </div>
+
+        <div className="mt-14 grid gap-6 md:grid-cols-3">
+          {STEPS.map((step, index) => (
+            <div
+              key={step.title}
+              className="group relative rounded-3xl border border-line/60 bg-card p-6 shadow-card feature-card animate-fade-in-up"
+              style={{ animationDelay: `${index * 150}ms` }}
+            >
+              {/* Step number badge */}
+              <span className="absolute -top-3 -left-1 grid h-7 w-7 place-items-center rounded-full gradient-brand text-xs font-bold text-white shadow-card">
+                {index + 1}
+              </span>
+
+              <span
+                className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ${step.accent}`}
+              >
+                <step.icon className="h-5 w-5" />
+              </span>
+              <h3 className="mt-4 text-lg font-bold tracking-tight">
+                {step.title}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                {step.description}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
-      <p className="text-lg font-semibold text-ink">No deals match that filter</p>
-      <p className="mt-1.5 text-muted">Try another city or category.</p>
-      {canReset && (
-        <button
-          type="button"
-          onClick={onReset}
-          className="mt-6 rounded-full gradient-brand px-5 py-2.5 text-sm font-semibold text-white transition hover:shadow-glow"
-        >
-          Clear filters
-        </button>
-      )}
-    </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Features
+   ═══════════════════════════════════════════════ */
+function Features() {
+  return (
+    <section className="border-t border-line/60 gradient-mesh">
+      <div className="mx-auto max-w-6xl px-4 py-20 md:py-28">
+        <div className="text-center animate-fade-in-up">
+          <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-emerald">
+            <Shield className="h-3.5 w-3.5" />
+            Why My Social Items
+          </p>
+          <h2 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">
+            Everything you need, nothing you don&apos;t
+          </h2>
+        </div>
+
+        <div className="mt-14 grid gap-6 sm:grid-cols-2">
+          {FEATURES.map((feature, index) => (
+            <div
+              key={feature.title}
+              className="group rounded-3xl border border-line/60 bg-card p-6 shadow-card feature-card animate-fade-in-up"
+              style={{ animationDelay: `${index * 100}ms` }}
+            >
+              <span
+                className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${feature.gradient}`}
+              >
+                <feature.icon className="h-5 w-5" />
+              </span>
+              <h3 className="mt-4 text-lg font-bold tracking-tight">
+                {feature.title}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                {feature.description}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Pricing
+   ═══════════════════════════════════════════════ */
+function Pricing({ isLoggedIn }: { isLoggedIn: boolean }) {
+  const [live, setLive] = useState<PublicPlan[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api<PublicPlan[]>("/billing/plans")
+      .then((rows) => {
+        if (!cancelled && Array.isArray(rows) && rows.length) setLive(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const source = live ?? DEFAULT_PLANS;
+  const PLANS = source.map((p, i) => toCard(p, i, source.length));
+
+  return (
+    <section id="pricing" className="border-t border-line/60 bg-sand">
+      <div className="mx-auto max-w-6xl px-4 py-20 md:py-28">
+        <div className="text-center animate-fade-in-up">
+          <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-dark">
+            <Star className="h-3.5 w-3.5" />
+            Pricing
+          </p>
+          <h2 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">
+            Start free, scale as you grow
+          </h2>
+          <p className="mx-auto mt-3 max-w-md text-muted">
+            No credit card required. Upgrade or cancel any time.
+          </p>
+        </div>
+
+        <div className="mt-14 grid gap-6 md:grid-cols-3">
+          {PLANS.map((plan, index) => (
+            <div
+              key={plan.name}
+              className={`relative rounded-3xl border p-6 transition-all duration-300 feature-card animate-fade-in-up ${
+                plan.highlighted
+                  ? "border-brand/40 bg-card shadow-panel ring-1 ring-brand/20"
+                  : "border-line/60 bg-card shadow-card"
+              }`}
+              style={{ animationDelay: `${index * 100}ms` }}
+            >
+              {plan.highlighted && (
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full gradient-brand px-4 py-1 text-xs font-bold text-white shadow-card">
+                  Most popular
+                </span>
+              )}
+
+              <h3 className="text-lg font-bold">{plan.name}</h3>
+              <div className="mt-3 flex items-baseline gap-1">
+                <span className="text-4xl font-black tracking-tight">
+                  {plan.price}
+                </span>
+                <span className="text-sm text-muted">{plan.period}</span>
+              </div>
+
+              <ul className="mt-6 space-y-3">
+                {plan.features.map((feature) => (
+                  <li
+                    key={feature}
+                    className="flex items-center gap-2 text-sm text-ink-soft"
+                  >
+                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-wash text-emerald">
+                      <svg
+                        className="h-3 w-3"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    </span>
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+
+              <Link
+                href={isLoggedIn ? "/dashboard/billing" : plan.href}
+                className={`mt-8 block w-full rounded-full py-3 text-center text-sm font-bold transition-all duration-300 ${
+                  plan.highlighted
+                    ? "gradient-brand text-white shadow-glow hover:shadow-[0_0_32px_rgba(232,68,109,0.35)] hover:scale-[1.02]"
+                    : "border border-line bg-sand text-ink hover:border-brand/40 hover:bg-brand-wash hover:text-brand-dark"
+                }`}
+              >
+                {isLoggedIn ? "View plans in Billing" : plan.cta}
+              </Link>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Final CTA
+   ═══════════════════════════════════════════════ */
+function FinalCTA({ isLoggedIn }: { isLoggedIn: boolean }) {
+  return (
+    <section className="relative overflow-hidden border-t border-line/60">
+      <div className="absolute inset-0 gradient-hero-landing" aria-hidden />
+      <div
+        className="absolute inset-0 overflow-hidden pointer-events-none"
+        aria-hidden
+      >
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-brand/6 blur-3xl animate-glow-pulse" />
+      </div>
+
+      <div className="relative mx-auto max-w-3xl px-4 py-20 md:py-28 text-center">
+        <div className="animate-fade-in-up">
+          <h2 className="text-3xl font-black tracking-tight text-white md:text-5xl">
+            Ready to boost your{" "}
+            <span className="gradient-brand-text">credibility</span>?
+          </h2>
+          <p className="mx-auto mt-4 max-w-md text-lg text-dark-text">
+            Join businesses that display real Google reviews to build trust and
+            win more customers.
+          </p>
+
+          <div className="mt-10 flex flex-wrap justify-center gap-4">
+            <Link
+              href={isLoggedIn ? "/dashboard" : "/register"}
+              className="group inline-flex items-center gap-2 rounded-full gradient-brand px-8 py-4 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:shadow-[0_0_32px_rgba(232,68,109,0.4)] hover:scale-[1.02]"
+            >
+              {isLoggedIn ? (
+                <>
+                  <LayoutDashboard className="h-4 w-4" />
+                  Go to Dashboard
+                </>
+              ) : (
+                <>
+                  Create your free widget
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </>
+              )}
+            </Link>
+          </div>
+
+          <p className="mt-6 text-xs text-dark-muted">
+            Free forever plan · No credit card · Setup in 30 seconds
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }

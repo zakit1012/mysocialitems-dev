@@ -1,8 +1,22 @@
-import { Controller, Get, Header, Param, Query, Req, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Header,
+  Param,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
+import { BillingService } from '../billing/billing.service';
 import { hostFrom, hostMatches } from '../sources/domain.util';
+import {
+  applyRatingFilter,
+  normalizeSettings,
+} from '../widgets/widget-settings';
 import { widgetScript } from './widget-script';
 
 /**
@@ -11,16 +25,16 @@ import { widgetScript } from './widget-script';
  * domain the owner registered. Copying the snippet to another site gets a 403.
  */
 @Controller('embed')
+@Throttle({ default: { ttl: 60_000, limit: 600 } })
 export class PublicController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly engine: ReviewsEngineService,
+    private readonly billing: BillingService,
   ) {}
 
   private originOf(req: Request): string | null {
-    return hostFrom(
-      (req.headers.origin as string) || (req.headers.referer as string),
-    );
+    return hostFrom(req.headers.origin || req.headers.referer);
   }
 
   private async resolve(key: string, req: Request) {
@@ -28,7 +42,8 @@ export class PublicController {
       where: { publicKey: key },
       include: { sources: { select: { domain: true } } },
     });
-    if (!widget) return { ok: false as const, error: 'Unknown widget key', status: 404 };
+    if (!widget)
+      return { ok: false as const, error: 'Unknown widget key', status: 404 };
 
     const accountWide = await this.prisma.source.findMany({
       where: { userId: widget.userId, widgetId: null },
@@ -48,7 +63,8 @@ export class PublicController {
     if (!host) {
       return {
         ok: false as const,
-        error: 'No Origin header - embed this on a web page, not a direct call.',
+        error:
+          'No Origin header - embed this on a web page, not a direct call.',
         status: 403,
       };
     }
@@ -67,8 +83,12 @@ export class PublicController {
   @Get('widget.js')
   @Header('Content-Type', 'application/javascript; charset=utf-8')
   @Header('Cache-Control', 'public, max-age=300')
-  async script(@Query('key') key: string, @Res() res: Response) {
-    res.send(widgetScript(key ?? ''));
+  script(
+    @Query('key') key: string,
+    @Query('preview') preview: string,
+    @Res() res: Response,
+  ) {
+    res.send(widgetScript(key ?? '', preview === '1'));
   }
 
   @Get('widgets/:key/reviews')
@@ -91,11 +111,29 @@ export class PublicController {
     if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
 
+    // Every render counts against the owner's monthly views, and the plan
+    // decides how many reviews a widget may show.
+    const usage = await this.billing.recordView(widget.userId);
+    if (!usage.allowed) {
+      return res.status(402).json({
+        error:
+          'This widget has used its monthly views. The owner can upgrade to show it again.',
+      });
+    }
+
+    const settings = normalizeSettings(widget.settings);
+    // data-count on the snippet wins, then the widget's own setting; the plan
+    // is the ceiling either way.
+    const wanted = Math.floor(Number(count)) || settings.reviewCount || 0;
+    const shown = Math.min(wanted || usage.reviews, usage.reviews);
+    // A rating filter drops some reviews, so ask for the full allowance first.
+    const minRating = Number(settings.minRating) || 0;
     const result = await this.engine.fetch(
       widget.placeId,
-      Math.min(Number(count ?? 5) || 5, 50),
-      sort || 'mostRelevant',
+      minRating > 0 ? usage.reviews : shown,
+      sort || settings.sort || 'mostRelevant',
     );
+    const reviews = applyRatingFilter(result.reviews, settings).slice(0, shown);
 
     // Best effort - a counter is not worth failing a page render over.
     this.prisma.source
@@ -109,11 +147,14 @@ export class PublicController {
       widget: {
         placeName: widget.placeName,
         placeAddress: widget.placeAddress,
-        settings: widget.settings ?? {},
+        settings,
+        // Google's own "leave a review" form for this place.
+        writeReviewUrl: `https://search.google.com/local/writereview?placeid=${encodeURIComponent(widget.placeId)}`,
       },
       business: result.business,
-      reviews: result.reviews,
+      reviews,
       link: result.link,
+      served: result.served,
       took_ms: result.took_ms,
       error: result.error,
     });

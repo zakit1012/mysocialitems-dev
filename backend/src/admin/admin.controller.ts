@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  UseGuards,
+} from '@nestjs/common';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -31,7 +41,15 @@ export class AdminController {
   }
 
   @Patch('users/:id/role')
-  setRole(@Param('id') id: string, @Body() body: { role: string }) {
-    return this.admin.setRole(id, body.role);
+  setRole(
+    @CurrentUser() me: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { role?: unknown },
+  ) {
+    // Demoting yourself can leave the site with no admin at all.
+    if (id === me.id && body?.role !== 'ADMIN') {
+      throw new BadRequestException('You cannot remove your own admin role.');
+    }
+    return this.admin.setRole(id, body?.role);
   }
 }

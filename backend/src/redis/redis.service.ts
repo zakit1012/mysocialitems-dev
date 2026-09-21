@@ -7,10 +7,13 @@ export class RedisService implements OnModuleDestroy {
   private readonly client: Redis;
 
   constructor(config: ConfigService) {
-    this.client = new Redis(config.get<string>('REDIS_URL') ?? 'redis://127.0.0.1:6379', {
-      maxRetriesPerRequest: 3,
-      lazyConnect: false,
-    });
+    this.client = new Redis(
+      config.get<string>('REDIS_URL') ?? 'redis://127.0.0.1:6379',
+      {
+        maxRetriesPerRequest: 3,
+        lazyConnect: false,
+      },
+    );
   }
 
   async setJson(key: string, value: unknown, ttlSeconds: number) {
@@ -26,7 +29,14 @@ export class RedisService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
-  async onModuleDestroy() {
+  /** Increments a counter, starting its expiry on the first hit. */
+  async incrWithTtl(key: string, ttlSeconds: number): Promise<number> {
+    const count = await this.client.incr(key);
+    if (count === 1) await this.client.expire(key, ttlSeconds);
+    return count;
+  }
+
+  onModuleDestroy() {
     this.client.disconnect();
   }
 }

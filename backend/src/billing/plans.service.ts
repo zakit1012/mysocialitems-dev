@@ -1,0 +1,163 @@
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import type { BillingPlan } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { DEFAULT_PLANS, FREE_KEY, Plan, UNLIMITED } from './plans';
+
+@Injectable()
+export class PlansService {
+  private cache: Plan[] | null = null;
+  private cachedAt = 0;
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  private toPlan(row: BillingPlan): Plan {
+    return {
+      key: row.key,
+      name: row.name,
+      priceUsd: row.priceUsd,
+      sources: row.sources,
+      widgets: row.widgets,
+      reviews: row.reviews,
+      views: row.views ?? UNLIMITED,
+      active: row.active,
+      sortOrder: row.sortOrder,
+      paypalPlanIdSandbox: row.paypalPlanIdSandbox,
+      paypalPlanIdLive: row.paypalPlanIdLive,
+    };
+  }
+
+  /** All plans, seeding the defaults the first time the table is empty. */
+  async all(): Promise<Plan[]> {
+    if (this.cache && Date.now() - this.cachedAt < 30_000) return this.cache;
+    let rows = await this.prisma.billingPlan.findMany({
+      orderBy: { sortOrder: 'asc' },
+    });
+    if (rows.length === 0) {
+      await this.prisma.billingPlan.createMany({
+        data: DEFAULT_PLANS.map((p) => ({
+          ...p,
+          views: p.views >= UNLIMITED ? null : p.views,
+        })),
+        skipDuplicates: true,
+      });
+      rows = await this.prisma.billingPlan.findMany({
+        orderBy: { sortOrder: 'asc' },
+      });
+    }
+    this.cache = rows.map((r) => this.toPlan(r));
+    this.cachedAt = Date.now();
+    return this.cache;
+  }
+
+  async get(key: string): Promise<Plan | undefined> {
+    return (await this.all()).find((p) => p.key === key);
+  }
+
+  async free(): Promise<Plan> {
+    const plan = await this.get(FREE_KEY);
+    if (!plan) throw new NotFoundException('The FREE plan is missing.');
+    return plan;
+  }
+
+  /** Paid plan whose PayPal id (in either environment) matches. */
+  async byPaypalId(paypalPlanId: string): Promise<Plan | undefined> {
+    return (await this.all()).find(
+      (p) =>
+        p.paypalPlanIdSandbox === paypalPlanId ||
+        p.paypalPlanIdLive === paypalPlanId,
+    );
+  }
+
+  invalidate() {
+    this.cache = null;
+  }
+
+  async upsert(input: Partial<Plan> & { key: string }) {
+    const key = input.key
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9_]/g, '_');
+    if (!key) throw new BadRequestException('Plan key is required.');
+    if (key === FREE_KEY && input.priceUsd && input.priceUsd > 0) {
+      throw new BadRequestException('The FREE plan must stay at $0.');
+    }
+    if (input.name !== undefined && !input.name.trim()) {
+      throw new BadRequestException('Plan name cannot be empty.');
+    }
+    if (
+      input.priceUsd !== undefined &&
+      !(Number.isFinite(input.priceUsd) && input.priceUsd >= 0)
+    ) {
+      throw new BadRequestException('Price must be $0 or more.');
+    }
+    const whole = (v: number | undefined, label: string, max: number) => {
+      if (v !== undefined && !(Number.isInteger(v) && v >= 1 && v <= max)) {
+        throw new BadRequestException(
+          `${label} must be a whole number from 1 to ${max.toLocaleString()}.`,
+        );
+      }
+    };
+    whole(input.sources, 'Sources', 10_000);
+    whole(input.widgets, 'Widgets', 10_000);
+    // The review engine serves at most 50 reviews per call.
+    whole(input.reviews, 'Reviews per widget', 50);
+    if (
+      input.views !== undefined &&
+      input.views !== null &&
+      input.views < UNLIMITED
+    ) {
+      whole(input.views, 'Monthly views', 100_000_000);
+    }
+    if (input.sortOrder !== undefined && !Number.isInteger(input.sortOrder)) {
+      throw new BadRequestException('Sort order must be a whole number.');
+    }
+    const views =
+      input.views === undefined
+        ? undefined
+        : input.views === null || input.views >= UNLIMITED
+          ? null
+          : input.views;
+
+    const data = {
+      name: input.name?.trim(),
+      priceUsd:
+        input.priceUsd === undefined
+          ? undefined
+          : Math.round(input.priceUsd * 100) / 100,
+      sources: input.sources,
+      widgets: input.widgets,
+      reviews: input.reviews,
+      views,
+      active: input.active,
+      sortOrder: input.sortOrder,
+      paypalPlanIdSandbox: input.paypalPlanIdSandbox,
+      paypalPlanIdLive: input.paypalPlanIdLive,
+    };
+    // undefined means "leave as is"
+    for (const k of Object.keys(data) as (keyof typeof data)[]) {
+      if (data[k] === undefined) delete data[k];
+    }
+
+    const row = await this.prisma.billingPlan.upsert({
+      where: { key },
+      update: data,
+      create: {
+        key,
+        name: input.name ?? key,
+        priceUsd: input.priceUsd ?? 0,
+        sources: input.sources ?? 1,
+        widgets: input.widgets ?? 1,
+        reviews: input.reviews ?? 3,
+        views: views ?? null,
+        active: input.active ?? true,
+        sortOrder: input.sortOrder ?? 50,
+      },
+    });
+    this.invalidate();
+    return this.toPlan(row);
+  }
+}

@@ -96,7 +96,7 @@ function WidgetCard({ widget, onDelete }: { widget: Widget; onDelete: (id: strin
     try {
       await api(`/widgets/${widget.id}`, { method: "DELETE", token });
       onDelete(widget.id);
-    } catch (err) {
+    } catch {
       alert("Failed to delete widget");
       setDeleting(false);
     }
@@ -121,16 +121,16 @@ function WidgetCard({ widget, onDelete }: { widget: Widget; onDelete: (id: strin
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Link
-            href={`/dashboard/widgets/${widget.id}`}
+            href={`/dashboard/widgets/${widget.id}?tab=install`}
             className="rounded-lg gradient-brand px-3 py-1.5 text-xs font-semibold text-white transition hover:shadow-glow"
           >
-            Integration
+            Install
           </Link>
           <Link
-            href={`/dashboard/widgets/${widget.id}/edit`}
+            href={`/dashboard/widgets/${widget.id}`}
             className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-brand/30 hover:bg-sand"
           >
-            Edit
+            Customize
           </Link>
           <button
             onClick={handleDelete}

@@ -1,4 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
@@ -17,9 +25,15 @@ export class SourcesController {
   @Post()
   create(
     @CurrentUser() user: AuthUser,
-    @Body() body: { domain: string; widgetId?: string },
+    @Body() body: { domain?: unknown; widgetId?: unknown },
   ) {
-    return this.sources.create(user.id, body.domain, body.widgetId);
+    return this.sources.create(
+      user.id,
+      body?.domain,
+      typeof body?.widgetId === 'string' && body.widgetId
+        ? body.widgetId
+        : undefined,
+    );
   }
 
   @Delete(':id')

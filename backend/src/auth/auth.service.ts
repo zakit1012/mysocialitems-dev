@@ -9,6 +9,7 @@ import { randomInt } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { BillingService } from '../billing/billing.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -36,6 +37,9 @@ type LoginPending = {
 
 const SIGNUP_TTL = 15 * 60;
 const LOGIN_TTL = 10 * 60;
+// A six digit code is a million guesses; without a cap the per-IP rate limit
+// alone still lets a botnet walk through it inside the ten minute window.
+const MAX_CODE_ATTEMPTS = 5;
 
 @Injectable()
 export class AuthService {
@@ -44,6 +48,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly redis: RedisService,
     private readonly mail: MailService,
+    private readonly billing: BillingService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -63,18 +68,23 @@ export class AuthService {
     };
 
     await this.redis.setJson(this.signupKey(email), pending, SIGNUP_TTL);
+    await this.redis.del(`${this.signupKey(email)}:tries`);
     await this.mail.sendCode(email, code, 'signup');
 
     return {
       pending: true,
       email,
-      message: 'Check your email for a verification code. The account is not saved until you verify.',
+      message:
+        'Check your email for a verification code. The account is not saved until you verify.',
     };
   }
 
   async verifySignup(emailRaw: string, code: string) {
     const email = emailRaw.toLowerCase();
-    const pending = await this.redis.getJson<SignupPending>(this.signupKey(email));
+    await this.guardAttempts(this.signupKey(email), SIGNUP_TTL);
+    const pending = await this.redis.getJson<SignupPending>(
+      this.signupKey(email),
+    );
     if (!pending || pending.code !== code) {
       throw new BadRequestException('Invalid or expired verification code');
     }
@@ -96,6 +106,9 @@ export class AuthService {
     });
 
     await this.redis.del(this.signupKey(email));
+    await this.redis.del(`${this.signupKey(email)}:tries`);
+    // New accounts start on Free; the email is best effort and never blocks signup.
+    await this.billing.welcome(user.id).catch(() => undefined);
     return { user, token: this.sign(user) };
   }
 
@@ -117,7 +130,12 @@ export class AuthService {
     }
 
     const code = this.makeCode();
-    await this.redis.setJson(this.loginKey(email), { code } satisfies LoginPending, LOGIN_TTL);
+    await this.redis.setJson(
+      this.loginKey(email),
+      { code } satisfies LoginPending,
+      LOGIN_TTL,
+    );
+    await this.redis.del(`${this.loginKey(email)}:tries`);
     await this.mail.sendCode(email, code, 'login');
 
     return {
@@ -129,7 +147,10 @@ export class AuthService {
 
   async verifyLoginCode(emailRaw: string, code: string) {
     const email = emailRaw.toLowerCase();
-    const pending = await this.redis.getJson<LoginPending>(this.loginKey(email));
+    await this.guardAttempts(this.loginKey(email), LOGIN_TTL);
+    const pending = await this.redis.getJson<LoginPending>(
+      this.loginKey(email),
+    );
     if (!pending || pending.code !== code) {
       throw new UnauthorizedException('Invalid or expired login code');
     }
@@ -140,7 +161,19 @@ export class AuthService {
     }
 
     await this.redis.del(this.loginKey(email));
+    await this.redis.del(`${this.loginKey(email)}:tries`);
     return this.issue(user);
+  }
+
+  /** Burns the pending code after too many wrong guesses. */
+  private async guardAttempts(codeKey: string, ttl: number) {
+    const tries = await this.redis.incrWithTtl(`${codeKey}:tries`, ttl);
+    if (tries > MAX_CODE_ATTEMPTS) {
+      await this.redis.del(codeKey);
+      throw new UnauthorizedException(
+        'Too many wrong codes. Request a new one.',
+      );
+    }
   }
 
   async me(userId: string) {

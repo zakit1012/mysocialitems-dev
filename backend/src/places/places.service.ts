@@ -1,5 +1,13 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+
+const UNAVAILABLE =
+  'Google place search is not available right now. Please try again in a minute.';
 
 /**
  * Google Places API (New).
@@ -37,6 +45,8 @@ type GoogleError = {
 
 @Injectable()
 export class PlacesService {
+  private readonly log = new Logger(PlacesService.name);
+
   constructor(private readonly config: ConfigService) {}
 
   async autocomplete(input: string, sessionToken?: string) {
@@ -95,29 +105,46 @@ export class PlacesService {
   private apiKey() {
     const key = this.config.get<string>('GOOGLE_PLACES_API_KEY');
     if (!key) {
-      throw new BadRequestException(
-        'GOOGLE_PLACES_API_KEY is missing. Add it to backend/.env',
-      );
+      this.log.error('GOOGLE_PLACES_API_KEY is missing from backend/.env');
+      throw new ServiceUnavailableException(UNAVAILABLE);
     }
     return key;
   }
 
   private async call<T>(url: string, init: RequestInit): Promise<T> {
-    const response = await fetch(url, {
-      ...init,
-      headers: {
-        ...(init.headers as Record<string, string>),
-        'X-Goog-Api-Key': this.apiKey(),
-      },
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...init,
+        // A stuck Google call should not hold the user's search forever.
+        signal: AbortSignal.timeout(10_000),
+        headers: {
+          ...(init.headers as Record<string, string>),
+          'X-Goog-Api-Key': this.apiKey(),
+        },
+      });
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) throw err;
+      this.log.error(`Places API unreachable: ${String(err)}`);
+      throw new ServiceUnavailableException(UNAVAILABLE);
+    }
 
     const payload: unknown = await response.json().catch(() => ({}));
 
     if (!response.ok) {
+      // Google's text can describe our key setup (IP restrictions, billing);
+      // that is for our logs, not for the person searching.
       const message = (payload as GoogleError)?.error?.message;
-      throw new BadRequestException(
-        message || `Places API request failed (${response.status})`,
+      this.log.error(
+        `Places API ${response.status}: ${message ?? 'no message'}`,
       );
+      if (
+        response.status === 400 &&
+        !/key|restrict|billing|permission/i.test(message ?? '')
+      ) {
+        throw new BadRequestException('Google could not find that place.');
+      }
+      throw new ServiceUnavailableException(UNAVAILABLE);
     }
 
     return payload as T;

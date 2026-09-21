@@ -14,6 +14,9 @@ export function uniqueSlug(value: string): string {
 }
 
 export function voucherCode(): string {
-  const part = Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const part = Math.random()
+    .toString(36)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
   return `SD-${part.slice(0, 8)}`;
 }
