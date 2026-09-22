@@ -23,8 +23,6 @@ import { WidgetPreview, type PreviewData, type PreviewReview } from "@/component
 import { toPayload, type WidgetSettings } from "@/lib/widget-settings";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-const MAX_POLLS = 20;
-const POLL_MS = 3000;
 
 type Widget = {
   id: string;
@@ -107,24 +105,16 @@ function WidgetStudio() {
   // fire on every keystroke in the editor. It runs once when the widget opens
   // (using its saved order) and again only when Save actually changes the
   // order - which also warms the review engine's cache for the live widget.
+  // One request: the backend waits for a real answer itself.
   const loadReviews = useCallback(
     async (widgetId: string, sortToUse: string) => {
       if (!token) return;
       setReviewsBusy(true);
-      setReviewsNote("");
+      setReviewsNote("This can take up to a minute the first time - pulling reviews from Google.");
       try {
-        for (let attempt = 0; attempt < MAX_POLLS; attempt++) {
-          const r = await api<EngineResult>(`/widgets/${widgetId}/reviews?sort=${sortToUse}`, { token });
-          if (r.served === "fetching") {
-            setReviewsNote("First fetch for this place - collecting reviews from Google...");
-            await new Promise((res) => setTimeout(res, POLL_MS));
-            continue;
-          }
-          setEngine(r);
-          setReviewsNote(r.error ?? "");
-          return;
-        }
-        setReviewsNote("The review engine is still busy with this place. Reload in a minute.");
+        const r = await api<EngineResult>(`/widgets/${widgetId}/reviews?sort=${sortToUse}`, { token });
+        setEngine(r);
+        setReviewsNote(r.error ?? "");
       } catch (err) {
         setReviewsNote(err instanceof Error ? err.message : "Could not load reviews");
       } finally {

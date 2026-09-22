@@ -39,8 +39,9 @@ export class WidgetsController {
     if (!widget) throw new NotFoundException();
     const plan = await this.billing.planFor(user.id);
     // The full allowance, unfiltered: the editor applies count and rating
-    // filters itself so every change previews instantly.
-    return this.engine.fetch(widget.placeId, plan.reviews, sort);
+    // filters itself so every change previews instantly. One request waits
+    // for a real answer instead of the dashboard polling several.
+    return this.engine.fetchAndWait(widget.placeId, plan.reviews, sort);
   }
 
   @Get()

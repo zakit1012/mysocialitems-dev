@@ -21,11 +21,6 @@ type EngineResponse = {
   error?: string;
 };
 
-// A new place is scraped on first request; the engine answers "fetching" and
-// we ask again. 20 tries x 3s covers a cold scrape with room to spare.
-const MAX_POLLS = 20;
-const POLL_MS = 3000;
-
 export default function NewWidgetPage() {
   const { token } = useAuth();
   const router = useRouter();
@@ -49,47 +44,53 @@ export default function NewWidgetPage() {
       .catch(() => undefined);
   }, [token]);
 
-  /* real import: ask the engine, and keep asking while it is still fetching */
+  // Ticks while the single import request is in flight, so the spinner
+  // screen visibly keeps working instead of sitting still for up to a
+  // minute - without pretending to know a percentage it cannot know.
+  const [waitedSec, setWaitedSec] = useState(0);
+  useEffect(() => {
+    if (status !== "importing") return;
+    setWaitedSec(0);
+    const timer = setInterval(() => setWaitedSec((s) => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, [status]);
+
+  // A closed tab mid-import loses nothing server-side, but the person would
+  // have to start the import over - worth one warning before that happens.
+  useEffect(() => {
+    if (status !== "importing") return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [status]);
+
+  /* real import: one request - the backend waits for a real answer itself */
   useEffect(() => {
     if (status !== "importing" || !place) return;
     let cancelled = false;
     const started = Date.now();
 
-    setImportNote("");
+    setImportNote("This can take up to a minute the first time - pulling reviews from Google. No need to reload.");
     setEngine(null);
     setTookMs(null);
 
     (async () => {
       // At least 10 so a Free account sees what an upgrade would add.
       const count = Math.min(50, Math.max(10, plan.reviews));
-      for (let attempt = 1; attempt <= MAX_POLLS && !cancelled; attempt++) {
-        try {
-          const data = await api<EngineResponse>(
-            `/places/reviews?placeId=${encodeURIComponent(place.placeId)}&count=${count}`,
-            { token },
-          );
-          if (cancelled) return;
-
-          if (data.served === "fetching") {
-            setImportNote("First time for this place - pulling reviews from Google...");
-            await new Promise((r) => setTimeout(r, POLL_MS));
-            continue;
-          }
-
-          setEngine(data);
-          setImportNote(data.error ?? "");
-          setTookMs(Date.now() - started);
-          setStatus("preview");
-          return;
-        } catch (err) {
-          if (cancelled) return;
-          setImportNote(err instanceof Error ? err.message : "Could not reach the review engine");
-          await new Promise((r) => setTimeout(r, POLL_MS));
-        }
-      }
-      if (!cancelled) {
+      try {
+        const data = await api<EngineResponse>(
+          `/places/reviews?placeId=${encodeURIComponent(place.placeId)}&count=${count}`,
+          { token },
+        );
+        if (cancelled) return;
+        setEngine(data);
+        setImportNote(data.error ?? "");
+        setTookMs(Date.now() - started);
+        setStatus("preview");
+      } catch (err) {
+        if (cancelled) return;
         // Let them carry on; the widget fills in once the engine has the data.
-        setImportNote("Reviews are taking longer than usual. You can still create the widget.");
+        setImportNote(err instanceof Error ? err.message : "Could not reach the review engine");
         setStatus("preview");
       }
     })();
@@ -239,6 +240,7 @@ export default function NewWidgetPage() {
               <div className="h-full w-1/3 animate-[indeterminate_1.2s_ease-in-out_infinite] rounded-full gradient-brand" />
             </div>
             {importNote && <p className="mt-4 text-xs text-muted">{importNote}</p>}
+            <p className="mt-2 text-[11px] font-medium tabular-nums text-hint">Still working... {waitedSec}s</p>
           </div>
         )}
 

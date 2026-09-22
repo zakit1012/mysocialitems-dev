@@ -40,7 +40,11 @@ export class PlacesController {
     // Up to the plan's allowance, or 10 so a Free user sees what an upgrade adds.
     const plan = await this.billing.planFor(user.id);
     const max = Math.max(10, plan.reviews);
-    return this.engine.fetch(
+    // The dashboard is already showing an "importing" spinner for this call,
+    // so it is fine for the one request to wait instead of the browser
+    // polling several - see fetchAndWait's own doc for why this must never
+    // be used on the public embed.
+    return this.engine.fetchAndWait(
       placeId,
       Math.min(Math.max(Number(count) || 6, 1), max),
       sort || 'mostRelevant',

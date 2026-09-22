@@ -37,6 +37,10 @@ export type EngineResult = {
 /** What the engine accepts; anything else would come back as a 422. */
 const SORTS = ['mostRelevant', 'newest', 'highestRanking', 'lowestRanking'];
 const MAX_COUNT = 50;
+// A cold place normally clears in 15-40s (Apify's own container start-up +
+// crawl time). Stays under a typical 60s reverse-proxy read timeout with
+// margin, so this one request does not itself get cut off mid-wait.
+const MAX_WAIT_MS = 50_000;
 
 @Injectable()
 export class ReviewsEngineService {
@@ -111,5 +115,39 @@ export class ReviewsEngineService {
       this.log.error(`Review engine failed for ${placeId}: ${reason}`);
       return empty(reason);
     }
+  }
+
+  /**
+   * Same call, but for a caller that is already showing its own "fetching
+   * reviews" spinner and can let one HTTP round trip take a while: this
+   * polls the engine here instead of making the browser do it, so the
+   * dashboard sends exactly one request per action. Each fetch() already
+   * waits close to 8s on the engine side before answering, so no extra
+   * sleep is added between attempts - just a ceiling on the total wait.
+   *
+   * Never use this for the public embed: a real visitor's page must not be
+   * held open for tens of seconds on a cold place.
+   */
+  async fetchAndWait(
+    placeId: string,
+    count = 5,
+    sort = 'mostRelevant',
+  ): Promise<EngineResult> {
+    const deadline = Date.now() + MAX_WAIT_MS;
+    let last: EngineResult | null = null;
+    do {
+      last = await this.fetch(placeId, count, sort);
+      if (last.served !== 'fetching') return last;
+    } while (Date.now() < deadline);
+
+    this.log.warn(
+      `Review engine still fetching ${placeId} after ${MAX_WAIT_MS}ms`,
+    );
+    return {
+      ...last,
+      error:
+        last.error ??
+        'This place is taking longer than usual to fetch. Please try again in a minute.',
+    };
   }
 }
