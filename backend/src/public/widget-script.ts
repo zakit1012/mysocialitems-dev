@@ -82,11 +82,7 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-pics img{width:52px;height:52px;border-radius:min(var(--r),8px);object-fit:cover;cursor:zoom-in}' +
     '.msi-more-btn{display:inline-block;background:none;border:0;padding:0;margin-top:6px;color:var(--btn);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}' +
     '.msi-more-btn:hover{text-decoration:underline}' +
-    '.msi-open .msi-text,.msi-open .msi-reply p{display:block;-webkit-line-clamp:unset}' +
-    '.msi-reply{margin-top:10px;padding:9px 11px;border-radius:min(var(--r),10px);background:rgba(127,127,127,.08);border-left:3px solid var(--line)}' +
-    '.msi-reply-h{font-size:12px;font-weight:700;color:var(--head);margin-bottom:2px}' +
-    '.msi-reply-h span{font-weight:400;color:var(--muted)}' +
-    '.msi-reply p{margin:0;font-size:12.5px;color:var(--text);white-space:pre-wrap;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}' +
+    '.msi-open .msi-text{display:block;-webkit-line-clamp:unset}' +
     '.msi-brand{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px}' +
     '.msi-brand svg{width:18px;height:18px;flex:none}' +
     '.msi-lb{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.85);display:grid;place-items:center;padding:20px;cursor:zoom-out}' +
@@ -129,24 +125,6 @@ export function widgetScript(key: string, preview = false): string {
     return '<span class="msi-stars" aria-label="' + esc(n) + ' out of 5">' + out + '</span>';
   }
 
-  /** Owner reply as {text, responded_at}; older cached rows held just a label. */
-  function reply(r) {
-    var o = r.owner_response;
-    if (!o) return null;
-    if (typeof o === 'string') return /^response from the owner/i.test(o) ? null : { text: o };
-    return o.text ? o : null;
-  }
-
-  function when(v) {
-    if (!v) return '';
-    // Apify sends ISO dates, the scraper sends "4 months ago".
-    if (/^\\d{4}-\\d{2}-\\d{2}/.test(v)) {
-      var d = new Date(v);
-      return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
-    }
-    return v;
-  }
-
   function card(r, s) {
     var initial = (r.author || '?').trim().charAt(0).toUpperCase();
     var html = '<div class="msi-card">' +
@@ -169,12 +147,6 @@ export function widgetScript(key: string, preview = false): string {
       }
       html += '</div>';
     }
-    var o = s.showOwnerResponse !== false ? reply(r) : null;
-    if (o) {
-      html += '<div class="msi-reply"><div class="msi-reply-h">Response from the owner' +
-        (when(o.responded_at) ? ' <span>\u00b7 ' + esc(when(o.responded_at)) + '</span>' : '') +
-        '</div><p>' + esc(o.text) + '</p></div>';
-    }
     return html + '</div>';
   }
 
@@ -186,8 +158,7 @@ export function widgetScript(key: string, preview = false): string {
       var c = cards[i];
       if (c.querySelector('.msi-more-btn')) continue;
       var t = c.querySelector('.msi-text');
-      var p = c.querySelector('.msi-reply p');
-      var clipped = (t && t.scrollHeight > t.clientHeight + 2) || (p && p.scrollHeight > p.clientHeight + 2);
+      var clipped = t && t.scrollHeight > t.clientHeight + 2;
       if (!clipped || !t) continue;
       var b = document.createElement('button');
       b.type = 'button';

@@ -259,7 +259,6 @@ export function WidgetEditor({
               <ToggleRow label="Review date" k="showReviewDate" value={value} set={set} disabled={!isOn(value, "showReviews")} />
               <ToggleRow label="Photos in reviews" k="showReviewPhotos" value={value} set={set} disabled={!isOn(value, "showReviews")} />
               <ToggleRow label="Google logo on each review" k="showGoogleIcon" value={value} set={set} disabled={!isOn(value, "showReviews")} />
-              <ToggleRow label="Owner replies" k="showOwnerResponse" value={value} set={set} disabled={!isOn(value, "showReviews")} />
               <ToggleRow label="“Read more” on long reviews" k="readMore" value={value} set={set} disabled={!isOn(value, "showReviews")} />
             </Section>
             <Section title="Footer">
