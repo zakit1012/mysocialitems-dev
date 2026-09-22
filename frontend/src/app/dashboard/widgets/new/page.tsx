@@ -35,7 +35,6 @@ export default function NewWidgetPage() {
   const [error, setError] = useState("");
 
   const [status, setStatus] = useState<"idle" | "importing" | "preview" | "saving">("idle");
-  const [importProgress, setImportProgress] = useState(0);
   const [engine, setEngine] = useState<EngineResponse | null>(null);
   const [tookMs, setTookMs] = useState<number | null>(null);
   const [importNote, setImportNote] = useState("");
@@ -56,7 +55,6 @@ export default function NewWidgetPage() {
     let cancelled = false;
     const started = Date.now();
 
-    setImportProgress(5);
     setImportNote("");
     setEngine(null);
     setTookMs(null);
@@ -73,7 +71,6 @@ export default function NewWidgetPage() {
           if (cancelled) return;
 
           if (data.served === "fetching") {
-            setImportProgress(Math.min(10 + attempt * 4, 92));
             setImportNote("First time for this place - pulling reviews from Google...");
             await new Promise((r) => setTimeout(r, POLL_MS));
             continue;
@@ -82,7 +79,6 @@ export default function NewWidgetPage() {
           setEngine(data);
           setImportNote(data.error ?? "");
           setTookMs(Date.now() - started);
-          setImportProgress(100);
           setStatus("preview");
           return;
         } catch (err) {
@@ -233,15 +229,16 @@ export default function NewWidgetPage() {
             <div className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-full bg-brand-wash">
               <Loader2 className="h-8 w-8 animate-spin text-brand" />
             </div>
-            <h2 className="text-lg font-bold">Importing reviews…</h2>
+            <h2 className="text-lg font-bold">Fetching reviews…</h2>
             <p className="mt-2 text-sm text-muted">
-              Fetching reviews for <span className="font-semibold text-ink">{place?.name}</span>
+              Getting reviews for <span className="font-semibold text-ink">{place?.name}</span>
             </p>
+            {/* No % shown - a new place can take anywhere from a few seconds to
+                a minute or two, so a fake progress number would just be a lie. */}
             <div className="mx-auto mt-10 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-sand-deep">
-              <div className="h-full rounded-full gradient-brand transition-all duration-75 ease-linear" style={{ width: `${importProgress}%` }} />
+              <div className="h-full w-1/3 animate-[indeterminate_1.2s_ease-in-out_infinite] rounded-full gradient-brand" />
             </div>
-            <p className="mt-3 text-xs font-semibold tabular-nums text-brand">{Math.round(importProgress)}%</p>
-            {importNote && <p className="mt-3 text-xs text-muted">{importNote}</p>}
+            {importNote && <p className="mt-4 text-xs text-muted">{importNote}</p>}
           </div>
         )}
 

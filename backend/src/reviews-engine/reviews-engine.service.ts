@@ -28,6 +28,9 @@ export type EngineResult = {
   link: string | null;
   /** How long our call to the engine took, in ms. Shown in the dashboard. */
   took_ms: number;
+  /** A message to show the caller - a fetch failure, or the engine's own
+   * note that a place genuinely has no written reviews. Either way the
+   * caller should stop and say so, not silently retry. */
   error?: string;
 };
 
@@ -89,12 +92,16 @@ export class ReviewsEngineService {
         return empty(`Review engine returned ${res.status}`);
       }
 
-      const data = (await res.json()) as Omit<EngineResult, 'took_ms'>;
+      const data = (await res.json()) as Omit<EngineResult, 'took_ms'> & {
+        note?: string;
+      };
       const took = Date.now() - started;
       this.log.log(
         `reviews ${placeId} in ${took}ms (${data.served ?? '?'} / ${data.source ?? '?'})`,
       );
-      return { ...data, took_ms: took };
+      // The engine's own "no written reviews for this place" explanation -
+      // a real, completed answer, distinct from data.error (a fetch failure).
+      return { ...data, took_ms: took, error: data.error ?? data.note };
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         this.log.warn(`Review engine still working on ${placeId} after 20s`);

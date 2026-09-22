@@ -215,7 +215,10 @@ export function WidgetEditor({
               </p>
             </Section>
 
-            <Section title="Order">
+            <Section
+              title="Order"
+              hint="Fetches fresh reviews when you save, so the preview will not update until then."
+            >
               <select
                 value={value.sort ?? "mostRelevant"}
                 onChange={(e) => set({ sort: e.target.value as WidgetSettings["sort"] })}

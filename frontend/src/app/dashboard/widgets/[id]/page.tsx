@@ -103,38 +103,44 @@ function WidgetStudio() {
     })();
   }, [id, token, loadSources]);
 
-  // Reviews for the preview; order is the only setting the server has to apply.
-  const sort = draft.sort ?? "mostRelevant";
-  useEffect(() => {
-    if (!token || !widget) return;
-    let cancelled = false;
-    (async () => {
+  // A fetch here can mean a real scrape, not just a cache read, so it must not
+  // fire on every keystroke in the editor. It runs once when the widget opens
+  // (using its saved order) and again only when Save actually changes the
+  // order - which also warms the review engine's cache for the live widget.
+  const loadReviews = useCallback(
+    async (widgetId: string, sortToUse: string) => {
+      if (!token) return;
       setReviewsBusy(true);
       setReviewsNote("");
       try {
-        for (let attempt = 0; attempt < MAX_POLLS && !cancelled; attempt++) {
-          const r = await api<EngineResult>(`/widgets/${widget.id}/reviews?sort=${sort}`, { token });
+        for (let attempt = 0; attempt < MAX_POLLS; attempt++) {
+          const r = await api<EngineResult>(`/widgets/${widgetId}/reviews?sort=${sortToUse}`, { token });
           if (r.served === "fetching") {
             setReviewsNote("First fetch for this place - collecting reviews from Google...");
             await new Promise((res) => setTimeout(res, POLL_MS));
             continue;
           }
-          if (cancelled) return;
           setEngine(r);
           setReviewsNote(r.error ?? "");
           return;
         }
-        if (!cancelled) setReviewsNote("The review engine is still busy with this place. Reload in a minute.");
+        setReviewsNote("The review engine is still busy with this place. Reload in a minute.");
       } catch (err) {
-        if (!cancelled) setReviewsNote(err instanceof Error ? err.message : "Could not load reviews");
+        setReviewsNote(err instanceof Error ? err.message : "Could not load reviews");
       } finally {
-        if (!cancelled) setReviewsBusy(false);
+        setReviewsBusy(false);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token, widget, sort]);
+    },
+    [token],
+  );
+
+  useEffect(() => {
+    if (!widget) return;
+    void loadReviews(widget.id, widget.settings.sort ?? "mostRelevant");
+    // Only the widget identity should trigger this - editing draft.sort must
+    // not, see loadReviews above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [widget?.id]);
 
   // Do not lose edits to a stray tab close.
   useEffect(() => {
@@ -149,6 +155,7 @@ function WidgetStudio() {
     setSaving(true);
     setFlash(null);
     try {
+      const previousSort = saved.sort ?? "mostRelevant";
       const w = await api<Widget>(`/widgets/${widget.id}`, {
         method: "PATCH",
         token,
@@ -157,6 +164,8 @@ function WidgetStudio() {
       setSaved(w.settings);
       setDraft(w.settings);
       setFlash({ ok: true, text: "Saved. Your website shows the new look on its next page load." });
+      const nextSort = w.settings.sort ?? "mostRelevant";
+      if (nextSort !== previousSort) void loadReviews(widget.id, nextSort);
     } catch (err) {
       setFlash({ ok: false, text: err instanceof Error ? err.message : "Could not save" });
     } finally {

@@ -18,6 +18,23 @@ type Props = {
   onSelect: (place: PlaceSuggestion, sessionToken: string) => void;
 };
 
+/**
+ * A pasted Google Maps link (or a raw id) already names one exact place. A
+ * fresh text search on its name can land on a different pin with the same
+ * or a similar name - a parking lot, a gate, a langar hall next to the real
+ * place - so the real id is used directly instead, whenever we can read one.
+ */
+function extractPlaceId(raw: string): string | null {
+  const text = raw.trim();
+  // The long share URL carries it as the "!19s<id>" data segment; the short
+  // form we build ourselves (maps_link in the review engine) as
+  // "q=place_id:<id>". Google's ids from the Places API start with "ChIJ".
+  const embedded = /(?:!19s|place_id:)(ChIJ[\w-]+)/.exec(text);
+  if (embedded) return embedded[1];
+  // The id pasted on its own, with nothing else around it.
+  return /^ChIJ[\w-]{10,}$/.test(text) ? text : null;
+}
+
 export function PlaceAutocomplete({ onSelect }: Props) {
   const { token } = useAuth();
   const sessionToken = useMemo(
@@ -51,6 +68,33 @@ export function PlaceAutocomplete({ onSelect }: Props) {
     const handle = setTimeout(async () => {
       setLoading(true);
       setError("");
+
+      const exactId = extractPlaceId(query);
+      if (exactId) {
+        // Skip the name search entirely - it is not needed and can only
+        // pick the wrong pin. sessionToken is left out on purpose: it pairs
+        // an autocomplete search with the details call that follows it, and
+        // here there is no search to pair with.
+        try {
+          const details = await api<{ placeId: string; name: string; address: string }>(
+            `/places/details?placeId=${encodeURIComponent(exactId)}`,
+            { token },
+          );
+          setSuggestions([
+            {
+              ...details,
+              description: [details.name, details.address].filter(Boolean).join(", "),
+            },
+          ]);
+          setOpen(true);
+        } catch (err) {
+          setSuggestions([]);
+          setError(err instanceof Error ? err.message : "Could not look up that place");
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
 
       let searchQuery = query.trim();
       if (searchQuery.startsWith("http")) {

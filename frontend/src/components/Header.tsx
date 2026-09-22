@@ -26,7 +26,7 @@ export function Header() {
                 <LayoutDashboard className="h-4 w-4" /> Dashboard
               </NavLink>
               <Link
-                href="/account"
+                href="/dashboard"
                 className="ml-1 inline-flex items-center gap-2 rounded-full border border-line bg-card py-1.5 pl-1.5 pr-3.5 transition hover:border-brand/30 hover:shadow-card"
               >
                 <span className="grid h-7 w-7 place-items-center rounded-full bg-brand text-xs font-bold text-white">
