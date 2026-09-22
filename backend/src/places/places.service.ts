@@ -36,7 +36,7 @@ type AutocompleteResponse = {
 type DetailsResponse = {
   id?: string;
   displayName?: Text;
-  formattedAddress?: string;
+  types?: string[];
 };
 
 type GoogleError = {
@@ -50,7 +50,12 @@ export class PlacesService {
   constructor(private readonly config: ConfigService) {}
 
   async autocomplete(input: string, sessionToken?: string) {
-    const body: Record<string, unknown> = { input };
+    // Cities and areas (Mohali, a neighbourhood) are places too. This search
+    // is for a business the widget can show reviews for, so those stay out.
+    const body: Record<string, unknown> = {
+      input,
+      includedPrimaryTypes: ['establishment'],
+    };
     if (sessionToken) {
       body.sessionToken = sessionToken;
     }
@@ -67,12 +72,15 @@ export class PlacesService {
         Boolean(prediction?.placeId),
       )
       .map((prediction) => {
-        const description = prediction.text?.text ?? '';
+        const name =
+          prediction.structuredFormat?.mainText?.text ||
+          prediction.text?.text ||
+          '';
         return {
           placeId: prediction.placeId as string,
-          name: prediction.structuredFormat?.mainText?.text ?? description,
-          address: prediction.structuredFormat?.secondaryText?.text ?? '',
-          description,
+          name,
+          address: '',
+          description: name,
         };
       });
   }
@@ -87,18 +95,23 @@ export class PlacesService {
       method: 'GET',
       headers: {
         // The new API refuses a request without an explicit field mask.
-        'X-Goog-FieldMask': 'id,displayName,formattedAddress',
+        'X-Goog-FieldMask': 'id,displayName,types',
       },
     });
 
     if (!data.id) {
       throw new BadRequestException('Place details returned no place id');
     }
+    if (!(data.types ?? []).includes('establishment')) {
+      throw new BadRequestException(
+        'That place is a location, not a business. Search for the business name.',
+      );
+    }
 
     return {
       placeId: data.id,
       name: data.displayName?.text ?? '',
-      address: data.formattedAddress ?? '',
+      address: '',
     };
   }
 

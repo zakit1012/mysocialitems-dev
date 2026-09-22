@@ -52,16 +52,15 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-list .msi-items{grid-template-columns:1fr}' +
     '.msi-masonry .msi-items{display:block;columns:240px var(--cols,3);column-gap:12px}' +
     '.msi-masonry .msi-card{break-inside:avoid;margin-bottom:12px}' +
-    '.msi-compact .msi-items{grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}' +
-    '.msi-compact .msi-card{padding:10px 12px}' +
-    '.msi-compact .msi-text{-webkit-line-clamp:3;font-size:12.5px}' +
-    '.msi-compact .msi-av{width:26px;height:26px;font-size:12px}' +
-    '.msi-car{position:relative;padding:0 22px}' +
-    '.msi-carousel .msi-items{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;padding-bottom:2px}' +
-    '.msi-carousel .msi-items::-webkit-scrollbar{display:none}' +
-    '.msi-carousel .msi-card{flex:0 0 280px;max-width:85%;scroll-snap-align:start}' +
-    '.msi-nav{position:absolute;top:50%;transform:translateY(-50%);width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--head);cursor:pointer;font-size:18px;line-height:1;display:grid;place-items:center;box-shadow:0 2px 6px rgba(0,0,0,.12);z-index:1;padding:0}' +
-    '.msi-prev{left:-4px}.msi-next{right:-4px}' +
+    '.msi-quotes .msi-items{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px}' +
+    '.msi-quotes .msi-card{display:flex;flex-direction:column;padding:20px 18px 16px}' +
+    '.msi-quotes .msi-card:before{content:"“";display:block;font:44px/0.7 Georgia,"Iowan Old Style",serif;color:var(--star);margin:0 0 10px}' +
+    '.msi-quotes .msi-text{font-size:15px;line-height:1.55}' +
+    '.msi-quotes .msi-top{order:2;margin:14px 0 0}' +
+    '.msi-quotes .msi-pics{order:3}' +
+    '.msi-showcase .msi-items{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:14px;align-items:stretch}' +
+    '.msi-showcase .msi-card{display:flex;flex-direction:column;height:100%;padding:18px 16px 14px}' +
+    '.msi-showcase .msi-text{flex:1}' +
     '.msi-card{position:relative;border:1px solid var(--line);border-radius:var(--r);padding:14px;background:var(--card)}' +
     '.msi-g{position:absolute;top:13px;right:13px;width:16px;height:16px;line-height:0}' +
     '.msi-g svg{width:16px;height:16px}' +
@@ -207,6 +206,8 @@ export function widgetScript(key: string, preview = false): string {
     var s = w.settings || {};
     var list = visible(host, data.reviews || [], s);
     var layout = s.layout || 'grid';
+    if (layout === 'carousel') layout = 'showcase';
+    if (layout === 'compact') layout = 'quotes';
 
     var classes = ['msi', 'msi-' + layout];
     if (s.theme === 'dark') classes.push('msi-dark', 'msi-pad');
@@ -268,13 +269,9 @@ export function widgetScript(key: string, preview = false): string {
       for (var i = 0; i < list.length; i++) items += card(list[i], s);
       if (!list.length) {
         html += '<div class="msi-empty">No reviews to show yet.</div>';
-      } else if (layout === 'carousel') {
-        html += '<div class="msi-car"><button type="button" class="msi-nav msi-prev" aria-label="Previous">\\u2039</button>' +
-          '<div class="msi-items">' + items + '</div>' +
-          '<button type="button" class="msi-nav msi-next" aria-label="Next">\\u203a</button></div>';
       } else {
         var style = '';
-        if (cols && layout === 'grid') {
+        if (cols && (layout === 'grid' || layout === 'quotes' || layout === 'showcase')) {
           style = cols === 1
             ? 'grid-template-columns:1fr'
             : 'grid-template-columns:repeat(auto-fit,minmax(max(220px,calc((100% - ' + (cols - 1) * 12 + 'px) / ' + cols + ')),1fr))';
@@ -299,25 +296,6 @@ export function widgetScript(key: string, preview = false): string {
       if (img) lightbox(img.getAttribute('src'));
     };
 
-    if (host.__msiTimer) clearInterval(host.__msiTimer);
-    host.__msiTimer = null;
-    if (layout === 'carousel') {
-      var track = host.querySelector('.msi-items');
-      var prev = host.querySelector('.msi-prev');
-      var next = host.querySelector('.msi-next');
-      if (track && prev && next) {
-        prev.onclick = function () { track.scrollBy({ left: -track.clientWidth * 0.8, behavior: 'smooth' }); };
-        next.onclick = function () { track.scrollBy({ left: track.clientWidth * 0.8, behavior: 'smooth' }); };
-        if (s.autoplay) {
-          host.__msiTimer = setInterval(function () {
-            // Pause while the visitor is reading.
-            if (track.matches(':hover')) return;
-            var atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
-            track.scrollTo({ left: atEnd ? 0 : track.scrollLeft + track.clientWidth * 0.8, behavior: 'smooth' });
-          }, 5000);
-        }
-      }
-    }
   }
 
   window.MySocialItems = window.MySocialItems || {};

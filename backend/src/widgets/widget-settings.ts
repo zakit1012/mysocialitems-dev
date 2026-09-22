@@ -10,7 +10,7 @@
  * plain hex colors are kept.
  */
 
-export const LAYOUTS = ['grid', 'masonry', 'list', 'carousel', 'compact'];
+export const LAYOUTS = ['grid', 'masonry', 'list', 'quotes', 'showcase'];
 export const SORTS = [
   'mostRelevant',
   'newest',
@@ -114,6 +114,10 @@ export function normalizeSettings(raw: unknown): WidgetSettings {
     if (name !== k && name in raw) continue;
     input[name] = v;
   }
+  // Older widgets used a sideways scroller and a cramped grid. Those render
+  // as the layouts that replaced them.
+  if (input.layout === 'carousel') input.layout = 'showcase';
+  if (input.layout === 'compact') input.layout = 'quotes';
 
   const out: WidgetSettings = {};
   if (input.theme === 'light' || input.theme === 'dark') {

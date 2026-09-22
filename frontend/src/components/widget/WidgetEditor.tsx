@@ -60,19 +60,18 @@ function LayoutSketch({ id }: { id: Layout }) {
           {[0, 1, 2].map((i) => <span key={i} className={`${box} flex-1`} />)}
         </div>
       );
-    case "carousel":
+    case "quotes":
       return (
-        <div className="flex h-9 w-12 items-center gap-0.5">
-          <span className="text-[10px] leading-none">‹</span>
-          <span className={`${box} h-full flex-1`} />
-          <span className={`${box} h-full flex-1 opacity-60`} />
-          <span className="text-[10px] leading-none">›</span>
+        <div className="flex h-9 w-12 flex-col justify-center gap-1 px-0.5">
+          <span className="font-serif text-sm leading-none">“</span>
+          <span className={`${box} h-1.5 w-full`} />
+          <span className={`${box} h-1.5 w-2/3`} />
         </div>
       );
-    case "compact":
+    case "showcase":
       return (
-        <div className="grid h-9 w-12 grid-cols-3 gap-0.5">
-          {[0, 1, 2, 3, 4, 5].map((i) => <span key={i} className={box} />)}
+        <div className="flex h-9 w-12 items-stretch gap-1">
+          {[0, 1, 2].map((i) => <span key={i} className={`${box} flex-1`} />)}
         </div>
       );
   }
@@ -82,8 +81,8 @@ const LAYOUTS: { id: Layout; label: string; hint: string }[] = [
   { id: "grid", label: "Grid", hint: "Cards in rows" },
   { id: "masonry", label: "Masonry", hint: "Pinterest style" },
   { id: "list", label: "List", hint: "One per row" },
-  { id: "carousel", label: "Carousel", hint: "Swipe sideways" },
-  { id: "compact", label: "Compact", hint: "Small & tight" },
+  { id: "quotes", label: "Quotes", hint: "Big testimonial text" },
+  { id: "showcase", label: "Showcase", hint: "Even row, no arrows" },
 ];
 
 export function WidgetEditor({
@@ -103,7 +102,12 @@ export function WidgetEditor({
   const [tab, setTab] = useState<TabId>("layout");
   const set = (patch: Partial<WidgetSettings>) => onChange({ ...value, ...patch });
   const theme = value.theme ?? "light";
-  const layout = value.layout ?? "grid";
+  const layout =
+    value.layout === ("carousel" as Layout)
+      ? "showcase"
+      : value.layout === ("compact" as Layout)
+        ? "quotes"
+        : (value.layout ?? "grid");
   const count = Math.min(value.reviewCount ?? maxReviews, maxReviews);
 
   return (
@@ -150,13 +154,7 @@ export function WidgetEditor({
               </div>
             </Section>
 
-            {layout === "carousel" && (
-              <Section title="Carousel" hint="Slides every 5 seconds and pauses while someone hovers.">
-                <ToggleRow label="Autoplay" k="autoplay" value={value} set={set} />
-              </Section>
-            )}
-
-            {(layout === "grid" || layout === "masonry") && (
+            {(layout === "grid" || layout === "masonry" || layout === "quotes" || layout === "showcase") && (
               <Section title="Columns" hint="Auto fits as many as the space allows.">
                 <Segmented
                   value={value.gridColumns ?? "auto"}

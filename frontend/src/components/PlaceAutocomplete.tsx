@@ -179,9 +179,6 @@ export function PlaceAutocomplete({ onSelect }: Props) {
                 className="w-full px-4 py-3 text-left hover:bg-sand"
               >
                 <p className="font-medium">{item.name}</p>
-                <p className="text-sm text-muted">
-                  {item.address || item.description}
-                </p>
               </button>
             </li>
           ))}
@@ -191,9 +188,6 @@ export function PlaceAutocomplete({ onSelect }: Props) {
       {selected && (
         <div className="mt-3 rounded-2xl border border-line bg-sand p-4">
           <p className="font-semibold">{selected.name}</p>
-          <p className="text-sm text-muted">
-            {selected.address || selected.description}
-          </p>
 
           <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">
             Place ID
