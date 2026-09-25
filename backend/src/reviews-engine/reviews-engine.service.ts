@@ -46,6 +46,9 @@ const MAX_WAIT_MS = 50_000;
 // show up within minutes; the engine keeps its own longer cache behind this.
 const EMBED_CACHE_SECONDS = 300;
 
+/** The hours the engine refreshes a place at, written by EngineSyncService. */
+export const placeHoursKey = (placeId: string) => `engine:every:${placeId}`;
+
 @Injectable()
 export class ReviewsEngineService {
   private readonly log = new Logger(ReviewsEngineService.name);
@@ -129,13 +132,27 @@ export class ReviewsEngineService {
    * site lands. A finished answer is kept in Redis for a few minutes, so most
    * views skip the round trip to the engine. "Still fetching" and failures
    * are never kept - the next view asks again.
+   *
+   * Reviews are cached per place, so a place a Business widget also shows
+   * refreshes every 12h for everyone on it. A widget on a slower plan then
+   * keeps its own copy for its plan's hours instead, so it still updates at
+   * its own pace (a Free widget every 48h).
    */
   async fetchCached(
     placeId: string,
     count: number,
     sort: string,
+    planHours: number,
   ): Promise<EngineResult> {
-    const key = `engine:${placeId}:${sort}:${count}`;
+    let placeHours = planHours;
+    try {
+      placeHours =
+        (await this.redis.getJson<number>(placeHoursKey(placeId))) ?? planHours;
+    } catch {
+      // No cadence known yet: treat the place as this plan's own.
+    }
+    const held = planHours > placeHours;
+    const key = `engine:${placeId}:${sort}:${count}:${held ? `${planHours}h` : 'live'}`;
     try {
       const hit = await this.redis.getJson<EngineResult>(key);
       if (hit) return { ...hit, took_ms: 0 };
@@ -146,7 +163,7 @@ export class ReviewsEngineService {
     const result = await this.fetch(placeId, count, sort);
     if (result.served !== 'fetching' && !result.error) {
       this.redis
-        .setJson(key, result, EMBED_CACHE_SECONDS)
+        .setJson(key, result, held ? planHours * 3600 : EMBED_CACHE_SECONDS)
         .catch((err) =>
           this.log.warn(`Embed cache write failed: ${String(err)}`),
         );

@@ -249,6 +249,14 @@ export function WidgetEditor({
         {tab === "content" && (
           <>
             <Section title="Header">
+              <Segmented
+                value={value.headerAlign ?? "center"}
+                options={[
+                  { value: "left", label: "Left" },
+                  { value: "center", label: "Center" },
+                ]}
+                onChange={(v) => set({ headerAlign: v as WidgetSettings["headerAlign"] })}
+              />
               <ToggleRow label="“Google Reviews” label" k="showHeaderGoogle" value={value} set={set} />
               <ToggleRow label="Business name" k="showBusinessName" value={value} set={set} />
               <ToggleRow label="Overall rating" k="showOverallRating" value={value} set={set} />

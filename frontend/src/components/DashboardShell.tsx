@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import {
   ArrowLeft,
+  ChartColumn,
   CreditCard,
   Globe,
   LayoutGrid,
@@ -17,6 +18,7 @@ import { Spinner } from "./Spinner";
 
 const LINKS = [
   { href: "/dashboard", label: "Widgets", icon: LayoutGrid },
+  { href: "/dashboard/analytics", label: "Analytics", icon: ChartColumn },
   { href: "/dashboard/sources", label: "Sources", icon: Globe },
   { href: "/dashboard/widgets/new", label: "New widget", icon: Plus },
   { href: "/dashboard/billing", label: "Billing", icon: CreditCard },

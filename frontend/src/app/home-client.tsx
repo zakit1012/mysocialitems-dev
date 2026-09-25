@@ -108,13 +108,14 @@ type PublicPlan = {
   widgets: number;
   reviews: number;
   views: number | null;
+  refreshHours: number;
 };
 
 /** Shown until the live plans load, and if the API is unreachable. */
 const DEFAULT_PLANS: PublicPlan[] = [
-  { id: "FREE", name: "Free", priceUsd: 0, sources: 1, widgets: 1, reviews: 3, views: 200 },
-  { id: "PRO", name: "Pro", priceUsd: 5, sources: 3, widgets: 3, reviews: 10, views: null },
-  { id: "BUSINESS", name: "Business", priceUsd: 10, sources: 8, widgets: 8, reviews: 50, views: null },
+  { id: "FREE", name: "Free", priceUsd: 0, sources: 1, widgets: 1, reviews: 3, views: 200, refreshHours: 48 },
+  { id: "PRO", name: "Pro", priceUsd: 5, sources: 3, widgets: 3, reviews: 10, views: null, refreshHours: 24 },
+  { id: "BUSINESS", name: "Business", priceUsd: 10, sources: 8, widgets: 8, reviews: 50, views: null, refreshHours: 12 },
 ];
 
 const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
@@ -130,6 +131,7 @@ function toCard(p: PublicPlan, index: number, count: number) {
       plural(p.sources, "website"),
       `${p.reviews} reviews shown`,
       p.views === null ? "Unlimited views" : `${p.views.toLocaleString()} views/month`,
+      `Reviews update every ${p.refreshHours} hours`,
     ],
     cta: free ? "Get started free" : `Choose ${p.name}`,
     href: "/register",

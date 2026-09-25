@@ -12,6 +12,8 @@ export type Plan = {
   reviews: number;
   /** Widget loads per calendar month. UNLIMITED means no cap. */
   views: number;
+  /** Hours between automatic review refreshes. */
+  refreshHours: number;
   active: boolean;
   sortOrder: number;
   paypalPlanIdSandbox: string | null;
@@ -35,6 +37,7 @@ export const DEFAULT_PLANS: Omit<
     widgets: 1,
     reviews: 3,
     views: 200,
+    refreshHours: 48,
     active: true,
     sortOrder: 0,
   },
@@ -46,6 +49,7 @@ export const DEFAULT_PLANS: Omit<
     widgets: 3,
     reviews: 10,
     views: UNLIMITED,
+    refreshHours: 24,
     active: true,
     sortOrder: 1,
   },
@@ -57,6 +61,7 @@ export const DEFAULT_PLANS: Omit<
     widgets: 8,
     reviews: 50,
     views: UNLIMITED,
+    refreshHours: 12,
     active: true,
     sortOrder: 2,
   },
@@ -71,11 +76,17 @@ export const ADMIN_LIMITS: Plan = {
   widgets: 1_000_000,
   reviews: 50,
   views: UNLIMITED,
+  refreshHours: 12,
   active: true,
   sortOrder: 99,
   paypalPlanIdSandbox: null,
   paypalPlanIdLive: null,
 };
+
+/** Plans saved before refresh hours existed, or added without one. */
+export function defaultRefreshHours(key: string): number {
+  return DEFAULT_PLANS.find((p) => p.key === key)?.refreshHours ?? 24;
+}
 
 export function currentPeriod(date = new Date()): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;

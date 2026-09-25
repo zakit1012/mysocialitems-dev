@@ -16,6 +16,7 @@ type PlanCard = {
   widgets: number;
   reviews: number;
   views: number;
+  refreshHours: number;
   available: boolean;
 };
 
@@ -218,6 +219,7 @@ function Billing() {
                 <Feature>{p.sources} domain{p.sources === 1 ? "" : "s"}</Feature>
                 <Feature>{p.reviews} reviews per widget</Feature>
                 <Feature>{p.views >= UNLIMITED ? "Unlimited views" : `${p.views.toLocaleString()} views a month`}</Feature>
+                <Feature>Reviews update every {p.refreshHours} hours</Feature>
               </ul>
               <div className="mt-auto pt-5">
                 {current ? (

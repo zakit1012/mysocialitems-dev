@@ -45,6 +45,7 @@ export type WidgetSettings = {
   reviewCount?: number;
   radius?: "none" | "md" | "lg";
   textLines?: "3" | "6" | "all";
+  headerAlign?: "left" | "center";
   buttonPosition?: "left" | "center" | "right" | "full";
   writeButtonIcon?: ButtonIcon;
   allButtonIcon?: ButtonIcon;
@@ -60,6 +61,7 @@ export const DEFAULT_SETTINGS: WidgetSettings = {
   sort: "mostRelevant",
   radius: "md",
   textLines: "6",
+  headerAlign: "center",
   buttonPosition: "center",
   writeButtonIcon: "chat",
   allButtonIcon: "google",

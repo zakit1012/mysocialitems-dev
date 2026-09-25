@@ -243,6 +243,7 @@ export class BillingService {
         widgets: p.widgets,
         reviews: p.reviews,
         views: p.views,
+        refreshHours: p.refreshHours,
         available:
           p.key === FREE_KEY ||
           (enabled && Boolean(await this.paypalPlanId(p))),
@@ -365,6 +366,7 @@ export class BillingService {
         widgets: p.widgets,
         reviews: p.reviews,
         views: p.views >= UNLIMITED ? null : p.views,
+        refreshHours: p.refreshHours,
       }));
   }
 

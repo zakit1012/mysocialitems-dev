@@ -5,7 +5,13 @@ import {
 } from '@nestjs/common';
 import type { BillingPlan } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_PLANS, FREE_KEY, Plan, UNLIMITED } from './plans';
+import {
+  DEFAULT_PLANS,
+  FREE_KEY,
+  Plan,
+  UNLIMITED,
+  defaultRefreshHours,
+} from './plans';
 
 @Injectable()
 export class PlansService {
@@ -23,6 +29,7 @@ export class PlansService {
       widgets: row.widgets,
       reviews: row.reviews,
       views: row.views ?? UNLIMITED,
+      refreshHours: row.refreshHours ?? defaultRefreshHours(row.key),
       active: row.active,
       sortOrder: row.sortOrder,
       paypalPlanIdSandbox: row.paypalPlanIdSandbox,
@@ -105,6 +112,16 @@ export class PlansService {
     whole(input.widgets, 'Widgets', 10_000);
     // The review engine serves at most 50 reviews per call.
     whole(input.reviews, 'Reviews per widget', 50);
+    // The review engine refreshes at most every 2 hours and keeps a cache 7 days.
+    const hours = input.refreshHours;
+    if (
+      hours !== undefined &&
+      !(Number.isInteger(hours) && hours >= 2 && hours <= 168)
+    ) {
+      throw new BadRequestException(
+        'Refresh hours must be a whole number from 2 to 168.',
+      );
+    }
     if (
       input.views !== undefined &&
       input.views !== null &&
@@ -132,6 +149,7 @@ export class PlansService {
       widgets: input.widgets,
       reviews: input.reviews,
       views,
+      refreshHours: input.refreshHours,
       active: input.active,
       sortOrder: input.sortOrder,
       paypalPlanIdSandbox: input.paypalPlanIdSandbox,
@@ -153,6 +171,7 @@ export class PlansService {
         widgets: input.widgets ?? 1,
         reviews: input.reviews ?? 3,
         views: views ?? null,
+        refreshHours: input.refreshHours ?? null,
         active: input.active ?? true,
         sortOrder: input.sortOrder ?? 50,
       },

@@ -70,6 +70,7 @@ export class AdminBillingController {
         body.views === null || body.views === 'unlimited'
           ? Number.MAX_SAFE_INTEGER
           : num(body.views),
+      refreshHours: num(body.refreshHours),
       active: body.active === undefined ? undefined : Boolean(body.active),
       sortOrder: num(body.sortOrder),
       paypalPlanIdSandbox:

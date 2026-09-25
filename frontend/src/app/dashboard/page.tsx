@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy, MapPin, Plus, Store } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { UsageBanner } from "@/components/UsageBanner";
 
 type Widget = {
   id: string;
@@ -53,6 +54,8 @@ export default function DashboardPage() {
           Create widget
         </Link>
       </header>
+
+      <UsageBanner />
 
       {error && (
         <p className="mt-6 rounded-2xl bg-coral/10 px-4 py-3 text-sm text-coral">

@@ -15,6 +15,7 @@ type Plan = {
   widgets: number;
   reviews: number;
   views: number;
+  refreshHours: number;
   active: boolean;
   sortOrder: number;
   paypalPlanIdSandbox: string | null;
@@ -59,6 +60,7 @@ export function PlansTab({ token }: { token: string | null }) {
           widgets: d.widgets,
           reviews: d.reviews,
           views: d.views.trim() === "" ? "unlimited" : Number(d.views),
+          refreshHours: d.refreshHours,
           active: d.active,
           sortOrder: d.sortOrder,
           paypalPlanIdSandbox: d.paypalPlanIdSandbox ?? "",
@@ -100,7 +102,7 @@ export function PlansTab({ token }: { token: string | null }) {
       await api(`/admin/billing/plans/${encodeURIComponent(key)}`, {
         method: "PUT",
         token,
-        body: JSON.stringify({ name: key, priceUsd: 20, sources: 10, widgets: 10, reviews: 50, views: "unlimited", active: false }),
+        body: JSON.stringify({ name: key, priceUsd: 20, sources: 10, widgets: 10, reviews: 50, views: "unlimited", refreshHours: 12, active: false }),
       });
       setMsg({ ok: true, text: `${key.toUpperCase()} added as inactive - set it up, then switch it on.` });
       await load();
@@ -119,6 +121,7 @@ export function PlansTab({ token }: { token: string | null }) {
         <p className="text-[12.5px] text-muted">
           Price changes on a plan that is already on PayPal are pushed there too. PayPal tells existing
           subscribers and applies the new price from their next cycle. Blank views = unlimited.
+          Refresh = hours between automatic review updates (2-168).
         </p>
         <button type="button" onClick={addPlan} disabled={busy === "add"}
           className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-semibold hover:border-brand/40 hover:text-brand">
@@ -133,10 +136,10 @@ export function PlansTab({ token }: { token: string | null }) {
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] text-[12.5px]">
+        <table className="w-full min-w-[1060px] text-[12.5px]">
           <thead>
             <tr className="border-b border-line text-left text-[10.5px] uppercase tracking-wide text-muted">
-              {["Key", "Name", "Price $", "Sources", "Widgets", "Reviews", "Views/mo", "On", "PayPal sandbox id", "PayPal live id", ""].map((h) => (
+              {["Key", "Name", "Price $", "Sources", "Widgets", "Reviews", "Views/mo", "Refresh h", "On", "PayPal sandbox id", "PayPal live id", ""].map((h) => (
                 <th key={h} className="px-2 py-2 font-bold">{h}</th>
               ))}
             </tr>
@@ -153,6 +156,7 @@ export function PlansTab({ token }: { token: string | null }) {
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={0} value={d.widgets} onChange={(e) => edit(d.key, "widgets", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={1} max={50} value={d.reviews} onChange={(e) => edit(d.key, "reviews", e.target.value)} /></td>
                   <td className="px-2 py-2 w-24"><input className={input} placeholder="unlimited" value={d.views} onChange={(e) => edit(d.key, "views", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-16"><input className={input} type="number" min={2} max={168} value={d.refreshHours} onChange={(e) => edit(d.key, "refreshHours", e.target.value)} /></td>
                   <td className="px-2 py-2"><input type="checkbox" checked={d.active} onChange={(e) => edit(d.key, "active", e.target.checked)} className="h-4 w-4 accent-brand" /></td>
                   <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder="P-..." value={d.paypalPlanIdSandbox ?? ""} onChange={(e) => edit(d.key, "paypalPlanIdSandbox", e.target.value)} /></td>
                   <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder="P-..." value={d.paypalPlanIdLive ?? ""} onChange={(e) => edit(d.key, "paypalPlanIdLive", e.target.value)} /></td>

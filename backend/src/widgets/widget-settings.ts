@@ -24,6 +24,7 @@ const BUTTON_POSITIONS = ['left', 'center', 'right', 'full'];
 const BUTTON_ICONS = ['google', 'chat', 'star', 'none'];
 const RADII = ['none', 'md', 'lg'];
 const TEXT_LINES = ['3', '6', 'all'];
+const HEADER_ALIGNS = ['left', 'center'];
 /** The review engine serves at most this many per call. */
 export const MAX_REVIEW_COUNT = 50;
 
@@ -92,6 +93,7 @@ export type WidgetSettings = {
   allButtonIcon?: string;
   radius?: string;
   textLines?: string;
+  headerAlign?: string;
 } & Partial<Record<(typeof COLOR_KEYS)[number], string>> &
   Partial<Record<(typeof BOOL_KEYS)[number], boolean>>;
 
@@ -135,6 +137,7 @@ export function normalizeSettings(raw: unknown): WidgetSettings {
     ['allButtonIcon', BUTTON_ICONS],
     ['radius', RADII],
     ['textLines', TEXT_LINES],
+    ['headerAlign', HEADER_ALIGNS],
   ];
   for (const [key, allowed] of picks) {
     const v = oneOf(input[key], allowed);

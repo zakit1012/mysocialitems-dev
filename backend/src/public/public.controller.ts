@@ -2,7 +2,9 @@ import {
   Controller,
   Get,
   Header,
+  HttpCode,
   Param,
+  Post,
   Query,
   Req,
   Res,
@@ -13,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { BillingService } from '../billing/billing.service';
 import { RedisService } from '../redis/redis.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { hostFrom, hostMatches } from '../sources/domain.util';
 import {
   MAX_REVIEW_COUNT,
@@ -38,6 +41,7 @@ export class PublicController {
     private readonly engine: ReviewsEngineService,
     private readonly billing: BillingService,
     private readonly redis: RedisService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   /**
@@ -143,10 +147,12 @@ export class PublicController {
     // Only 5-star reviews are shown. Asking for just the allowance and then
     // filtering can leave one card, so take everything the engine has cached
     // for this place (no extra scrape) and cut to the allowance afterwards.
+    const plan = await this.billing.planFor(widget.userId);
     const result = await this.engine.fetchCached(
       widget.placeId,
       MAX_REVIEW_COUNT,
       order,
+      plan.refreshHours,
     );
 
     // A place loaded for the first time is still being collected, and the
@@ -158,16 +164,18 @@ export class PublicController {
 
     // A shown widget counts against the owner's monthly views (once per
     // visitor per window), and the plan decides how many reviews it shows.
-    const usage = await this.billing.recordView(
-      widget.userId,
-      await this.isNewView(widget.id, req),
-    );
+    const isNew = await this.isNewView(widget.id, req);
+    const usage = await this.billing.recordView(widget.userId, isNew);
     if (!usage.allowed) {
+      // Shown to the owner as visitors their widget missed.
+      void this.analytics.record(widget.id, { missed: isNew ? 1 : 0 });
       return res.status(402).json({
         error:
           'This widget has used its monthly views. The owner can upgrade to show it again.',
       });
     }
+
+    void this.analytics.record(widget.id, { loads: 1, views: isNew ? 1 : 0 });
 
     // data-count on the snippet wins, then the widget's own setting; the plan
     // is the ceiling either way.
@@ -198,5 +206,17 @@ export class PublicController {
       took_ms: result.took_ms,
       error: result.error,
     });
+  }
+
+  /**
+   * A click on "Write a review" or "See all reviews", sent by the script with
+   * navigator.sendBeacon. Analytics only; the answer is never read.
+   */
+  @Post('widgets/:key/click')
+  @HttpCode(204)
+  async click(@Param('key') key: string, @Req() req: Request) {
+    const resolved = await this.resolve(key, req);
+    if (resolved.ok)
+      await this.analytics.record(resolved.widget.id, { clicks: 1 });
   }
 }

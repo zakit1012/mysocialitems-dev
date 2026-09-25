@@ -73,6 +73,7 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-nav:hover{border-color:var(--btn);color:var(--btn)}' +
     '.msi-prev{left:-6px}.msi-next{right:-6px}' +
     '.msi-fits .msi-nav{display:none}' +
+    '.msi-fits .msi-items{justify-content:center}' +
     '.msi-card{position:relative;border:1px solid var(--line);border-radius:var(--r);padding:14px;background:var(--card)}' +
     '.msi-g{position:absolute;top:13px;right:13px;width:16px;height:16px;line-height:0}' +
     '.msi-g svg{width:16px;height:16px}' +
@@ -90,14 +91,25 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-italic .msi-text{font-style:italic}' +
     '.msi-bold .msi-text{font-weight:700}' +
     '.msi-pics{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}' +
-    '.msi-pics img{width:52px;height:52px;border-radius:min(var(--r),8px);object-fit:cover;cursor:zoom-in}' +
+    '.msi-pic{position:relative;display:block;padding:0;border:0;background:none;line-height:0;cursor:zoom-in;border-radius:min(var(--r),8px);overflow:hidden}' +
+    '.msi-pics img{width:52px;height:52px;border-radius:min(var(--r),8px);object-fit:cover;transition:transform .2s}' +
+    '.msi-pic:hover img{transform:scale(1.06)}' +
+    '.msi-pic-more{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.55);color:#fff;font-size:14px;font-weight:700;line-height:1}' +
     '.msi-more-btn{display:inline-block;background:none;border:0;padding:0;margin-top:6px;color:var(--btn);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}' +
     '.msi-more-btn:hover{text-decoration:underline}' +
     '.msi-open .msi-text{display:block;-webkit-line-clamp:unset}' +
     '.msi-brand{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px}' +
     '.msi-brand svg{width:18px;height:18px;flex:none}' +
-    '.msi-lb{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.85);display:grid;place-items:center;padding:20px;cursor:zoom-out}' +
-    '.msi-lb img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5)}' +
+    '.msi-hc .msi-head{flex-direction:column;justify-content:center;text-align:center}' +
+    '.msi-hc .msi-brand,.msi-hc .msi-sum{justify-content:center}' +
+    '.msi-lb{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;padding:60px 16px;cursor:zoom-out;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}' +
+    '.msi-lb img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5);cursor:default;user-select:none}' +
+    '.msi-lb button{position:absolute;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;line-height:1;transition:background .2s}' +
+    '.msi-lb button:hover{background:rgba(255,255,255,.3)}' +
+    '.msi-lb-x{top:14px;right:14px;width:40px;height:40px;font-size:26px}' +
+    '.msi-lb-nav{top:50%;width:46px;height:46px;margin-top:-23px;font-size:30px}' +
+    '.msi-lb-prev{left:12px}.msi-lb-next{right:12px}' +
+    '.msi-lb-count{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);padding:5px 11px;border-radius:999px;background:rgba(0,0,0,.5);color:#fff;font-size:13px;font-weight:600}' +
     '.msi-foot{margin-top:16px;display:flex;justify-content:var(--btn-pos,center)}' +
     '.msi-full .msi-foot .msi-btn{width:100%}' +
     '.msi-empty{color:var(--muted);font-size:13px;padding:8px 0}' +
@@ -132,6 +144,11 @@ export function widgetScript(key: string, preview = false): string {
     return /^https?:\\/\\//i.test(String(u || '')) ? esc(u) : '#';
   }
 
+  /** url() for a DOM property: same check, but not HTML-escaped. */
+  function rawUrl(u) {
+    return /^https?:\\/\\//i.test(String(u || '')) ? String(u) : '';
+  }
+
   /** Colors are validated server side; this is a second fence. */
   function hex(c) {
     return /^#[0-9a-fA-F]{3,8}$/.test(String(c || '')) ? c : '';
@@ -145,9 +162,9 @@ export function widgetScript(key: string, preview = false): string {
       '<i>' + row + '</i><b style="width:' + value * 20 + '%">' + row + '</b></span>';
   }
 
-  function card(r, s) {
+  function card(r, s, index) {
     var initial = (r.author || '?').trim().charAt(0).toUpperCase();
-    var html = '<div class="msi-card">' +
+    var html = '<div class="msi-card" data-i="' + index + '">' +
       (s.showGoogleIcon !== false ? '<span class="msi-g" title="Posted on Google">' + GOOGLE + '</span>' : '') +
       '<div class="msi-top">';
     if (s.showReviewerPhoto !== false) {
@@ -162,8 +179,13 @@ export function widgetScript(key: string, preview = false): string {
       '<p class="msi-text">' + esc(r.text) + '</p>';
     if (s.showReviewPhotos !== false && r.images && r.images.length) {
       html += '<div class="msi-pics">';
-      for (var j = 0; j < Math.min(r.images.length, 4); j++) {
-        html += '<img loading="lazy" referrerpolicy="no-referrer" src="' + url(r.images[j]) + '" alt="Photo from the review">';
+      var thumbs = Math.min(r.images.length, 4);
+      for (var j = 0; j < thumbs; j++) {
+        // The last thumbnail says how many more the viewer holds.
+        var more = j === thumbs - 1 && r.images.length > thumbs
+          ? '<span class="msi-pic-more">+' + (r.images.length - thumbs) + '</span>' : '';
+        html += '<button type="button" class="msi-pic" data-n="' + j + '" aria-label="Open photo ' + (j + 1) + ' of ' + r.images.length + '">' +
+          '<img loading="lazy" referrerpolicy="no-referrer" src="' + url(r.images[j]) + '" alt="Photo from the review">' + more + '</button>';
       }
       html += '</div>';
     }
@@ -195,26 +217,36 @@ export function widgetScript(key: string, preview = false): string {
   }
 
   /**
-   * Arrows move one view at a time and wrap around at either end. Autoplay
-   * moves every 5s and pauses while the visitor hovers. The arrows hide when
-   * every card already fits.
+   * Cards are sized so a view holds only whole cards - never half of one at
+   * the edge. "Columns" caps how many a view shows; a phone gets one. Arrows
+   * move one view and wrap around at either end. Autoplay moves every 5s and
+   * pauses while the visitor hovers. When every card fits, the arrows hide
+   * and the cards sit centred.
    */
-  function carousel(host, s) {
+  function carousel(host, s, cols) {
+    var GAP = 12, MIN = 240;
     var wrap = host.querySelector('.msi-car');
     var track = wrap && wrap.querySelector('.msi-items');
     if (!track) return;
+    function perView(width) {
+      var n = Math.max(1, Math.floor((width + GAP) / (MIN + GAP)));
+      return cols ? Math.min(cols, n) : n;
+    }
     function step(dir) {
       var atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
       var atStart = track.scrollLeft <= 4;
       var left = dir > 0 && atEnd ? 0
         : dir < 0 && atStart ? track.scrollWidth
-        : track.scrollLeft + dir * track.clientWidth * 0.9;
+        : track.scrollLeft + dir * (track.clientWidth + GAP);
       track.scrollTo({ left: left, behavior: 'smooth' });
     }
     wrap.querySelector('.msi-prev').onclick = function () { step(-1); };
     wrap.querySelector('.msi-next').onclick = function () { step(1); };
     function fit() {
-      wrap.classList.toggle('msi-fits', track.scrollWidth <= track.clientWidth + 4);
+      wrap.classList.toggle('msi-fits', track.children.length <= perView(wrap.clientWidth));
+      // Measured after the arrows' gutters are on or off.
+      var width = track.clientWidth, per = perView(width);
+      wrap.style.setProperty('--slide', (width - (per - 1) * GAP) / per + 'px');
     }
     fit();
     setTimeout(fit, 400);
@@ -228,18 +260,63 @@ export function widgetScript(key: string, preview = false): string {
     }
   }
 
-  function lightbox(src) {
+  /**
+   * Full-screen viewer for one review's photos: arrows, keyboard left/right,
+   * swipe on phones, and a "2 / 5" count. Escape, the x or the dark backdrop
+   * closes it.
+   */
+  function lightbox(images, start) {
+    images = images.filter(rawUrl);
+    if (!images.length) return;
+    var many = images.length > 1, at = 0;
     var box = document.createElement('div');
     box.className = 'msi-lb';
-    box.innerHTML = '<img src="' + url(src) + '" alt="" referrerpolicy="no-referrer">';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    box.setAttribute('aria-label', 'Review photos');
+    box.innerHTML = '<img alt="Photo from the review" referrerpolicy="no-referrer">' +
+      '<button type="button" class="msi-lb-x" aria-label="Close">\\u00d7</button>' +
+      (many
+        ? '<button type="button" class="msi-lb-nav msi-lb-prev" aria-label="Previous photo">\\u2039</button>' +
+          '<button type="button" class="msi-lb-nav msi-lb-next" aria-label="Next photo">\\u203a</button>' +
+          '<div class="msi-lb-count"></div>'
+        : '');
+    var img = box.querySelector('img');
+    var count = box.querySelector('.msi-lb-count');
+    function show(n) {
+      at = (n + images.length) % images.length;
+      img.src = rawUrl(images[at]);
+      if (count) count.textContent = (at + 1) + ' / ' + images.length;
+    }
+    var scroll = document.documentElement.style.overflow;
     function close() {
       if (box.parentNode) box.parentNode.removeChild(box);
       document.removeEventListener('keydown', onKey);
+      document.documentElement.style.overflow = scroll;
     }
-    function onKey(e) { if (e.key === 'Escape') close(); }
-    box.onclick = close;
+    function onKey(e) {
+      if (e.key === 'Escape') close();
+      else if (many && e.key === 'ArrowLeft') show(at - 1);
+      else if (many && e.key === 'ArrowRight') show(at + 1);
+    }
+    box.onclick = function (e) {
+      if (e.target.closest('.msi-lb-prev')) show(at - 1);
+      else if (e.target.closest('.msi-lb-next')) show(at + 1);
+      else if (e.target !== img) close();
+    };
+    var x0 = null;
+    box.addEventListener('touchstart', function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+    box.addEventListener('touchend', function (e) {
+      if (x0 === null) return;
+      var dx = e.changedTouches[0].clientX - x0;
+      x0 = null;
+      if (many && Math.abs(dx) > 40) show(at + (dx < 0 ? 1 : -1));
+    });
     document.addEventListener('keydown', onKey);
+    document.documentElement.style.overflow = 'hidden';
     document.body.appendChild(box);
+    show(start || 0);
+    box.querySelector('.msi-lb-x').focus();
   }
 
   /** 5-star reviews only, then how many: data-count on the snippet, else the widget setting. */
@@ -273,6 +350,8 @@ export function widgetScript(key: string, preview = false): string {
     if (s.radius === 'none' || s.radius === 'lg') classes.push('msi-r-' + s.radius);
     if (s.textLines === '3' || s.textLines === 'all') classes.push('msi-lines-' + s.textLines);
     if (s.showGoogleIcon !== false) classes.push('msi-gi');
+    // Header centred unless the owner picked left.
+    if (s.headerAlign !== 'left') classes.push('msi-hc');
 
     var vars = [];
     function v(name, value) { if (value) vars.push(name + ':' + value); }
@@ -319,13 +398,11 @@ export function widgetScript(key: string, preview = false): string {
 
     if (showList) {
       var items = '';
-      for (var i = 0; i < list.length; i++) items += card(list[i], s);
+      for (var i = 0; i < list.length; i++) items += card(list[i], s, i);
       if (!list.length) {
         html += '<div class="msi-empty">No reviews to show yet.</div>';
       } else if (layout === 'carousel') {
-        // Columns here means how many cards one view shows.
-        var slide = cols ? 'calc((100% - ' + (cols - 1) * 12 + 'px) / ' + cols + ')' : '';
-        html += '<div class="msi-car"' + (slide ? ' style="--slide:' + slide + '"' : '') + '>' +
+        html += '<div class="msi-car">' +
           '<button type="button" class="msi-nav msi-prev" aria-label="Previous">\\u2039</button>' +
           '<div class="msi-items">' + items + '</div>' +
           '<button type="button" class="msi-nav msi-next" aria-label="Next">\\u203a</button></div>';
@@ -353,15 +430,23 @@ export function widgetScript(key: string, preview = false): string {
     host.__msiTimer = host.__msiResize = null;
 
     host.innerHTML = html + '</div>';
-    if (layout === 'carousel') carousel(host, s);
+    // Columns here means the most cards one view shows.
+    if (layout === 'carousel') carousel(host, s, cols);
 
     addReadMore(host, s);
     // Fonts and images can change line breaks after the first paint.
     setTimeout(function () { addReadMore(host, s); }, 400);
 
     host.onclick = function (e) {
-      var img = e.target && e.target.closest ? e.target.closest('.msi-pics img') : null;
-      if (img) lightbox(img.getAttribute('src'));
+      if (!e.target || !e.target.closest) return;
+      // Button clicks feed the owner's analytics; the preview has no key.
+      if (e.target.closest('a.msi-btn') && !PREVIEW && KEY && navigator.sendBeacon) {
+        navigator.sendBeacon(BASE + API + encodeURIComponent(KEY) + '/click');
+      }
+      var pic = e.target.closest('.msi-pic');
+      if (!pic) return;
+      var review = list[Number(pic.closest('.msi-card').getAttribute('data-i'))];
+      if (review && review.images) lightbox(review.images, Number(pic.getAttribute('data-n')));
     };
 
   }

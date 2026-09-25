@@ -17,10 +17,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  deals      Deal[]
-  favorites  Favorite[]
-  vouchers   Voucher[]
-  reviews    Review[]
+  deals        Deal[]
+  favorites    Favorite[]
+  vouchers     Voucher[]
+  reviews      Review[]
   widgets      Widget[]
   sources      Source[]
   subscription Subscription?
@@ -121,23 +121,45 @@ model Widget {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   sources Source[]
+  stats   WidgetStat[]
 
   @@index([userId])
+}
+
+/// One row per widget per day (UTC) for the owner's analytics page. The
+/// monthly count the plan limit is checked against lives in Usage.
+model WidgetStat {
+  id       String @id @default(cuid())
+  widgetId String
+  /// YYYY-MM-DD in UTC.
+  day      String
+  /// Shown and counted towards the plan: once per visitor per 30 minutes.
+  views    Int    @default(0)
+  /// Every time the widget was shown, reloads included.
+  loads    Int    @default(0)
+  /// Clicks on "Write a review" and "See all reviews".
+  clicks   Int    @default(0)
+  /// Visitors who got nothing because the monthly limit was used up.
+  missed   Int    @default(0)
+
+  widget Widget @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+
+  @@unique([widgetId, day])
 }
 
 /// A domain the user is allowed to embed a widget on. The public endpoint
 /// checks the request's Origin against these, so a copied snippet does not
 /// work anywhere else.
 model Source {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   domain    String
   userId    String
   widgetId  String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   lastSeen  DateTime?
-  hits      Int      @default(0)
+  hits      Int       @default(0)
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   // Deleting a widget keeps the domain (it becomes account-wide) - the user
@@ -148,7 +170,6 @@ model Source {
   @@index([widgetId])
   @@index([domain])
 }
-
 
 /// One per user. Created lazily on the FREE plan, so existing accounts need no backfill.
 model Subscription {
@@ -196,7 +217,6 @@ model BillingEvent {
   @@index([userId])
 }
 
-
 /// Plans live in the database so the super admin can change prices and limits
 /// without a deploy. `key` is what Subscription.plan stores.
 model BillingPlan {
@@ -208,6 +228,9 @@ model BillingPlan {
   reviews             Int      @default(3)
   /// null = unlimited
   views               Int?
+  /// Hours between automatic review refreshes. null = the default for the
+  /// plan's key (FREE 48, PRO 24, BUSINESS 12), so existing rows need no backfill.
+  refreshHours        Int?
   active              Boolean  @default(true)
   sortOrder           Int      @default(0)
   /// PayPal keeps its own copy of each paid plan, one per environment.
