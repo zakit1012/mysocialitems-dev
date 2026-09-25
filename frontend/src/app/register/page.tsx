@@ -153,6 +153,17 @@ export default function RegisterPage() {
           <Button type="submit" loading={busy} disabled={passwordMismatch}>
             Send verification code
           </Button>
+          <p className="text-center text-xs text-muted">
+            By creating an account you agree to our{" "}
+            <Link href="/terms" className="font-medium text-brand hover:underline">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="font-medium text-brand hover:underline">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </form>
       ) : (
         <form onSubmit={onVerify} className="space-y-4">

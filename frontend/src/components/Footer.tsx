@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Star } from "lucide-react";
+import { LEGAL } from "@/lib/legal";
 
 export function Footer() {
   return (
@@ -47,7 +48,20 @@ export function Footer() {
 
         <div className="mt-12 flex flex-col gap-3 border-t border-line pt-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} My Social Items — Google Review Widgets</p>
+          <nav className="flex flex-wrap gap-x-4 gap-y-1" aria-label="Legal">
+            <Link href="/terms" className="hover:text-brand">Terms</Link>
+            <Link href="/privacy" className="hover:text-brand">Privacy</Link>
+            <Link href="/refund-policy" className="hover:text-brand">Refunds</Link>
+            {LEGAL.email && (
+              <a href={`mailto:${LEGAL.email}`} className="hover:text-brand">
+                {LEGAL.email}
+              </a>
+            )}
+          </nav>
         </div>
+        <p className="mt-3 text-xs text-hint">
+          Not affiliated with or endorsed by Google. Google is a trademark of Google LLC.
+        </p>
       </div>
     </footer>
   );
