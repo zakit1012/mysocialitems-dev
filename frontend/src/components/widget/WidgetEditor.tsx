@@ -76,6 +76,15 @@ function LayoutSketch({ id }: { id: Layout }) {
           {[0, 1, 2].map((i) => <span key={i} className={`${box} flex-1`} />)}
         </div>
       );
+    case "carousel":
+      return (
+        <div className="flex h-9 w-12 items-center gap-0.5">
+          <span className="text-[10px] leading-none">‹</span>
+          <span className={`${box} h-full flex-1`} />
+          <span className={`${box} h-full flex-1 opacity-60`} />
+          <span className="text-[10px] leading-none">›</span>
+        </div>
+      );
   }
 }
 
@@ -85,6 +94,7 @@ const LAYOUTS: { id: Layout; label: string; hint: string }[] = [
   { id: "list", label: "List", hint: "One per row" },
   { id: "quotes", label: "Quotes", hint: "Big testimonial text" },
   { id: "showcase", label: "Showcase", hint: "Even row, no arrows" },
+  { id: "carousel", label: "Carousel", hint: "Slides sideways with arrows" },
 ];
 
 export function WidgetEditor({
@@ -104,12 +114,7 @@ export function WidgetEditor({
   const [tab, setTab] = useState<TabId>("layout");
   const set = (patch: Partial<WidgetSettings>) => onChange({ ...value, ...patch });
   const theme = value.theme ?? "light";
-  const layout =
-    value.layout === ("carousel" as Layout)
-      ? "showcase"
-      : value.layout === ("compact" as Layout)
-        ? "quotes"
-        : (value.layout ?? "grid");
+  const layout = value.layout === ("compact" as Layout) ? "quotes" : (value.layout ?? "grid");
   const count = Math.min(value.reviewCount ?? maxReviews, maxReviews);
 
   return (
@@ -156,8 +161,17 @@ export function WidgetEditor({
               </div>
             </Section>
 
-            {(layout === "grid" || layout === "masonry" || layout === "quotes" || layout === "showcase") && (
-              <Section title="Columns" hint="Auto fits as many as the space allows.">
+            {layout === "carousel" && (
+              <Section title="Carousel" hint="Slides every 5 seconds and pauses while someone hovers.">
+                <ToggleRow label="Autoplay" k="autoplay" value={value} set={set} />
+              </Section>
+            )}
+
+            {layout !== "list" && (
+              <Section
+                title={layout === "carousel" ? "Cards per view" : "Columns"}
+                hint="Auto fits as many as the space allows."
+              >
                 <Segmented
                   value={value.gridColumns ?? "auto"}
                   options={[

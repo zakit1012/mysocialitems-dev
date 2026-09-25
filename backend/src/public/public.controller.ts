@@ -12,9 +12,18 @@ import type { Request, Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { BillingService } from '../billing/billing.service';
+import { RedisService } from '../redis/redis.service';
 import { hostFrom, hostMatches } from '../sources/domain.util';
-import { fiveStarOnly, normalizeSettings } from '../widgets/widget-settings';
+import {
+  MAX_REVIEW_COUNT,
+  SORTS,
+  fiveStarOnly,
+  normalizeSettings,
+} from '../widgets/widget-settings';
 import { widgetScript } from './widget-script';
+
+/** One visitor reloading or browsing a site counts as one view per window. */
+const VIEW_WINDOW_SECONDS = 30 * 60;
 
 /**
  * The only endpoints a customer's website talks to. No auth token here - the
@@ -28,7 +37,25 @@ export class PublicController {
     private readonly prisma: PrismaService,
     private readonly engine: ReviewsEngineService,
     private readonly billing: BillingService,
+    private readonly redis: RedisService,
   ) {}
+
+  /**
+   * True the first time this visitor loads this widget in the window. Keyed
+   * by IP, so production must run with TRUST_PROXY=true behind nginx, or
+   * every visitor looks like 127.0.0.1 and shares one view.
+   */
+  private async isNewView(widgetId: string, req: Request): Promise<boolean> {
+    try {
+      return await this.redis.setIfAbsent(
+        `view:${widgetId}:${req.ip}`,
+        VIEW_WINDOW_SECONDS,
+      );
+    } catch {
+      // Without Redis, every load counts - the old behaviour.
+      return true;
+    }
+  }
 
   private originOf(req: Request): string | null {
     return hostFrom(req.headers.origin || req.headers.referer);
@@ -108,9 +135,33 @@ export class PublicController {
     if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
 
-    // Every render counts against the owner's monthly views, and the plan
-    // decides how many reviews a widget may show.
-    const usage = await this.billing.recordView(widget.userId);
+    const settings = normalizeSettings(widget.settings);
+    // data-sort on the snippet may only pick one of the widget's own orders:
+    // "lowest rated" would leave a 5-star-only widget empty.
+    const order =
+      sort && SORTS.includes(sort) ? sort : settings.sort || 'mostRelevant';
+    // Only 5-star reviews are shown. Asking for just the allowance and then
+    // filtering can leave one card, so take everything the engine has cached
+    // for this place (no extra scrape) and cut to the allowance afterwards.
+    const result = await this.engine.fetchCached(
+      widget.placeId,
+      MAX_REVIEW_COUNT,
+      order,
+    );
+
+    // A place loaded for the first time is still being collected, and the
+    // script asks again every 4s (up to 15 times). Those retries are not
+    // views - nothing is shown yet - so they must not use up the allowance.
+    if (result.served === 'fetching') {
+      return res.json({ served: 'fetching' });
+    }
+
+    // A shown widget counts against the owner's monthly views (once per
+    // visitor per window), and the plan decides how many reviews it shows.
+    const usage = await this.billing.recordView(
+      widget.userId,
+      await this.isNewView(widget.id, req),
+    );
     if (!usage.allowed) {
       return res.status(402).json({
         error:
@@ -118,17 +169,10 @@ export class PublicController {
       });
     }
 
-    const settings = normalizeSettings(widget.settings);
     // data-count on the snippet wins, then the widget's own setting; the plan
     // is the ceiling either way.
     const wanted = Math.floor(Number(count)) || settings.reviewCount || 0;
     const shown = Math.min(wanted || usage.reviews, usage.reviews);
-    // Only 5-star reviews are shown, so ask for the full allowance first.
-    const result = await this.engine.fetch(
-      widget.placeId,
-      usage.reviews,
-      sort || settings.sort || 'mostRelevant',
-    );
     const reviews = fiveStarOnly(result.reviews).slice(0, shown);
 
     // Best effort - a counter is not worth failing a page render over.

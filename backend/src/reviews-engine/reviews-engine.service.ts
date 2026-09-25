@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { RedisService } from '../redis/redis.service';
 
 export type EngineReview = {
   review_id: string | null;
@@ -41,12 +42,18 @@ const MAX_COUNT = 50;
 // crawl time). Stays under a typical 60s reverse-proxy read timeout with
 // margin, so this one request does not itself get cut off mid-wait.
 const MAX_WAIT_MS = 50_000;
+// Embed answers per place and order. Short, so a place's new reviews still
+// show up within minutes; the engine keeps its own longer cache behind this.
+const EMBED_CACHE_SECONDS = 300;
 
 @Injectable()
 export class ReviewsEngineService {
   private readonly log = new Logger(ReviewsEngineService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly redis: RedisService,
+  ) {}
 
   private baseUrl() {
     return (
@@ -115,6 +122,36 @@ export class ReviewsEngineService {
       this.log.error(`Review engine failed for ${placeId}: ${reason}`);
       return empty(reason);
     }
+  }
+
+  /**
+   * fetch() for the public embed, where every page view of every customer's
+   * site lands. A finished answer is kept in Redis for a few minutes, so most
+   * views skip the round trip to the engine. "Still fetching" and failures
+   * are never kept - the next view asks again.
+   */
+  async fetchCached(
+    placeId: string,
+    count: number,
+    sort: string,
+  ): Promise<EngineResult> {
+    const key = `engine:${placeId}:${sort}:${count}`;
+    try {
+      const hit = await this.redis.getJson<EngineResult>(key);
+      if (hit) return { ...hit, took_ms: 0 };
+    } catch (err) {
+      this.log.warn(`Embed cache read failed: ${String(err)}`);
+    }
+
+    const result = await this.fetch(placeId, count, sort);
+    if (result.served !== 'fetching' && !result.error) {
+      this.redis
+        .setJson(key, result, EMBED_CACHE_SECONDS)
+        .catch((err) =>
+          this.log.warn(`Embed cache write failed: ${String(err)}`),
+        );
+    }
+    return result;
   }
 
   /**

@@ -18,6 +18,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { BillingService } from '../billing/billing.service';
+import { MAX_REVIEW_COUNT, fiveStarOnly } from './widget-settings';
 
 @Controller('widgets')
 @UseGuards(JwtAuthGuard)
@@ -38,10 +39,19 @@ export class WidgetsController {
     const widget = await this.widgets.get(user.id, id);
     if (!widget) throw new NotFoundException();
     const plan = await this.billing.planFor(user.id);
-    // The full allowance, unfiltered: the editor applies count and rating
-    // filters itself so every change previews instantly. One request waits
+    // The full allowance of 5-star reviews, like the embed: everything the
+    // engine has cached, filtered, then cut to the plan. The editor applies
+    // the count itself so every change previews instantly. One request waits
     // for a real answer instead of the dashboard polling several.
-    return this.engine.fetchAndWait(widget.placeId, plan.reviews, sort);
+    const result = await this.engine.fetchAndWait(
+      widget.placeId,
+      MAX_REVIEW_COUNT,
+      sort,
+    );
+    return {
+      ...result,
+      reviews: fiveStarOnly(result.reviews).slice(0, plan.reviews),
+    };
   }
 
   @Get()

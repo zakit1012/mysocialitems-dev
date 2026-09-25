@@ -29,6 +29,11 @@ export class RedisService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
+  /** Sets the key only if it is not there yet. True when this call set it. */
+  async setIfAbsent(key: string, ttlSeconds: number): Promise<boolean> {
+    return (await this.client.set(key, '1', 'EX', ttlSeconds, 'NX')) === 'OK';
+  }
+
   /** Increments a counter, starting its expiry on the first hit. */
   async incrWithTtl(key: string, ttlSeconds: number): Promise<number> {
     const count = await this.client.incr(key);

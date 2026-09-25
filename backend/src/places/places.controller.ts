@@ -10,6 +10,7 @@ import { AutocompleteDto } from './dto/autocomplete.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { BillingService } from '../billing/billing.service';
+import { MAX_REVIEW_COUNT, fiveStarOnly } from '../widgets/widget-settings';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 
@@ -44,11 +45,18 @@ export class PlacesController {
     // so it is fine for the one request to wait instead of the browser
     // polling several - see fetchAndWait's own doc for why this must never
     // be used on the public embed.
-    return this.engine.fetchAndWait(
+    const wanted = Math.min(Math.max(Number(count) || 6, 1), max);
+    // 5-star only, like the embed: filter everything the engine has cached
+    // for this place first, so the filter does not leave a single card.
+    const result = await this.engine.fetchAndWait(
       placeId,
-      Math.min(Math.max(Number(count) || 6, 1), max),
+      MAX_REVIEW_COUNT,
       sort || 'mostRelevant',
     );
+    return {
+      ...result,
+      reviews: fiveStarOnly(result.reviews).slice(0, wanted),
+    };
   }
 
   @Get('autocomplete')

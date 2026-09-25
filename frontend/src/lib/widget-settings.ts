@@ -3,7 +3,7 @@
  * The editor, the live preview and the embed script all read this one shape.
  */
 
-export type Layout = "grid" | "masonry" | "list" | "quotes" | "showcase";
+export type Layout = "grid" | "masonry" | "list" | "quotes" | "showcase" | "carousel";
 export type Sort = "mostRelevant" | "newest" | "highestRanking";
 export type ButtonIcon = "google" | "chat" | "star" | "none";
 

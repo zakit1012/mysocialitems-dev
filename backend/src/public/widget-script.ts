@@ -64,6 +64,15 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-showcase .msi-items{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:14px;align-items:stretch}' +
     '.msi-showcase .msi-card{display:flex;flex-direction:column;height:100%;padding:18px 16px 14px}' +
     '.msi-showcase .msi-text{flex:1}' +
+    '.msi-car{position:relative;padding:0 22px}' +
+    '.msi-car.msi-fits{padding:0}' +
+    '.msi-carousel .msi-items{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;padding:2px 0 6px;align-items:stretch}' +
+    '.msi-carousel .msi-items::-webkit-scrollbar{display:none}' +
+    '.msi-carousel .msi-card{flex:0 0 var(--slide,min(280px,85%));scroll-snap-align:start}' +
+    '.msi-nav{position:absolute;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--head);cursor:pointer;font-size:20px;line-height:1;display:grid;place-items:center;box-shadow:0 2px 8px rgba(0,0,0,.15);z-index:1;padding:0}' +
+    '.msi-nav:hover{border-color:var(--btn);color:var(--btn)}' +
+    '.msi-prev{left:-6px}.msi-next{right:-6px}' +
+    '.msi-fits .msi-nav{display:none}' +
     '.msi-card{position:relative;border:1px solid var(--line);border-radius:var(--r);padding:14px;background:var(--card)}' +
     '.msi-g{position:absolute;top:13px;right:13px;width:16px;height:16px;line-height:0}' +
     '.msi-g svg{width:16px;height:16px}' +
@@ -185,6 +194,40 @@ export function widgetScript(key: string, preview = false): string {
     }
   }
 
+  /**
+   * Arrows move one view at a time and wrap around at either end. Autoplay
+   * moves every 5s and pauses while the visitor hovers. The arrows hide when
+   * every card already fits.
+   */
+  function carousel(host, s) {
+    var wrap = host.querySelector('.msi-car');
+    var track = wrap && wrap.querySelector('.msi-items');
+    if (!track) return;
+    function step(dir) {
+      var atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
+      var atStart = track.scrollLeft <= 4;
+      var left = dir > 0 && atEnd ? 0
+        : dir < 0 && atStart ? track.scrollWidth
+        : track.scrollLeft + dir * track.clientWidth * 0.9;
+      track.scrollTo({ left: left, behavior: 'smooth' });
+    }
+    wrap.querySelector('.msi-prev').onclick = function () { step(-1); };
+    wrap.querySelector('.msi-next').onclick = function () { step(1); };
+    function fit() {
+      wrap.classList.toggle('msi-fits', track.scrollWidth <= track.clientWidth + 4);
+    }
+    fit();
+    setTimeout(fit, 400);
+    host.__msiResize = fit;
+    window.addEventListener('resize', fit);
+    if (s.autoplay) {
+      host.__msiTimer = setInterval(function () {
+        if (wrap.matches(':hover') || wrap.classList.contains('msi-fits')) return;
+        step(1);
+      }, 5000);
+    }
+  }
+
   function lightbox(src) {
     var box = document.createElement('div');
     box.className = 'msi-lb';
@@ -217,7 +260,6 @@ export function widgetScript(key: string, preview = false): string {
     var s = w.settings || {};
     var list = visible(host, data.reviews || [], s);
     var layout = s.layout || 'grid';
-    if (layout === 'carousel') layout = 'showcase';
     if (layout === 'compact') layout = 'quotes';
 
     var classes = ['msi', 'msi-' + layout];
@@ -280,6 +322,13 @@ export function widgetScript(key: string, preview = false): string {
       for (var i = 0; i < list.length; i++) items += card(list[i], s);
       if (!list.length) {
         html += '<div class="msi-empty">No reviews to show yet.</div>';
+      } else if (layout === 'carousel') {
+        // Columns here means how many cards one view shows.
+        var slide = cols ? 'calc((100% - ' + (cols - 1) * 12 + 'px) / ' + cols + ')' : '';
+        html += '<div class="msi-car"' + (slide ? ' style="--slide:' + slide + '"' : '') + '>' +
+          '<button type="button" class="msi-nav msi-prev" aria-label="Previous">\\u2039</button>' +
+          '<div class="msi-items">' + items + '</div>' +
+          '<button type="button" class="msi-nav msi-next" aria-label="Next">\\u203a</button></div>';
       } else {
         var style = '';
         if (cols && (layout === 'grid' || layout === 'quotes' || layout === 'showcase')) {
@@ -297,7 +346,14 @@ export function widgetScript(key: string, preview = false): string {
         buttonIcon(s.allButtonIcon || (s.buttonIcon ? 'google' : 'none')) + 'See all reviews on Google</a></div>';
     }
 
+    // The preview re-renders on every settings change; drop the last
+    // carousel's timer and resize listener first.
+    if (host.__msiTimer) clearInterval(host.__msiTimer);
+    if (host.__msiResize) window.removeEventListener('resize', host.__msiResize);
+    host.__msiTimer = host.__msiResize = null;
+
     host.innerHTML = html + '</div>';
+    if (layout === 'carousel') carousel(host, s);
 
     addReadMore(host, s);
     // Fonts and images can change line breaks after the first paint.

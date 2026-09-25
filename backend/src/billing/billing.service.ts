@@ -126,14 +126,30 @@ export class BillingService {
    * Counts one widget view against the owner's monthly allowance.
    * Returns how many reviews to show, or allowed=false once the month is used up.
    */
+  /**
+   * Counts one view against the owner's monthly allowance. With count false
+   * (a repeat load by the same visitor) nothing is added; the allowance is
+   * only checked.
+   */
   async recordView(
     userId: string,
+    count = true,
   ): Promise<{ allowed: boolean; reviews: number; plan: Plan }> {
     const plan = await this.planFor(userId);
     const period = currentPeriod();
+    const where = { userId_period: { userId, period } };
+
+    if (!count) {
+      const usage = await this.prisma.usage.findUnique({ where });
+      return {
+        allowed: (usage?.views ?? 0) <= plan.views,
+        reviews: plan.reviews,
+        plan,
+      };
+    }
 
     const usage = await this.prisma.usage.upsert({
-      where: { userId_period: { userId, period } },
+      where,
       update: { views: { increment: 1 } },
       create: { userId, period, views: 1 },
     });
