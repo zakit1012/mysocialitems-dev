@@ -11,15 +11,10 @@
  */
 
 export const LAYOUTS = ['grid', 'masonry', 'list', 'quotes', 'showcase'];
-export const SORTS = [
-  'mostRelevant',
-  'newest',
-  'highestRanking',
-  'lowestRanking',
-];
+export const SORTS = ['mostRelevant', 'newest', 'highestRanking'];
 const COLUMNS = ['1', '2', '3', '4'];
 const BUTTON_POSITIONS = ['left', 'center', 'right', 'full'];
-const MIN_RATINGS = ['0', '3', '4', '5'];
+const BUTTON_ICONS = ['google', 'chat', 'star', 'none'];
 const RADII = ['none', 'md', 'lg'];
 const TEXT_LINES = ['3', '6', 'all'];
 /** The review engine serves at most this many per call. */
@@ -55,6 +50,7 @@ const BOOL_KEYS = [
   'cardShadow',
   'reviewItalic',
   'reviewBold',
+  // Older widgets: on/off Google logo on "See all reviews", before allButtonIcon.
   'buttonIcon',
 ] as const;
 
@@ -84,8 +80,9 @@ export type WidgetSettings = {
   gridColumns?: string;
   buttonPosition?: string;
   sort?: string;
-  minRating?: string;
   reviewCount?: number;
+  writeButtonIcon?: string;
+  allButtonIcon?: string;
   radius?: string;
   textLines?: string;
 } & Partial<Record<(typeof COLOR_KEYS)[number], string>> &
@@ -128,7 +125,8 @@ export function normalizeSettings(raw: unknown): WidgetSettings {
     ['gridColumns', COLUMNS],
     ['buttonPosition', BUTTON_POSITIONS],
     ['sort', SORTS],
-    ['minRating', MIN_RATINGS],
+    ['writeButtonIcon', BUTTON_ICONS],
+    ['allButtonIcon', BUTTON_ICONS],
     ['radius', RADII],
     ['textLines', TEXT_LINES],
   ];
@@ -170,11 +168,12 @@ export function mergeSettings(
   return { ...merged, ...normalizeSettings(incoming) };
 }
 
-/** Keeps reviews at or above the widget's minimum rating. */
-export function applyRatingFilter<T extends { rating: number | null }>(
+/**
+ * Widgets show 5-star reviews only. This used to be a per-widget
+ * "minimum rating" setting; an old minRating on a saved widget is ignored.
+ */
+export function fiveStarOnly<T extends { rating: number | null }>(
   reviews: T[],
-  settings: WidgetSettings,
 ): T[] {
-  const min = Number(settings.minRating) || 0;
-  return min > 0 ? reviews.filter((r) => (r.rating ?? 0) >= min) : reviews;
+  return reviews.filter((r) => (r.rating ?? 0) >= 5);
 }

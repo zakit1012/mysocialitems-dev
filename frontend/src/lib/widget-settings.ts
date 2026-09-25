@@ -4,7 +4,8 @@
  */
 
 export type Layout = "grid" | "masonry" | "list" | "quotes" | "showcase";
-export type Sort = "mostRelevant" | "newest" | "highestRanking" | "lowestRanking";
+export type Sort = "mostRelevant" | "newest" | "highestRanking";
+export type ButtonIcon = "google" | "chat" | "star" | "none";
 
 export type ColorKey =
   | "backgroundColor"
@@ -34,19 +35,21 @@ export type ToggleKey =
   | "cardBorder"
   | "cardShadow"
   | "reviewItalic"
-  | "reviewBold"
-  | "buttonIcon";
+  | "reviewBold";
 
 export type WidgetSettings = {
   theme?: "light" | "dark";
   layout?: Layout;
   gridColumns?: "1" | "2" | "3" | "4";
   sort?: Sort;
-  minRating?: "0" | "3" | "4" | "5";
   reviewCount?: number;
   radius?: "none" | "md" | "lg";
   textLines?: "3" | "6" | "all";
   buttonPosition?: "left" | "center" | "right" | "full";
+  writeButtonIcon?: ButtonIcon;
+  allButtonIcon?: ButtonIcon;
+  /** Older widgets: on/off Google logo on "See all reviews", before allButtonIcon. */
+  buttonIcon?: boolean;
 } & Partial<Record<ColorKey, string>> &
   Partial<Record<ToggleKey, boolean>>;
 
@@ -55,10 +58,11 @@ export const DEFAULT_SETTINGS: WidgetSettings = {
   theme: "light",
   layout: "grid",
   sort: "mostRelevant",
-  minRating: "0",
   radius: "md",
   textLines: "6",
   buttonPosition: "center",
+  writeButtonIcon: "chat",
+  allButtonIcon: "google",
   showBusinessName: true,
   showOverallRating: true,
   showWriteReviewBtn: true,
@@ -76,7 +80,6 @@ export const DEFAULT_SETTINGS: WidgetSettings = {
   cardShadow: false,
   reviewItalic: false,
   reviewBold: false,
-  buttonIcon: true,
 };
 
 /** Toggles the embed treats as "on" unless explicitly switched off. */
@@ -144,7 +147,6 @@ export const SORT_OPTIONS: { value: Sort; label: string }[] = [
   { value: "mostRelevant", label: "Most relevant" },
   { value: "newest", label: "Newest first" },
   { value: "highestRanking", label: "Highest rated" },
-  { value: "lowestRanking", label: "Lowest rated" },
 ];
 
 export const writeReviewUrl = (placeId: string) =>

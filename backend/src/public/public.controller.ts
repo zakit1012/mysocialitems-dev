@@ -13,10 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { BillingService } from '../billing/billing.service';
 import { hostFrom, hostMatches } from '../sources/domain.util';
-import {
-  applyRatingFilter,
-  normalizeSettings,
-} from '../widgets/widget-settings';
+import { fiveStarOnly, normalizeSettings } from '../widgets/widget-settings';
 import { widgetScript } from './widget-script';
 
 /**
@@ -126,14 +123,13 @@ export class PublicController {
     // is the ceiling either way.
     const wanted = Math.floor(Number(count)) || settings.reviewCount || 0;
     const shown = Math.min(wanted || usage.reviews, usage.reviews);
-    // A rating filter drops some reviews, so ask for the full allowance first.
-    const minRating = Number(settings.minRating) || 0;
+    // Only 5-star reviews are shown, so ask for the full allowance first.
     const result = await this.engine.fetch(
       widget.placeId,
-      minRating > 0 ? usage.reviews : shown,
+      usage.reviews,
       sort || settings.sort || 'mostRelevant',
     );
-    const reviews = applyRatingFilter(result.reviews, settings).slice(0, shown);
+    const reviews = fiveStarOnly(result.reviews).slice(0, shown);
 
     // Best effort - a counter is not worth failing a page render over.
     this.prisma.source

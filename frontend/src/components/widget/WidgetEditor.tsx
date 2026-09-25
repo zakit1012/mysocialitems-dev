@@ -6,6 +6,7 @@ import {
   Check,
   Eye,
   LayoutGrid,
+  MessageSquare,
   Minus,
   Moon,
   Paintbrush,
@@ -21,6 +22,7 @@ import {
   SORT_OPTIONS,
   isOn,
   themeColor,
+  type ButtonIcon,
   type ColorKey,
   type Layout,
   type ToggleKey,
@@ -227,19 +229,6 @@ export function WidgetEditor({
                 ))}
               </select>
             </Section>
-
-            <Section title="Minimum rating" hint="Hide reviews below this many stars.">
-              <Segmented
-                value={value.minRating ?? "0"}
-                options={[
-                  { value: "0", label: "All" },
-                  { value: "3", label: "3+", icon: <Star className="h-3 w-3 fill-current" /> },
-                  { value: "4", label: "4+", icon: <Star className="h-3 w-3 fill-current" /> },
-                  { value: "5", label: "5", icon: <Star className="h-3 w-3 fill-current" /> },
-                ]}
-                onChange={(v) => set({ minRating: v as WidgetSettings["minRating"] })}
-              />
-            </Section>
           </>
         )}
 
@@ -250,6 +239,12 @@ export function WidgetEditor({
               <ToggleRow label="Business name" k="showBusinessName" value={value} set={set} />
               <ToggleRow label="Overall rating" k="showOverallRating" value={value} set={set} />
               <ToggleRow label="“Write a review” button" k="showWriteReviewBtn" value={value} set={set} />
+              {isOn(value, "showWriteReviewBtn") && (
+                <IconPicker
+                  value={value.writeButtonIcon ?? "chat"}
+                  onChange={(v) => set({ writeButtonIcon: v })}
+                />
+              )}
             </Section>
             <Section title="Reviews">
               <ToggleRow label="Show reviews" k="showReviews" value={value} set={set} />
@@ -263,7 +258,11 @@ export function WidgetEditor({
               <ToggleRow label="“See all reviews” button" k="showAllReviewsBtn" value={value} set={set} />
               {isOn(value, "showAllReviewsBtn") && (
                 <>
-                  <ToggleRow label="Google logo on button" k="buttonIcon" value={value} set={set} />
+                  <IconPicker
+                    // Older widgets only had an on/off Google logo here.
+                    value={value.allButtonIcon ?? (value.buttonIcon ? "google" : "none")}
+                    onChange={(v) => set({ allButtonIcon: v })}
+                  />
                   <div className="pt-1">
                     <Segmented
                       value={value.buttonPosition ?? "center"}
@@ -366,6 +365,31 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
       <div className="space-y-1.5">{children}</div>
       {hint && <p className="mt-1.5 text-[11.5px] text-hint">{hint}</p>}
     </section>
+  );
+}
+
+/** Which icon a button carries, or none. */
+function IconPicker({
+  value,
+  onChange,
+}: {
+  value: ButtonIcon;
+  onChange: (v: ButtonIcon) => void;
+}) {
+  return (
+    <div className="pt-1">
+      <p className="mb-1.5 text-[12px] font-medium text-muted">Button icon</p>
+      <Segmented
+        value={value}
+        options={[
+          { value: "google", label: "Google" },
+          { value: "chat", label: "Chat", icon: <MessageSquare className="h-3 w-3" /> },
+          { value: "star", label: "Star", icon: <Star className="h-3 w-3 fill-current" /> },
+          { value: "none", label: "None" },
+        ]}
+        onChange={(v) => onChange(v as ButtonIcon)}
+      />
+    </div>
   );
 }
 

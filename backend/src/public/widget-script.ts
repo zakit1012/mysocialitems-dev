@@ -43,11 +43,14 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-sum{display:flex;align-items:center;gap:8px;flex-wrap:wrap}' +
     '.msi-score{font-size:15px;font-weight:700;color:var(--head)}' +
     '.msi-count{color:var(--muted);font-size:13px}' +
-    '.msi-stars{color:var(--star);letter-spacing:1px;white-space:nowrap}' +
+    '.msi-stars{position:relative;display:inline-block;color:var(--star);letter-spacing:1px;white-space:nowrap}' +
     '.msi-stars i{font-style:normal;opacity:.28}' +
+    '.msi-stars b{position:absolute;top:0;left:0;overflow:hidden;font-weight:inherit}' +
     '.msi-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;font-size:13.5px;font-weight:600;color:var(--btn-text);background:var(--btn);text-decoration:none;padding:9px 16px;border-radius:min(var(--r),999px);transition:opacity .2s;border:0;cursor:pointer;line-height:1.2}' +
     '.msi-btn:hover{opacity:.9}' +
     '.msi-btn svg{width:16px;height:16px;flex:none}' +
+    '.msi-gbadge{display:inline-grid;place-items:center;width:22px;height:22px;margin-left:-5px;border-radius:50%;background:#fff;flex:none;box-shadow:0 1px 2px rgba(0,0,0,.18)}' +
+    '.msi-btn .msi-gbadge svg{width:14px;height:14px}' +
     '.msi-items{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}' +
     '.msi-list .msi-items{grid-template-columns:1fr}' +
     '.msi-masonry .msi-items{display:block;columns:240px var(--cols,3);column-gap:12px}' +
@@ -92,7 +95,14 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-err{border:1px dashed #fecaca;background:#fef2f2;color:#b91c1c;border-radius:10px;padding:12px;font-size:13px}';
 
   var CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
+  var STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
   var GOOGLE = '<svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>';
+
+  /** A button's icon. The colored Google logo sits on a white badge so it stays visible on any button color. */
+  function buttonIcon(choice) {
+    if (choice === 'google') return '<span class="msi-gbadge">' + GOOGLE + '</span>';
+    return { chat: CHAT, star: STAR }[choice] || '';
+  }
 
   function styleOnce() {
     if (document.getElementById('msi-style')) return;
@@ -118,10 +128,12 @@ export function widgetScript(key: string, preview = false): string {
     return /^#[0-9a-fA-F]{3,8}$/.test(String(c || '')) ? c : '';
   }
 
+  /** A faded row of five, with the colored row cut to the exact rating on top: 4.8 fills 96%. */
   function stars(n) {
-    var full = Math.round(Number(n) || 0), out = '';
-    for (var i = 1; i <= 5; i++) out += i <= full ? '\\u2605' : '<i>\\u2605</i>';
-    return '<span class="msi-stars" aria-label="' + esc(n) + ' out of 5">' + out + '</span>';
+    var value = Math.max(0, Math.min(5, Number(n) || 0));
+    var row = '\\u2605\\u2605\\u2605\\u2605\\u2605';
+    return '<span class="msi-stars" aria-label="' + esc(n) + ' out of 5">' +
+      '<i>' + row + '</i><b style="width:' + value * 20 + '%">' + row + '</b></span>';
   }
 
   function card(r, s) {
@@ -187,12 +199,11 @@ export function widgetScript(key: string, preview = false): string {
     document.body.appendChild(box);
   }
 
-  /** Rating filter, then how many: data-count on the snippet, else the widget setting. */
+  /** 5-star reviews only, then how many: data-count on the snippet, else the widget setting. */
   function visible(host, list, s) {
-    var min = Number(s.minRating) || 0;
     var out = [];
     for (var i = 0; i < list.length; i++) {
-      if (!min || (Number(list[i].rating) || 0) >= min) out.push(list[i]);
+      if ((Number(list[i].rating) || 0) >= 5) out.push(list[i]);
     }
     var want = Number(host.getAttribute('data-count')) || Number(s.reviewCount) || 0;
     return want > 0 ? out.slice(0, want) : out;
@@ -259,7 +270,7 @@ export function widgetScript(key: string, preview = false): string {
       }
       html += '</div>';
       if (showWrite && writeUrl) {
-        html += '<a class="msi-btn" target="_blank" rel="noopener" href="' + url(writeUrl) + '">' + CHAT + 'Write a review</a>';
+        html += '<a class="msi-btn" target="_blank" rel="noopener" href="' + url(writeUrl) + '">' + buttonIcon(s.writeButtonIcon || 'chat') + 'Write a review</a>';
       }
       html += '</div>';
     }
@@ -282,7 +293,8 @@ export function widgetScript(key: string, preview = false): string {
 
     if (showAll && data.link) {
       html += '<div class="msi-foot"><a class="msi-btn" target="_blank" rel="noopener" href="' + url(data.link) + '">' +
-        (s.buttonIcon ? GOOGLE : '') + 'See all reviews on Google</a></div>';
+        // Older widgets only had an on/off Google logo here.
+        buttonIcon(s.allButtonIcon || (s.buttonIcon ? 'google' : 'none')) + 'See all reviews on Google</a></div>';
     }
 
     host.innerHTML = html + '</div>';
