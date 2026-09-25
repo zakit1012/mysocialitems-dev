@@ -165,7 +165,7 @@ export class PublicController {
     // A shown widget counts against the owner's monthly views (once per
     // visitor per window), and the plan decides how many reviews it shows.
     const isNew = await this.isNewView(widget.id, req);
-    const usage = await this.billing.recordView(widget.userId, isNew);
+    const usage = await this.billing.recordView(widget.userId, isNew, plan);
     if (!usage.allowed) {
       // Shown to the owner as visitors their widget missed.
       void this.analytics.record(widget.id, { missed: isNew ? 1 : 0 });

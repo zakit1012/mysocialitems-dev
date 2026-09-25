@@ -22,9 +22,6 @@ export function normalizeDomain(input: unknown): string | null {
   return host;
 }
 
-/** localhost and 127.0.0.1 so people can try the embed before going live. */
-const ALWAYS_OK = new Set(['localhost', '127.0.0.1', '[::1]']);
-
 export function hostFrom(originOrReferer: string | undefined): string | null {
   if (!originOrReferer) return null;
   try {
@@ -37,6 +34,5 @@ export function hostFrom(originOrReferer: string | undefined): string | null {
 }
 
 export function hostMatches(host: string, allowed: string[]): boolean {
-  if (ALWAYS_OK.has(host)) return true;
   return allowed.some((d) => host === d || host.endsWith(`.${d}`));
 }

@@ -411,7 +411,7 @@ function InstallPanel({
 
         <Step n={3} title="Done">
           <p className="text-[12.5px] text-muted">
-            Reviews refresh on their own. To test before going live, open the page on <b>localhost</b> - it always works there.
+            Reviews refresh on their own, on your plan&apos;s schedule.
           </p>
           <div className="mt-3 grid gap-2">
             {[

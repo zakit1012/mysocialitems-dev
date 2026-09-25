@@ -88,8 +88,7 @@ export default function SourcesPage() {
         <p>
           A widget only loads on the domains listed here. Copy the embed code to
           any other site and it refuses to render. Subdomains are covered
-          automatically, and <code className="rounded bg-white px-1.5 py-0.5">localhost</code>{" "}
-          always works so you can test before going live.
+          automatically.
         </p>
       </div>
 

@@ -123,19 +123,17 @@ export class BillingService {
   // ------------------------------------------------------------------ usage
 
   /**
-   * Counts one widget view against the owner's monthly allowance.
-   * Returns how many reviews to show, or allowed=false once the month is used up.
-   */
-  /**
-   * Counts one view against the owner's monthly allowance. With count false
-   * (a repeat load by the same visitor) nothing is added; the allowance is
-   * only checked.
+   * Counts one view against the owner's monthly allowance and returns how many
+   * reviews to show, or allowed=false once the month is used up. With count
+   * false (a repeat load by the same visitor) nothing is added; the allowance
+   * is only checked. Pass the owner's plan if the caller already has it.
    */
   async recordView(
     userId: string,
     count = true,
+    known?: Plan,
   ): Promise<{ allowed: boolean; reviews: number; plan: Plan }> {
-    const plan = await this.planFor(userId);
+    const plan = known ?? (await this.planFor(userId));
     const period = currentPeriod();
     const where = { userId_period: { userId, period } };
 
@@ -417,9 +415,55 @@ export class BillingService {
       return { ok: true };
     }
 
+    try {
+      await this.applyWebhook(eventType, userId, resource, subscriptionId);
+    } catch (err) {
+      // Forget the event, so PayPal's retry is processed instead of skipped.
+      await this.prisma.billingEvent
+        .delete({ where: { id: eventId } })
+        .catch(() => undefined);
+      throw err;
+    }
+    return { ok: true };
+  }
+
+  private async applyWebhook(
+    eventType: string,
+    userId: string,
+    resource: WebhookResource,
+    subscriptionId?: string,
+  ) {
+    // Switching plans, or support changing one by hand, cancels the old PayPal
+    // subscription - and PayPal then reports on that old one. Only news about
+    // the subscription the account is on now may change it.
+    const current = (await this.subscriptionFor(userId)).paypalSubscriptionId;
+    const aboutAnother = Boolean(subscriptionId) && subscriptionId !== current;
+
     switch (eventType) {
-      case 'BILLING.SUBSCRIPTION.ACTIVATED':
+      case 'BILLING.SUBSCRIPTION.ACTIVATED': {
         if (!resource.id) break;
+        // A late ACTIVATED for a subscription already replaced or cancelled
+        // must not take over (and cancel) the one the account has now.
+        const remote = await this.paypal
+          .getSubscription(resource.id)
+          .catch(() => null);
+        if (
+          remote &&
+          remote.status !== 'ACTIVE' &&
+          remote.status !== 'APPROVED'
+        )
+          break;
+        await this.activate(
+          userId,
+          resource.id,
+          resource.plan_id,
+          resource.billing_info?.next_billing_time,
+        );
+        break;
+      }
+      case 'BILLING.SUBSCRIPTION.RE-ACTIVATED':
+        // Back after a suspension, usually once a failed payment went through.
+        if (!resource.id || aboutAnother) break;
         await this.activate(
           userId,
           resource.id,
@@ -428,9 +472,11 @@ export class BillingService {
         );
         break;
       case 'BILLING.SUBSCRIPTION.CANCELLED':
+        if (aboutAnother) break;
         await this.markCancelled(userId, await this.subscriptionFor(userId));
         break;
       case 'BILLING.SUBSCRIPTION.SUSPENDED':
+        if (aboutAnother) break;
         await this.setStatus(
           userId,
           'SUSPENDED',
@@ -439,6 +485,7 @@ export class BillingService {
         );
         break;
       case 'BILLING.SUBSCRIPTION.EXPIRED':
+        if (aboutAnother) break;
         await this.setStatus(
           userId,
           'EXPIRED',
@@ -447,6 +494,7 @@ export class BillingService {
         );
         break;
       case 'BILLING.SUBSCRIPTION.PAYMENT.FAILED':
+        if (aboutAnother) break;
         await this.notify(
           userId,
           'A payment did not go through',
@@ -454,12 +502,12 @@ export class BillingService {
         );
         break;
       case 'PAYMENT.SALE.COMPLETED':
+        if (aboutAnother) break;
         await this.paymentReceived(userId, resource, subscriptionId);
         break;
       default:
         break;
     }
-    return { ok: true };
   }
 
   private async userForSubscription(
@@ -495,6 +543,10 @@ export class BillingService {
       matched ??
       (before.pendingPlan
         ? await this.plans.get(before.pendingPlan)
+        : undefined) ??
+      // The same subscription coming back (after a suspension) keeps its plan.
+      (before.paypalSubscriptionId === paypalId
+        ? await this.plans.get(before.plan)
         : undefined);
     if (!plan) {
       this.log.error(
@@ -845,6 +897,7 @@ export class BillingService {
       webhookUrl: `${api || '<your-api-url>'}/billing/webhook`,
       webhookEvents: [
         'BILLING.SUBSCRIPTION.ACTIVATED',
+        'BILLING.SUBSCRIPTION.RE-ACTIVATED',
         'BILLING.SUBSCRIPTION.CANCELLED',
         'BILLING.SUBSCRIPTION.SUSPENDED',
         'BILLING.SUBSCRIPTION.EXPIRED',
