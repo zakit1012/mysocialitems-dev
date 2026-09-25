@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { BrowserPlaceSearch, browserPlacesEnabled } from "@/lib/googlePlaces";
 import { Spinner } from "./Spinner";
 import { fieldClass } from "./TextField";
 
@@ -44,6 +45,14 @@ export function PlaceAutocomplete({ onSelect }: Props) {
         : String(Date.now()),
     [],
   );
+  const browserSearch = useMemo(
+    () => (browserPlacesEnabled ? new BrowserPlaceSearch() : null),
+    [],
+  );
+  // Whether the suggestions on screen came from the browser search. Only a
+  // backend search shares its session token with the backend's own details
+  // call when the widget is saved.
+  const fromBrowser = useRef(false);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -65,12 +74,17 @@ export function PlaceAutocomplete({ onSelect }: Props) {
       return;
     }
 
+    // A slow answer to "ab" must not replace the answer to "abc" that came
+    // back first.
+    let stale = false;
+
     const handle = setTimeout(async () => {
       setLoading(true);
       setError("");
 
       const exactId = extractPlaceId(query);
       if (exactId) {
+        fromBrowser.current = false;
         // Skip the name search entirely - it is not needed and can only
         // pick the wrong pin. sessionToken is left out on purpose: it pairs
         // an autocomplete search with the details call that follows it, and
@@ -80,6 +94,7 @@ export function PlaceAutocomplete({ onSelect }: Props) {
             `/places/details?placeId=${encodeURIComponent(exactId)}`,
             { token },
           );
+          if (stale) return;
           setSuggestions([
             {
               ...details,
@@ -88,10 +103,11 @@ export function PlaceAutocomplete({ onSelect }: Props) {
           ]);
           setOpen(true);
         } catch (err) {
+          if (stale) return;
           setSuggestions([]);
           setError(err instanceof Error ? err.message : "Could not look up that place");
         } finally {
-          setLoading(false);
+          if (!stale) setLoading(false);
         }
         return;
       }
@@ -113,26 +129,45 @@ export function PlaceAutocomplete({ onSelect }: Props) {
       }
 
       try {
-        const params = new URLSearchParams({
-          q: searchQuery,
-          sessionToken,
-        });
-        const results = await api<PlaceSuggestion[]>(
-          `/places/autocomplete?${params.toString()}`,
-          { token },
-        );
+        let results: PlaceSuggestion[] | null = null;
+        if (browserSearch) {
+          try {
+            results = await browserSearch.search(searchQuery);
+            fromBrowser.current = true;
+          } catch (err) {
+            // A wrong key or referrer setup should not leave search broken;
+            // the backend route still works, just slower.
+            console.warn("Browser place search failed, using the backend", err);
+          }
+        }
+        if (!results) {
+          const params = new URLSearchParams({
+            q: searchQuery,
+            sessionToken,
+          });
+          results = await api<PlaceSuggestion[]>(
+            `/places/autocomplete?${params.toString()}`,
+            { token },
+          );
+          fromBrowser.current = false;
+        }
+        if (stale) return;
         setSuggestions(results);
         setOpen(true);
       } catch (err) {
+        if (stale) return;
         setSuggestions([]);
         setError(err instanceof Error ? err.message : "Could not search places");
       } finally {
-        setLoading(false);
+        if (!stale) setLoading(false);
       }
-    }, 300);
+    }, browserSearch ? 150 : 300);
 
-    return () => clearTimeout(handle);
-  }, [query, sessionToken, token]);
+    return () => {
+      stale = true;
+      clearTimeout(handle);
+    };
+  }, [query, sessionToken, token, browserSearch]);
 
   useEffect(() => {
     function onClick(event: MouseEvent) {
@@ -169,7 +204,12 @@ export function PlaceAutocomplete({ onSelect }: Props) {
                 type="button"
                 onClick={() => {
                   skipSearch.current = true;
-                  onSelect(item, sessionToken);
+                  if (fromBrowser.current) {
+                    browserSearch?.finish(item.placeId);
+                    onSelect(item, "");
+                  } else {
+                    onSelect(item, sessionToken);
+                  }
                   setSelected(item);
                   setCopied(false);
                   setQuery(item.description);
@@ -179,6 +219,9 @@ export function PlaceAutocomplete({ onSelect }: Props) {
                 className="w-full px-4 py-3 text-left hover:bg-sand"
               >
                 <p className="font-medium">{item.name}</p>
+                {item.address ? (
+                  <p className="text-sm text-muted">{item.address}</p>
+                ) : null}
               </button>
             </li>
           ))}
@@ -188,6 +231,9 @@ export function PlaceAutocomplete({ onSelect }: Props) {
       {selected && (
         <div className="mt-3 rounded-2xl border border-line bg-sand p-4">
           <p className="font-semibold">{selected.name}</p>
+          {selected.address ? (
+            <p className="text-sm text-muted">{selected.address}</p>
+          ) : null}
 
           <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">
             Place ID

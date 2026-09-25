@@ -36,6 +36,7 @@ type AutocompleteResponse = {
 type DetailsResponse = {
   id?: string;
   displayName?: Text;
+  formattedAddress?: string;
   types?: string[];
 };
 
@@ -76,10 +77,11 @@ export class PlacesService {
           prediction.structuredFormat?.mainText?.text ||
           prediction.text?.text ||
           '';
+        const address = prediction.structuredFormat?.secondaryText?.text ?? '';
         return {
           placeId: prediction.placeId as string,
           name,
-          address: '',
+          address,
           description: name,
         };
       });
@@ -95,7 +97,7 @@ export class PlacesService {
       method: 'GET',
       headers: {
         // The new API refuses a request without an explicit field mask.
-        'X-Goog-FieldMask': 'id,displayName,types',
+        'X-Goog-FieldMask': 'id,displayName,formattedAddress,types',
       },
     });
 
@@ -111,7 +113,7 @@ export class PlacesService {
     return {
       placeId: data.id,
       name: data.displayName?.text ?? '',
-      address: '',
+      address: data.formattedAddress ?? '',
     };
   }
 
