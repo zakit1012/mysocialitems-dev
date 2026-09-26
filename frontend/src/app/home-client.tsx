@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   BarChart3,
@@ -25,7 +25,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { WidgetPreview } from "@/components/widget/WidgetPreview";
 import { DEFAULT_SETTINGS, type Layout, type WidgetSettings } from "@/lib/widget-settings";
-import { DEMO_DATA } from "@/lib/demo-data";
+import { DEMO_REVIEW_COUNT, demoData } from "@/lib/demo-data";
 import { FAQ } from "@/lib/faq";
 import { rupees, useInIndiaOrUnknown } from "@/lib/region";
 import { HOSTS, SITE, appHref } from "@/lib/site";
@@ -337,8 +337,11 @@ function LiveDemo() {
     headerAlign: "center",
     showAllReviewsBtn: true,
     cardShadow: true,
-    reviewCount: 6,
+    reviewCount: DEMO_REVIEW_COUNT,
   };
+  // The demo photos need this page's origin (the widget draws http(s) images
+  // only); the preview itself only runs in the browser.
+  const data = useMemo(() => demoData(typeof window === "undefined" ? "" : window.location.origin), []);
 
   return (
     <section id="demo" className="scroll-mt-20 bg-sand">
@@ -381,7 +384,7 @@ function LiveDemo() {
           </div>
         </div>
         <div className="mx-auto mt-8 max-w-5xl">
-          <WidgetPreview data={DEMO_DATA} settings={settings} title="yourwebsite.com" />
+          <WidgetPreview data={data} settings={settings} title="yourwebsite.com" />
         </div>
       </div>
     </section>

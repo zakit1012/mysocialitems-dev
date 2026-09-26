@@ -69,6 +69,6 @@ export const config = {
   // Not for files every host serves itself: build output, images, icons,
   // robots.txt, the sitemap and the manifest.
   matcher: [
-    "/((?!_next/|brand/|marketing/|favicon\\.ico|icon\\.svg|apple-icon\\.png|robots\\.txt|sitemap\\.xml|manifest\\.webmanifest).*)",
+    "/((?!_next/|brand/|marketing/|demo/|favicon\\.ico|icon\\.svg|apple-icon\\.png|robots\\.txt|sitemap\\.xml|manifest\\.webmanifest).*)",
   ],
 };

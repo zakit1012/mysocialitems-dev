@@ -95,7 +95,7 @@ const LAYOUTS: { id: Layout; label: string; hint: string }[] = [
   { id: "masonry", label: "Masonry", hint: "Pinterest style" },
   { id: "list", label: "List", hint: "One per row" },
   { id: "quotes", label: "Quotes", hint: "Big testimonial text" },
-  { id: "showcase", label: "Showcase", hint: "Even row, no arrows" },
+  { id: "showcase", label: "Showcase", hint: "One big review, the rest around it" },
   { id: "carousel", label: "Carousel", hint: "Slides sideways with arrows" },
 ];
 

@@ -69,6 +69,16 @@ export function widgetScript(key: string, preview = false): string {
     '.wpop-showcase .wpop-items{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:14px;align-items:stretch}' +
     '.wpop-showcase .wpop-card{display:flex;flex-direction:column;height:100%;padding:18px 16px 14px}' +
     '.wpop-showcase .wpop-text{flex:1}' +
+    // Showcase: the fullest review sits large across two columns and two
+    // rows, the rest around it (only with three columns or more; see showcase()).
+    '.wpop-showcase .wpop-items{grid-auto-flow:dense}' +
+    '.wpop-showcase .wpop-feature{grid-column:span 2;grid-row:span 2;order:-1;padding:28px 26px 22px}' +
+    '.wpop-showcase .wpop-feature:before{content:"“";display:block;font:64px/0.55 Georgia,"Iowan Old Style",serif;color:var(--star);margin:4px 0 14px}' +
+    '.wpop-showcase .wpop-feature .wpop-text{font-size:17px;line-height:1.6;color:var(--head);-webkit-line-clamp:9}' +
+    '.wpop-showcase .wpop-feature .wpop-top{order:2;margin:18px 0 0}' +
+    '.wpop-showcase .wpop-feature .wpop-pics{order:3;margin-top:14px}' +
+    '.wpop-showcase .wpop-feature .wpop-pics img{width:72px;height:72px}' +
+    '.wpop-showcase .wpop-feature .wpop-more-btn{order:1;align-self:flex-start}' +
     '.wpop-car{position:relative;padding:0 48px}' +
     '.wpop-car.wpop-fits{padding:0}' +
     '.wpop-carousel .wpop-items{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:2px 0 6px;align-items:stretch}' +
@@ -194,6 +204,14 @@ export function widgetScript(key: string, preview = false): string {
       '<i>' + row + '</i><b style="width:' + value * 20 + '%">' + row + '</b></span>';
   }
 
+  /** A steady colour per reviewer for the initial, so a row of avatars is not all one colour. */
+  var AVATAR = ['#F97316', '#10B981', '#6366F1', '#EC4899', '#0EA5E9', '#8B5CF6', '#14B8A6', '#EF4444', '#84CC16', '#F59E0B'];
+  function avatarColor(name) {
+    var h = 0;
+    for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    return AVATAR[h % AVATAR.length];
+  }
+
   function card(r, s, index) {
     var initial = (r.author || '?').trim().charAt(0).toUpperCase();
     var html = '<div class="wpop-card" data-i="' + index + '">' +
@@ -202,7 +220,7 @@ export function widgetScript(key: string, preview = false): string {
     if (s.showReviewerPhoto !== false) {
       html += r.author_photo
         ? '<img class="wpop-av" loading="lazy" referrerpolicy="no-referrer" src="' + url(r.author_photo) + '" alt="">'
-        : '<div class="wpop-av">' + esc(initial) + '</div>';
+        : '<div class="wpop-av" style="background:' + avatarColor(r.author || '?') + '">' + esc(initial) + '</div>';
     }
     html += '<div class="wpop-who"><div class="wpop-name">' + esc(r.author || 'Google user') + '</div>' +
       '<div class="wpop-when">' + stars(r.rating) +
@@ -355,6 +373,30 @@ export function widgetScript(key: string, preview = false): string {
         step(1);
       }, 5000);
     }
+  }
+
+  /**
+   * Showcase: the review with the most to say (of the first four) becomes the
+   * big featured card, while the widget is wide enough for three columns.
+   */
+  function showcase(host) {
+    var items = host.querySelector('.wpop-items');
+    var cards = items ? items.querySelectorAll('.wpop-card') : [];
+    if (cards.length < 3) return;
+    var best = cards[0], most = -1;
+    for (var i = 0; i < Math.min(4, cards.length); i++) {
+      var t = cards[i].querySelector('.wpop-text');
+      var size = (t ? t.textContent.length : 0) + (cards[i].querySelector('.wpop-pics') ? 80 : 0);
+      if (size > most) { most = size; best = cards[i]; }
+    }
+    function fit() {
+      best.classList.remove('wpop-feature');
+      var columns = getComputedStyle(items).gridTemplateColumns.split(' ').filter(Boolean).length;
+      if (columns >= 3) best.classList.add('wpop-feature');
+    }
+    fit();
+    host.__wpopResize = fit;
+    window.addEventListener('resize', fit);
   }
 
   /**
@@ -539,6 +581,7 @@ export function widgetScript(key: string, preview = false): string {
     host.innerHTML = html + '</div>';
     // Columns here means the most cards one view shows.
     if (layout === 'carousel') carousel(host, s, cols);
+    if (layout === 'showcase') showcase(host);
 
     addReadMore(host, s);
     // Fonts and images can change line breaks after the first paint.
