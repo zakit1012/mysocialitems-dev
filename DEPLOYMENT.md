@@ -57,19 +57,27 @@ NEXT_PUBLIC_API_URL=https://api.widgetpop.com
 
 ## 3. nginx
 
-The Next.js server must see the host the visitor typed, so pass `Host`
-through. The API needs `X-Forwarded-For` for rate limiting (with
-`TRUST_PROXY=true`).
+Put this in a new file, `/etc/nginx/conf.d/widgetpop.conf`. Leave the
+config of any old domain in place: widgets pasted on customer sites
+still load from the old API address.
+
+Use the same ports the app already runs on. Look them up in the old
+config (`sudo grep -rn "server_name\|proxy_pass" /etc/nginx/conf.d/`):
+`FRONTEND_PORT` is the Next.js one, `BACKEND_PORT` the API's `PORT`.
+
+Start with plain http; certbot adds https in the next step. A
+`listen 443 ssl` block without a certificate fails `nginx -t`.
 
 ```nginx
 # Website: widgetpop.com, www., app. and admin.
 server {
-    listen 443 ssl;
+    listen 80;
     server_name widgetpop.com www.widgetpop.com app.widgetpop.com admin.widgetpop.com;
-    # ssl_certificate / ssl_certificate_key: see step 4
 
     location / {
-        proxy_pass http://127.0.0.1:3000;   # next start (default port 3000)
+        proxy_pass http://127.0.0.1:FRONTEND_PORT;
+        # The site sends each page to its own host, so it must see the
+        # host the visitor typed.
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -78,28 +86,28 @@ server {
 
 # API
 server {
-    listen 443 ssl;
+    listen 80;
     server_name api.widgetpop.com;
 
     location / {
-        proxy_pass http://127.0.0.1:3001;   # backend PORT
+        proxy_pass http://127.0.0.1:BACKEND_PORT;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # Rate limiting reads the visitor's IP from this (TRUST_PROXY=true).
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
+```
 
-# Plain http -> https
-server {
-    listen 80;
-    server_name widgetpop.com www.widgetpop.com app.widgetpop.com admin.widgetpop.com api.widgetpop.com;
-    return 301 https://$host$request_uri;
-}
+```
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
 ## 4. HTTPS
 
-One certificate for every name:
+Once `ping app.widgetpop.com` (and the other names) answer with the
+server's IP, get one certificate for every name. certbot adds the https
+blocks to the file above; say yes when it offers to redirect http to https.
 
 ```
 sudo certbot --nginx -d widgetpop.com -d www.widgetpop.com -d app.widgetpop.com -d admin.widgetpop.com -d api.widgetpop.com
@@ -129,3 +137,20 @@ sudo certbot --nginx -d widgetpop.com -d www.widgetpop.com -d app.widgetpop.com 
   invoices send `noindex`, both as a meta tag and as an `X-Robots-Tag`
   header, so they never show in results.
 - `admin.widgetpop.com`: `robots.txt` blocks everything.
+
+## Updating the server
+
+After merging to `main`:
+
+```
+cd ~/mysocialitems && git pull
+cd backend
+npm ci --include=dev     # NODE_ENV=production would skip the build tools
+npx prisma db push       # applies schema changes; safe when there are none
+npm run build
+cd ../frontend
+npm ci --include=dev
+npm run build
+pm2 list                 # find WidgetPop's two apps
+pm2 restart <backend-name> <frontend-name>   # not "all": other apps may share the server
+```
