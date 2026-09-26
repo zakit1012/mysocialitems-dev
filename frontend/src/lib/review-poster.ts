@@ -104,7 +104,31 @@ export async function drawQr(canvas: HTMLCanvasElement, link: string, size: numb
   drawContained(ctx, logo, x + pad, x + pad, tile - pad * 2);
 }
 
+export const DEFAULT_POSTER_COLOR = "#E8446D";
+
+/** Ready-made colours for the poster band; any other comes from the picker. */
+export const POSTER_COLORS = ["#E8446D", "#DC2626", "#EA580C", "#CA8A04", "#059669", "#0891B2", "#2563EB", "#7C3AED", "#111827"];
+
+const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+/** `a` moved towards `b` by `t` (0-1). */
+function mix(a: string, b: string, t: number) {
+  const [x, y] = [rgb(a), rgb(b)];
+  return `#${x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** Relative luminance, 0 (black) to 1 (white). */
+function luminance(hex: string) {
+  const [r, g, b] = rgb(hex).map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 export type PosterOptions = {
+  /** Band colour, #rrggbb. */
+  color: string;
   businessName: string;
   headline: string;
   subtext: string;
@@ -129,34 +153,37 @@ export async function drawPoster(canvas: HTMLCanvasElement, o: PosterOptions) {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
 
-  // brand band with the business
-  const band = o.logo ? 520 : 400;
+  // Colour band with the business. Its height follows what is in it (a logo,
+  // one or two lines of name), so nothing is clipped at its edge.
+  ctx.font = `800 76px ${FONT}`;
+  const nameLines = wrap(ctx, o.businessName, W - 200, 2);
+  const logoSize = 220;
+  const firstLine = o.logo ? 90 + logoSize + 100 : 190;
+  const band = Math.max(360, firstLine + (nameLines.length - 1) * 90 + 90);
+  const color = /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : DEFAULT_POSTER_COLOR;
   const grad = ctx.createLinearGradient(0, 0, W, band);
-  grad.addColorStop(0, "#FF6B6B");
-  grad.addColorStop(1, "#E8446D");
+  grad.addColorStop(0, mix(color, "#ffffff", 0.22));
+  grad.addColorStop(1, color);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, band);
 
-  let y = 110;
   if (o.logo) {
-    const d = 220;
+    const top = 90;
     ctx.fillStyle = "#ffffff";
     ctx.beginPath();
-    ctx.arc(W / 2, y + d / 2, d / 2, 0, Math.PI * 2);
+    ctx.arc(W / 2, top + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.save();
     ctx.beginPath();
-    ctx.arc(W / 2, y + d / 2, d / 2 - 14, 0, Math.PI * 2);
+    ctx.arc(W / 2, top + logoSize / 2, logoSize / 2 - 14, 0, Math.PI * 2);
     ctx.clip();
-    drawContained(ctx, o.logo, W / 2 - d / 2 + 22, y + 22, d - 44);
+    drawContained(ctx, o.logo, W / 2 - logoSize / 2 + 22, top + 22, logoSize - 44);
     ctx.restore();
-    y += d + 90;
-  } else {
-    y += 110;
   }
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `800 76px ${FONT}`;
-  for (const line of wrap(ctx, o.businessName, W - 200, 2)) {
+  // Dark text on a light colour, white on a dark one.
+  ctx.fillStyle = luminance(color) > 0.6 ? "#111827" : "#ffffff";
+  let y = o.logo ? firstLine : (band - (nameLines.length - 1) * 90) / 2 + 26;
+  for (const line of nameLines) {
     ctx.fillText(line, W / 2, y);
     y += 90;
   }

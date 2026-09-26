@@ -19,7 +19,14 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
 import { writeReviewUrl } from "@/lib/widget-settings";
-import { drawPoster, drawQr, loadImage, shrinkLogo } from "@/lib/review-poster";
+import {
+  DEFAULT_POSTER_COLOR,
+  POSTER_COLORS,
+  drawPoster,
+  drawQr,
+  loadImage,
+  shrinkLogo,
+} from "@/lib/review-poster";
 
 type Widget = { id: string; placeId: string; placeName: string };
 type WidgetWithLogo = Widget & { logo: string | null };
@@ -130,6 +137,16 @@ function Locked() {
   );
 }
 
+function savedColor(key: string): string {
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved && /^#[0-9a-f]{6}$/i.test(saved)) return saved;
+  } catch {
+    // storage blocked: the default colour is fine
+  }
+  return DEFAULT_POSTER_COLOR;
+}
+
 function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) {
   const [widgetId, setWidgetId] = useState(widgets[0].id);
   const [widget, setWidget] = useState<WidgetWithLogo | null>(null);
@@ -137,11 +154,25 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
   const [logoInQr, setLogoInQr] = useState(true);
   const [headline, setHeadline] = useState(DEFAULT_HEADLINE);
   const [subtext, setSubtext] = useState(DEFAULT_SUBTEXT);
+  const [picked, setPicked] = useState<{ key: string; color: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const poster = useRef<HTMLCanvasElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  // The poster colour is remembered per business, in this browser only.
+  const colorKey = `poster-color:${widgetId}`;
+  const color = picked?.key === colorKey ? picked.color : savedColor(colorKey);
+
+  function pickColor(next: string) {
+    setPicked({ key: colorKey, color: next });
+    try {
+      localStorage.setItem(colorKey, next);
+    } catch {
+      // not remembered, still used
+    }
+  }
 
   // The chosen business, with its saved logo.
   useEffect(() => {
@@ -169,6 +200,7 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
   useEffect(() => {
     if (!widget || !poster.current) return;
     void drawPoster(poster.current, {
+      color,
       businessName: name,
       headline: headline.trim() || DEFAULT_HEADLINE,
       subtext: subtext.trim() || DEFAULT_SUBTEXT,
@@ -176,7 +208,7 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
       logo: logoImg,
       logoInQr,
     });
-  }, [widget, name, headline, subtext, link, logoImg, logoInQr]);
+  }, [widget, name, headline, subtext, link, logoImg, logoInQr, color]);
 
   const saveLogo = useCallback(
     async (logo: string | null) => {
@@ -233,9 +265,14 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
     const src = poster.current.toDataURL("image/png");
     const w = window.open("", "_blank");
     if (!w) return;
+    // One A4 page, edge to edge: no page margins, and the image fills exactly
+    // the page height so it can never spill onto a second sheet.
     w.document.write(
-      `<!doctype html><title>Review poster</title><style>@page{size:A4;margin:0}html,body{margin:0}img{display:block;width:100%;height:auto}</style>` +
-        `<img src="${src}" onload="setTimeout(function(){window.print()},100)">`,
+      `<!doctype html><title>Review poster</title><style>` +
+        `@page{size:A4 portrait;margin:0}` +
+        `html,body{margin:0;padding:0;height:100%;overflow:hidden}` +
+        `img{display:block;width:100%;height:100vh;object-fit:contain;-webkit-print-color-adjust:exact;print-color-adjust:exact}` +
+        `</style><img src="${src}" onload="setTimeout(function(){window.print()},100)">`,
     );
     w.document.close();
   }
@@ -358,6 +395,40 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
               className="h-5 w-5 accent-brand"
             />
           </label>
+
+          <div className="mt-4">
+            <p className="text-sm font-semibold">Poster colour</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Poster colour">
+              {POSTER_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  role="radio"
+                  aria-checked={color.toLowerCase() === c.toLowerCase()}
+                  aria-label={c}
+                  onClick={() => pickColor(c)}
+                  className={`h-8 w-8 rounded-full border-2 transition ${
+                    color.toLowerCase() === c.toLowerCase() ? "border-ink ring-2 ring-ink/20" : "border-white shadow-card"
+                  }`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+              <label
+                className="relative inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-line bg-card pl-1 pr-3 text-xs font-semibold text-ink hover:border-brand/40"
+                title="Pick any colour"
+              >
+                <span className="h-6 w-6 rounded-full border border-line" style={{ backgroundColor: color }} />
+                Custom
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(e) => pickColor(e.target.value)}
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  aria-label="Custom poster colour"
+                />
+              </label>
+            </div>
+          </div>
 
           <div className="mt-4 grid gap-3">
             <label className="block">
