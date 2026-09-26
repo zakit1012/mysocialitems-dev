@@ -54,8 +54,10 @@ export function widgetScript(key: string, preview = false): string {
     '.wpop .wpop-i-fill,.wpop .wpop-i-fill path{fill:currentColor!important;stroke:none!important}' +
     '.wpop-gbadge{display:inline-grid;place-items:center;width:22px;height:22px;margin-left:-5px;border-radius:50%;background:#fff;flex:none;box-shadow:0 1px 2px rgba(0,0,0,.18)}' +
     '.wpop-btn .wpop-gbadge svg{width:14px;height:14px}' +
-    '.wpop-items{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}' +
-    '.wpop-list .wpop-items{grid-template-columns:1fr}' +
+    // min(100%,...) and minmax(0,...): a card never gets wider than the page
+    // around it, even in a narrow sidebar or with a long reviewer name.
+    '.wpop-items{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))}' +
+    '.wpop-list .wpop-items{grid-template-columns:minmax(0,1fr)}' +
     '.wpop-masonry .wpop-items{display:block;columns:240px var(--cols,3);column-gap:12px}' +
     '.wpop-masonry .wpop-card{break-inside:avoid;margin-bottom:12px}' +
     '.wpop-quotes .wpop-items{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px}' +
@@ -69,7 +71,7 @@ export function widgetScript(key: string, preview = false): string {
     '.wpop-showcase .wpop-text{flex:1}' +
     '.wpop-car{position:relative;padding:0 48px}' +
     '.wpop-car.wpop-fits{padding:0}' +
-    '.wpop-carousel .wpop-items{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;padding:2px 0 6px;align-items:stretch}' +
+    '.wpop-carousel .wpop-items{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:2px 0 6px;align-items:stretch}' +
     '.wpop-carousel .wpop-items::-webkit-scrollbar{display:none}' +
     '.wpop-carousel .wpop-card{flex:0 0 var(--slide,min(280px,85%));scroll-snap-align:start}' +
     // The arrows sit in their own gutter, beside the cards, centred on them.
@@ -89,7 +91,8 @@ export function widgetScript(key: string, preview = false): string {
     '.wpop .wpop-fits .wpop-nav{display:none!important}' +
     '@media (max-width:480px){.wpop-car{padding:0 40px}.wpop .wpop-nav{width:34px!important;height:34px!important;top:calc(50% - 17px)!important}.wpop .wpop-nav svg{width:18px!important;height:18px!important}}' +
     '.wpop-fits .wpop-items{justify-content:center}' +
-    '.wpop-card{position:relative;border:1px solid var(--line);border-radius:var(--r);padding:14px;background:var(--card)}' +
+    '.wpop-fits .wpop-clone{display:none}' +
+    '.wpop-card{position:relative;min-width:0;border:1px solid var(--line);border-radius:var(--r);padding:14px;background:var(--card)}' +
     '.wpop-g{position:absolute;top:13px;right:13px;width:16px;height:16px;line-height:0}' +
     '.wpop-g svg{width:16px;height:16px}' +
     '.wpop-gi .wpop-top{padding-right:22px}' +
@@ -100,6 +103,7 @@ export function widgetScript(key: string, preview = false): string {
     '.wpop-who{min-width:0}' +
     '.wpop-name{font-weight:600;font-size:13.5px;line-height:1.25;color:var(--author,var(--head));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
     '.wpop-when{color:var(--date,var(--muted));font-size:11.5px}' +
+    '.wpop-date{white-space:nowrap}' +
     '.wpop-text{margin:0;font-size:13px;color:var(--text);white-space:pre-wrap;overflow:hidden;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical}' +
     '.wpop-lines-3 .wpop-text{-webkit-line-clamp:3}' +
     '.wpop-lines-all .wpop-text{display:block;-webkit-line-clamp:unset}' +
@@ -202,7 +206,11 @@ export function widgetScript(key: string, preview = false): string {
     }
     html += '<div class="wpop-who"><div class="wpop-name">' + esc(r.author || 'Google user') + '</div>' +
       '<div class="wpop-when">' + stars(r.rating) +
-      (s.showReviewDate !== false && r.published_at_text ? ' ' + esc(r.published_at_text) : '') +
+      // One piece, so a narrow card moves "2 weeks ago" down whole instead
+      // of splitting it over two lines.
+      (s.showReviewDate !== false && r.published_at_text
+        ? ' <span class="wpop-date">' + esc(r.published_at_text) + '</span>'
+        : '') +
       '</div></div></div>' +
       '<p class="wpop-text">' + esc(r.text) + '</p>';
     if (s.showReviewPhotos !== false && r.images && r.images.length) {
@@ -251,30 +259,91 @@ export function widgetScript(key: string, preview = false): string {
    * pauses while the visitor hovers. When every card fits, the arrows hide
    * and the cards sit centred.
    */
+  /**
+   * A carousel that never runs out: a copy of every card sits before and
+   * after the real ones, so the track can always move on. Once it rests on
+   * a copy it jumps, unseen, to the same card among the real ones - no
+   * rewind from the last card to the first.
+   */
   function carousel(host, s, cols) {
     var GAP = 12, MIN = 240;
     var wrap = host.querySelector('.wpop-car');
     var track = wrap && wrap.querySelector('.wpop-items');
     if (!track) return;
-    function perView(width) {
-      var n = Math.max(1, Math.floor((width + GAP) / (MIN + GAP)));
-      return cols ? Math.min(cols, n) : n;
+    var real = Array.prototype.slice.call(track.children);
+    var n = real.length;
+    function copy(card) {
+      var c = card.cloneNode(true);
+      c.classList.add('wpop-clone');
+      c.setAttribute('aria-hidden', 'true');
+      var focusable = c.querySelectorAll('a,button');
+      for (var i = 0; i < focusable.length; i++) focusable[i].tabIndex = -1;
+      return c;
     }
+    var before = document.createDocumentFragment(), after = document.createDocumentFragment();
+    for (var i = 0; i < n; i++) { before.appendChild(copy(real[i])); after.appendChild(copy(real[i])); }
+    track.insertBefore(before, track.firstChild);
+    track.appendChild(after);
+
+    function perView(width) {
+      var k = Math.max(1, Math.floor((width + GAP) / (MIN + GAP)));
+      return cols ? Math.min(cols, k) : k;
+    }
+    function fits() { return wrap.classList.contains('wpop-fits'); }
+    /** One card and its gap, and one whole set of cards. */
+    function unit() { return real[0].getBoundingClientRect().width + GAP; }
+    function set() { return n * unit(); }
+    /**
+     * An instant move, so the jump cannot be seen. The track has no CSS
+     * smooth scrolling: only the arrows and autoplay glide (step), and a
+     * re-snap after a resize is instant too.
+     */
+    function jump(left) {
+      track.scrollLeft = left;
+    }
+    /** The review at the left edge, by the card itself (copies share data-i). */
+    function current() {
+      var edge = track.getBoundingClientRect().left, best = 0, gap = Infinity;
+      for (var i = 0; i < track.children.length; i++) {
+        var d = Math.abs(track.children[i].getBoundingClientRect().left - edge);
+        if (d < gap) { gap = d; best = Number(track.children[i].getAttribute('data-i')) || 0; }
+      }
+      return best;
+    }
+    /** Back among the real cards if the track came to rest on a copy. */
+    function settle() {
+      if (fits()) return;
+      var w = set();
+      if (track.scrollLeft < w - 2) jump(track.scrollLeft + w);
+      else if (track.scrollLeft >= 2 * w - 2) jump(track.scrollLeft - w);
+    }
+    var resting;
+    track.addEventListener('scroll', function () {
+      clearTimeout(resting);
+      resting = setTimeout(settle, 140);
+    }, { passive: true });
+
     function step(dir) {
-      var atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
-      var atStart = track.scrollLeft <= 4;
-      var left = dir > 0 && atEnd ? 0
-        : dir < 0 && atStart ? track.scrollWidth
-        : track.scrollLeft + dir * (track.clientWidth + GAP);
-      track.scrollTo({ left: left, behavior: 'smooth' });
+      if (fits()) return;
+      settle();
+      var page = perView(track.clientWidth) * unit();
+      track.scrollTo({ left: track.scrollLeft + dir * page, behavior: 'smooth' });
     }
     wrap.querySelector('.wpop-prev').onclick = function () { step(-1); };
     wrap.querySelector('.wpop-next').onclick = function () { step(1); };
+
+    var looping = null;
     function fit() {
-      wrap.classList.toggle('wpop-fits', track.children.length <= perView(wrap.clientWidth));
+      var nowFits = n <= perView(wrap.clientWidth);
+      wrap.classList.toggle('wpop-fits', nowFits);
       // Measured after the arrows' gutters are on or off.
       var width = track.clientWidth, per = perView(width);
       wrap.style.setProperty('--slide', (width - (per - 1) * GAP) / per + 'px');
+      if (nowFits) { jump(0); looping = false; return; }
+      // Keep the card in view when the width changes; start on the first.
+      var at = looping ? current() : 0;
+      jump(set() + at * unit());
+      looping = true;
     }
     fit();
     setTimeout(fit, 400);
@@ -282,7 +351,7 @@ export function widgetScript(key: string, preview = false): string {
     window.addEventListener('resize', fit);
     if (s.autoplay) {
       host.__wpopTimer = setInterval(function () {
-        if (wrap.matches(':hover') || wrap.classList.contains('wpop-fits')) return;
+        if (wrap.matches(':hover') || fits()) return;
         step(1);
       }, 5000);
     }
@@ -442,8 +511,8 @@ export function widgetScript(key: string, preview = false): string {
           // columns never fits and the browser drops one.
           var gap = layout === 'quotes' ? 16 : layout === 'showcase' ? 14 : 12;
           style = cols === 1
-            ? 'grid-template-columns:1fr'
-            : 'grid-template-columns:repeat(auto-fit,minmax(max(220px,calc((100% - ' + (cols - 1) * gap + 'px) / ' + cols + ' - 1px)),1fr))';
+            ? 'grid-template-columns:minmax(0,1fr)'
+            : 'grid-template-columns:repeat(auto-fit,minmax(min(100%,max(220px,calc((100% - ' + (cols - 1) * gap + 'px) / ' + cols + ' - 1px))),1fr))';
         }
         html += '<div class="wpop-items"' + (style ? ' style="' + style + '"' : '') + '>' + items + '</div>';
       }
