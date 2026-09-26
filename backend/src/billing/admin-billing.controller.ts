@@ -8,16 +8,21 @@ import {
   Put,
   Query,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminMfaGuard } from '../common/guards/admin-mfa.guard';
+import { AdminAuditInterceptor } from '../common/interceptors/admin-audit.interceptor';
 import { Roles } from '../common/decorators/roles.decorator';
 import { BillingService } from './billing.service';
 import type { DodoMode } from './dodo.client';
 
 /** Super admin: plans, Dodo Payments keys and every customer's subscription. */
 @Controller('admin/billing')
-@UseGuards(JwtAuthGuard, RolesGuard)
+// Signed in, an admin, and a fresh authenticator-app code; every change logged.
+@UseGuards(JwtAuthGuard, RolesGuard, AdminMfaGuard)
+@UseInterceptors(AdminAuditInterceptor)
 @Roles('ADMIN')
 export class AdminBillingController {
   constructor(private readonly billing: BillingService) {}

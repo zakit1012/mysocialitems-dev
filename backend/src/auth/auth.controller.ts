@@ -56,6 +56,6 @@ export class AuthController {
   @Post('refresh')
   @UseGuards(JwtAuthGuard)
   refresh(@CurrentUser() user: AuthUser) {
-    return this.auth.refresh(user.id);
+    return this.auth.refresh(user.id, user.mfaUntil);
   }
 }

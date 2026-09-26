@@ -8,17 +8,22 @@ import {
   Patch,
   Post,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminMfaGuard } from '../common/guards/admin-mfa.guard';
+import { AdminAuditInterceptor } from '../common/interceptors/admin-audit.interceptor';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AdminService } from './admin.service';
 import { HiddenReviewsService } from '../moderation/hidden-reviews.service';
 
 @Controller('admin')
-@UseGuards(JwtAuthGuard, RolesGuard)
+// Signed in, an admin, and a fresh authenticator-app code; every change logged.
+@UseGuards(JwtAuthGuard, RolesGuard, AdminMfaGuard)
+@UseInterceptors(AdminAuditInterceptor)
 @Roles('ADMIN')
 export class AdminController {
   constructor(

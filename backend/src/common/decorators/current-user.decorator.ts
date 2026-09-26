@@ -4,6 +4,8 @@ export type AuthUser = {
   id: string;
   email: string;
   role: string;
+  /** Admins: when the authenticator-app check runs out (unix seconds). */
+  mfaUntil?: number;
 };
 
 export const CurrentUser = createParamDecorator(

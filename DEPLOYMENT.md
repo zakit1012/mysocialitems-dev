@@ -130,6 +130,22 @@ sudo certbot --nginx -d widgetpop.com -d www.widgetpop.com -d app.widgetpop.com 
   `widget.js` from the old API address. Keep that address pointing at the
   API, or redirect it to `api.widgetpop.com`, until they are updated.
 
+## Admin 2-step sign-in
+
+The admin panel asks for a code from Google Authenticator (or any
+authenticator app) after the password, again every 12 hours. The first
+visit shows a QR code to scan. The admin API refuses every call without a
+recent code, and each admin change is written to the log as
+`[AdminAudit] who METHOD /path from IP` (`pm2 logs <backend-name>`).
+
+Lost the phone? On the server, from `backend/`:
+
+```
+node make-admin.js --reset-2fa you@example.com
+```
+
+The next visit to the admin panel sets the app up again.
+
 ## What search engines see
 
 - `widgetpop.com`: every page indexed. The sitemap is at `/sitemap.xml`.

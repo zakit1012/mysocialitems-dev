@@ -228,10 +228,15 @@ export class AuthService {
     }
   }
 
-  async refresh(userId: string) {
+  /**
+   * A new token for a signed-in user. An admin's 2-step check carries over
+   * until it runs out; it is never extended here.
+   */
+  async refresh(userId: string, mfaUntil?: number) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
-    return this.issue(user);
+    const stillValid = mfaUntil && mfaUntil * 1000 > Date.now();
+    return this.issue(user, stillValid ? mfaUntil : undefined);
   }
 
   async me(userId: string) {
@@ -245,15 +250,18 @@ export class AuthService {
     return user;
   }
 
-  private issue(user: {
-    id: string;
-    email: string;
-    name: string;
-    role: string;
-    city: string | null;
-    createdAt: Date;
-    tokenVersion?: number;
-  }) {
+  issue(
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      role: string;
+      city: string | null;
+      createdAt: Date;
+      tokenVersion?: number;
+    },
+    mfaUntil?: number,
+  ) {
     const safe = {
       id: user.id,
       email: user.email,
@@ -264,22 +272,27 @@ export class AuthService {
     };
     return {
       user: safe,
-      token: this.sign({ ...safe, tokenVersion: user.tokenVersion }),
+      token: this.sign({ ...safe, tokenVersion: user.tokenVersion }, mfaUntil),
     };
   }
 
-  private sign(user: {
-    id: string;
-    email: string;
-    role: string;
-    tokenVersion?: number;
-  }) {
+  private sign(
+    user: {
+      id: string;
+      email: string;
+      role: string;
+      tokenVersion?: number;
+    },
+    mfaUntil?: number,
+  ) {
     return this.jwt.sign({
       sub: user.id,
       email: user.email,
       role: user.role,
       // A password or email change bumps this, signing out older tokens.
       v: user.tokenVersion ?? 0,
+      // Admins only: the authenticator-app check passed, good until then.
+      ...(mfaUntil ? { mfa: mfaUntil } : {}),
     });
   }
 

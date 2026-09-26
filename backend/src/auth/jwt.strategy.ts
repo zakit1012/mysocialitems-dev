@@ -11,6 +11,8 @@ type JwtPayload = {
   role: string;
   /** Token version; tokens from before v was added count as 0. */
   v?: number;
+  /** Admin 2-step check good until (unix seconds). */
+  mfa?: number;
 };
 
 @Injectable()
@@ -39,6 +41,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user || (payload.v ?? 0) !== user.tokenVersion) {
       throw new UnauthorizedException();
     }
-    return { id: user.id, email: user.email, role: user.role };
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      mfaUntil: payload.mfa,
+    };
   }
 }
