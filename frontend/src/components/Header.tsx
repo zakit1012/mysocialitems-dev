@@ -4,7 +4,8 @@ import Link from "next/link";
 import { LayoutDashboard, UserRound } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { LogoutButton } from "./LogoutButton";
-import { SITE } from "@/lib/site";
+import { SITE, appHref } from "@/lib/site";
+import { Logo } from "./Logo";
 
 export function Header() {
   const { user } = useAuth();
@@ -12,11 +13,8 @@ export function Header() {
   return (
     <header className="sticky top-0 z-30 glass shadow-header">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-        <Link
-          href="/"
-          className="shrink-0 text-xl font-black tracking-tight gradient-brand-text transition hover:opacity-80"
-        >
-          {SITE.name}
+        <Link href="/" aria-label={`${SITE.name} home`} className="shrink-0 transition hover:opacity-80">
+          <Logo />
         </Link>
 
         <nav className="mx-auto hidden items-center gap-1 text-sm font-medium text-muted lg:flex" aria-label="Sections">
@@ -35,11 +33,11 @@ export function Header() {
         <nav className="ml-auto flex items-center gap-1 text-sm font-medium lg:ml-0">
           {user ? (
             <>
-              <NavLink href="/dashboard">
+              <NavLink href={appHref("/dashboard")}>
                 <LayoutDashboard className="h-4 w-4" /> Dashboard
               </NavLink>
               <Link
-                href="/dashboard"
+                href={appHref("/dashboard")}
                 className="ml-1 inline-flex items-center gap-2 rounded-full border border-line bg-card py-1.5 pl-1.5 pr-3.5 transition hover:border-brand/30 hover:shadow-card"
               >
                 <span className="grid h-7 w-7 place-items-center rounded-full bg-brand text-xs font-bold text-white">
@@ -58,9 +56,9 @@ export function Header() {
             </>
           ) : (
             <>
-              <NavLink href="/login">Log in</NavLink>
+              <NavLink href={appHref("/login")}>Log in</NavLink>
               <Link
-                href="/register"
+                href={appHref("/register")}
                 className="rounded-full gradient-brand px-4 py-2 text-white transition hover:shadow-glow hover:shadow-card"
               >
                 Join free

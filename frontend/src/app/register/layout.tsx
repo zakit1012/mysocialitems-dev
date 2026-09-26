@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/seo";
-import { SITE } from "@/lib/site";
 
 export const metadata: Metadata = pageMetadata({
-  title: "Sign up free",
-  description: `Create your free ${SITE.name} account and show your 5-star Google reviews on your website in about two minutes. No credit card, no coding.`,
+  title: "Create a Free Google Reviews Widget",
+  description:
+    "Sign up free and show your best Google reviews on your website in 2 minutes. No coding, no Google login and no credit card needed.",
   path: "/register",
+  host: "app",
 });
 
 export default function RegisterLayout({ children }: LayoutProps<"/register">) {

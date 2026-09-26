@@ -3,6 +3,7 @@ import Link from "next/link";
 import { LegalPage } from "@/components/LegalPage";
 import { LEGAL, legal } from "@/lib/legal";
 import { pageMetadata } from "@/lib/seo";
+import { appHref } from "@/lib/site";
 
 export const metadata: Metadata = pageMetadata({
   title: "Refund & Cancellation Policy",
@@ -22,7 +23,7 @@ export default function RefundPolicyPage() {
       <h2>Cancelling</h2>
       <ul>
         <li>
-          Cancel any time from <Link href="/dashboard/billing">Billing</Link> in your dashboard. Changed your mind
+          Cancel any time from <Link href={appHref("/dashboard/billing")}>Billing</Link> in your dashboard. Changed your mind
           before the period ends? Resume it from the same page.
         </li>
         <li>

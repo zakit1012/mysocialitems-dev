@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { SITE } from "./site";
 
+/** The link preview card: 1200x630, under WhatsApp's 300 KB limit. */
 const OG_IMAGE = {
-  url: "/marketing/editor.png",
-  width: 2880,
-  height: 1800,
-  alt: `The ${SITE.name} widget editor with a live preview of a Google reviews carousel`,
+  url: "/brand/og.jpg",
+  width: 1200,
+  height: 630,
+  alt: `${SITE.name}: show your 5-star Google reviews on your website`,
 };
 
 /**
@@ -17,33 +18,37 @@ export function pageMetadata({
   title,
   description,
   path,
+  host = "site",
   absolute = false,
 }: {
   title: string;
   description: string;
   path: string;
+  /** Sign-in pages live on the app's host once the hosts are split. */
+  host?: "site" | "app";
   /** Use the title as is, without the "| WidgetPop" suffix. */
   absolute?: boolean;
 }): Metadata {
   const full = absolute ? title : `${title} | ${SITE.name}`;
+  const url = `${host === "app" && SITE.appUrl ? SITE.appUrl : SITE.url}${path}`;
   return {
     title: absolute ? { absolute: title } : title,
     description,
-    alternates: { canonical: path },
+    alternates: { canonical: url },
     openGraph: {
       type: "website",
       siteName: SITE.name,
       locale: "en_US",
-      url: path,
+      url,
       title: full,
       description,
-      images: [OG_IMAGE],
+      images: [{ ...OG_IMAGE, url: `${SITE.url}${OG_IMAGE.url}` }],
     },
     twitter: {
       card: "summary_large_image",
       title: full,
       description,
-      images: [OG_IMAGE.url],
+      images: [`${SITE.url}${OG_IMAGE.url}`],
     },
   };
 }

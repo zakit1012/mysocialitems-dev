@@ -28,6 +28,7 @@ import {
   normalizeSettings,
 } from '../widgets/widget-settings';
 import { widgetScript } from './widget-script';
+import { siteUrl } from '../common/urls';
 
 /** One visitor reloading or browsing a site counts as one view per window. */
 const VIEW_WINDOW_SECONDS = 30 * 60;
@@ -52,10 +53,7 @@ export class PublicController {
 
   /** Our site, for the "Powered by" link on Free widgets. */
   private siteUrl(): string {
-    return (this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3002')
-      .split(',')[0]
-      .trim()
-      .replace(/\/+$/, '');
+    return siteUrl(this.config);
   }
 
   /**

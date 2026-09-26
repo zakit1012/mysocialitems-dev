@@ -1,30 +1,48 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import HomePage from "./home-client";
+import { FAQ } from "@/lib/faq";
 import { pageMetadata } from "@/lib/seo";
 import { SITE } from "@/lib/site";
 
 export const metadata: Metadata = pageMetadata({
-  title: `${SITE.name} — ${SITE.tagline}`,
+  title: `Free ${SITE.tagline} | ${SITE.name}`,
   description: SITE.description,
   path: "/",
   absolute: true,
 });
 
-// Tells Google the site's name, so results show "WidgetPop" and not the domain.
+// What search engines read about the product: the site's name (so results
+// say "WidgetPop", not the domain), the logo, the free plan and the FAQ.
 const structuredData = {
   "@context": "https://schema.org",
   "@graph": [
-    { "@type": "WebSite", name: SITE.name, url: SITE.url },
-    { "@type": "Organization", name: SITE.name, url: SITE.url },
+    { "@type": "WebSite", "@id": `${SITE.url}/#website`, name: SITE.name, url: SITE.url },
+    {
+      "@type": "Organization",
+      "@id": `${SITE.url}/#organization`,
+      name: SITE.name,
+      url: SITE.url,
+      logo: `${SITE.url}/brand/icon-512.png`,
+    },
     {
       "@type": "SoftwareApplication",
       name: SITE.name,
       url: SITE.url,
+      image: `${SITE.url}/brand/og.jpg`,
       applicationCategory: "BusinessApplication",
       operatingSystem: "Web",
       description: SITE.description,
-      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      publisher: { "@id": `${SITE.url}/#organization` },
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free plan" },
+    },
+    {
+      "@type": "FAQPage",
+      mainEntity: Object.values(FAQ).map((item) => ({
+        "@type": "Question",
+        name: item.q,
+        acceptedAnswer: { "@type": "Answer", text: item.a },
+      })),
     },
   ],
 };

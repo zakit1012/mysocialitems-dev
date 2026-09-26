@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
 import { fmtCents, fmtDay, PAYMENT_STATUS } from "@/lib/payments";
+import { appHref } from "@/lib/site";
 
 type Invoice = {
   id: string;
@@ -56,7 +57,7 @@ export default function InvoicePage() {
     return (
       <div className="mx-auto w-full max-w-3xl px-4 py-16 text-center">
         <p className="text-lg font-bold">{error}</p>
-        <Link href="/dashboard/billing" className="mt-4 inline-block text-sm font-semibold text-brand hover:underline">
+        <Link href={appHref("/dashboard/billing")} className="mt-4 inline-block text-sm font-semibold text-brand hover:underline">
           Back to billing
         </Link>
       </div>

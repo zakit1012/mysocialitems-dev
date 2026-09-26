@@ -1,20 +1,25 @@
 import type { MetadataRoute } from "next";
 import { SITE } from "@/lib/site";
 
-/** The public pages. Signed-in screens stay out (see robots.ts). */
+/**
+ * The public pages. Sign up and sign in live on the app host once the hosts
+ * are split; its robots.txt points here, which lets this sitemap list them.
+ */
 export default function sitemap(): MetadataRoute.Sitemap {
+  const lastModified = new Date();
+  const app = SITE.appUrl || SITE.url;
   const page = (
-    path: string,
+    url: string,
     changeFrequency: "weekly" | "monthly" | "yearly",
     priority: number,
-  ) => ({ url: `${SITE.url}${path}`, changeFrequency, priority });
+  ) => ({ url, lastModified, changeFrequency, priority });
 
   return [
-    page("/", "weekly", 1),
-    page("/register", "monthly", 0.8),
-    page("/login", "yearly", 0.3),
-    page("/terms", "yearly", 0.2),
-    page("/privacy", "yearly", 0.2),
-    page("/refund-policy", "yearly", 0.2),
+    page(`${SITE.url}/`, "weekly", 1),
+    page(`${app}/register`, "monthly", 0.8),
+    page(`${app}/login`, "yearly", 0.3),
+    page(`${SITE.url}/terms`, "yearly", 0.2),
+    page(`${SITE.url}/privacy`, "yearly", 0.2),
+    page(`${SITE.url}/refund-policy`, "yearly", 0.2),
   ];
 }

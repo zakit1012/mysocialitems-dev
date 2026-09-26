@@ -28,6 +28,7 @@ import {
   UNLIMITED,
 } from './plans';
 import { PRODUCT_NAME } from '../common/product';
+import { appUrl } from '../common/urls';
 
 type Resource = 'widgets' | 'sources';
 
@@ -146,10 +147,7 @@ export class BillingService {
   ) {}
 
   private appUrl(): string {
-    return (this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3002')
-      .split(',')[0]
-      .trim()
-      .replace(/\/+$/, '');
+    return appUrl(this.config);
   }
 
   // ------------------------------------------------------------------ plans

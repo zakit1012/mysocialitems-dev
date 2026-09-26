@@ -60,7 +60,15 @@ async function bootstrap() {
 
   // An Origin header never ends in "/", so "https://site.com/" in .env
   // would never match and every call would fail as a CORS error.
-  const frontends = (process.env.FRONTEND_URL ?? 'http://localhost:3002')
+  // SITE_URL, APP_URL and ADMIN_URL (widgetpop.com and its app. and admin.
+  // hosts) call the API too, so they are allowed without repeating them.
+  const frontends = [
+    process.env.FRONTEND_URL ?? 'http://localhost:3002',
+    process.env.SITE_URL,
+    process.env.APP_URL,
+    process.env.ADMIN_URL,
+  ]
+    .join(',')
     .split(',')
     .map((o) => o.trim().replace(/\/+$/, ''))
     .filter(Boolean);

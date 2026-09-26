@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { SITE } from "@/lib/site";
+import { SITE, siteHref } from "@/lib/site";
+import { Logo } from "./Logo";
 
 export function AuthShell({
   title,
@@ -16,8 +17,8 @@ export function AuthShell({
     // Sized to fit one screen, a laptop or a phone, without scrolling.
     <div className="flex min-h-dvh items-center justify-center px-4 py-5 gradient-subtle">
       <div className="w-full max-w-[440px]">
-        <Link href="/" className="mb-4 block text-center text-xl font-black gradient-brand-text">
-          {SITE.name}
+        <Link href={siteHref("/")} aria-label={`${SITE.name} home`} className="mb-4 flex justify-center">
+          <Logo />
         </Link>
         <div className="rounded-3xl bg-white p-6 shadow-panel">
           <h1 className="text-xl font-black tracking-tight">{title}</h1>
