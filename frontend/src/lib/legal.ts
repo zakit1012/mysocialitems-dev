@@ -1,21 +1,22 @@
 import { SITE } from "./site";
 
 /**
- * The business details the legal pages print. Fill in every blank before
- * going live - an empty value shows as a [bracketed placeholder] on the page.
+ * The business details the legal pages print. The site names the brand, not
+ * a person; grievanceOfficer and city are optional and read naturally when
+ * blank. A blank owner, address or email would show as a [placeholder].
  */
 export const LEGAL = {
   product: SITE.name,
   site: SITE.url,
-  /** Legal name of the business or person selling the service. */
-  owner: "",
-  /** Registered or business postal address. */
-  address: "",
+  /** Who sells the service, as shown on the site. */
+  owner: SITE.name,
+  /** Postal address shown on the site. */
+  address: "India",
   /** Where customers, reviewers and privacy requests write to. */
   email: SITE.supportEmail,
-  /** India (IT Rules 2011, DPDP Act 2023): the person who handles complaints. */
+  /** India (IT Rules 2011, DPDP Act 2023): who handles complaints; blank = not named. */
   grievanceOfficer: "",
-  /** Courts of this city, India, hear disputes. */
+  /** Courts of this city hear disputes; blank = the courts of India. */
   city: "",
   /** Change whenever a policy's text changes. */
   updated: "26 September 2026",

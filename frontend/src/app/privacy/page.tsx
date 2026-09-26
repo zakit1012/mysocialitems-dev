@@ -24,8 +24,8 @@ export default function PrivacyPage() {
       <h2>1. Who is responsible</h2>
       <p>
         {owner}, {legal("address", "Business address")}, is responsible for your personal data (the
-        &quot;data fiduciary&quot; or &quot;controller&quot;). Questions and requests go to {email}. Our grievance
-        officer is {legal("grievanceOfficer", "Grievance officer name")}, at the same email address.
+        &quot;data fiduciary&quot; or &quot;controller&quot;). Questions and requests go to {email}. Complaints go to
+        our grievance officer{LEGAL.grievanceOfficer ? `, ${LEGAL.grievanceOfficer},` : ""} at the same email address.
       </p>
 
       <h2>2. What we collect</h2>
