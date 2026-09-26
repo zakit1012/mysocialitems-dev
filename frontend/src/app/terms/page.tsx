@@ -128,7 +128,7 @@ export default function TermsPage() {
 
       <h2>9. Governing law</h2>
       <p>
-        These Terms are governed by the laws of India. The courts of {legal("city", "City")}, India have
+        These Terms are governed by the laws of India. The courts of {LEGAL.city ? `${LEGAL.city}, ` : ""}India have
         jurisdiction over any dispute, without taking away any right you have under the law of your own
         country as a consumer.
       </p>
