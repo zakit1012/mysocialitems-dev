@@ -19,7 +19,20 @@ export function Header() {
           My Social Items
         </Link>
 
-        <nav className="ml-auto flex items-center gap-1 text-sm font-medium">
+        <nav className="mx-auto hidden items-center gap-1 text-sm font-medium text-muted lg:flex" aria-label="Sections">
+          {[
+            ["/#features", "Features"],
+            ["/#demo", "Demo"],
+            ["/#pricing", "Pricing"],
+            ["/#faq", "FAQ"],
+          ].map(([href, label]) => (
+            <Link key={href} href={href} className="rounded-full px-3 py-2 transition hover:bg-sand-deep hover:text-ink">
+              {label}
+            </Link>
+          ))}
+        </nav>
+
+        <nav className="ml-auto flex items-center gap-1 text-sm font-medium lg:ml-0">
           {user ? (
             <>
               <NavLink href="/dashboard">
