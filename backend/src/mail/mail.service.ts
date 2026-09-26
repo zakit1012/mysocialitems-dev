@@ -23,6 +23,14 @@ export class MailService {
         port,
         secure: port === 465,
         auth: { user, pass },
+        // Keeps the connection open between emails instead of a new
+        // connect + TLS + login each time.
+        pool: true,
+        // Nodemailer waits up to 2 minutes by default on a mail server that
+        // does not answer; give up much sooner.
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 20_000,
       });
     } else {
       this.transporter = null;

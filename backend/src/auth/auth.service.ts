@@ -3,6 +3,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   UnauthorizedException,
   BadRequestException,
 } from '@nestjs/common';
@@ -49,6 +50,8 @@ const CODE_GAP_SECONDS = 30;
 
 @Injectable()
 export class AuthService {
+  private readonly log = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -76,7 +79,9 @@ export class AuthService {
 
     await this.redis.setJson(this.signupKey(email), pending, SIGNUP_TTL);
     await this.redis.del(`${this.signupKey(email)}:tries`);
-    await this.mail.sendCode(email, code, 'signup');
+    // In the background: the code screen shows at once instead of after the
+    // mail server has answered. "Resend code" covers a lost email.
+    this.sendInBackground(email, code, 'signup');
 
     return {
       pending: true,
@@ -114,8 +119,10 @@ export class AuthService {
 
     await this.redis.del(this.signupKey(email));
     await this.redis.del(`${this.signupKey(email)}:tries`);
-    // New accounts start on Free; the email is best effort and never blocks signup.
-    await this.billing.welcome(user.id).catch(() => undefined);
+    // New accounts start on Free. The welcome email is best effort and goes
+    // out in the background, so creating the account never waits on it.
+    await this.billing.subscriptionFor(user.id);
+    void this.billing.welcome(user.id).catch(() => undefined);
     return { user, token: this.sign(user) };
   }
 
@@ -144,7 +151,7 @@ export class AuthService {
       LOGIN_TTL,
     );
     await this.redis.del(`${this.loginKey(email)}:tries`);
-    await this.mail.sendCode(email, code, 'login');
+    this.sendInBackground(email, code, 'login');
 
     return {
       pending: true,
@@ -171,6 +178,20 @@ export class AuthService {
     await this.redis.del(this.loginKey(email));
     await this.redis.del(`${this.loginKey(email)}:tries`);
     return this.issue(user);
+  }
+
+  private sendInBackground(
+    email: string,
+    code: string,
+    purpose: 'signup' | 'login',
+  ) {
+    void this.mail
+      .sendCode(email, code, purpose)
+      .catch((err: unknown) =>
+        this.log.error(
+          `Could not send the ${purpose} code to ${email}: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
   }
 
   /** A short gap between codes to one address, and a few an hour at most. */
