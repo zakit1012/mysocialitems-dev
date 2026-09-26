@@ -190,7 +190,9 @@ export class PaypalClient {
         ],
         payment_preferences: {
           auto_bill_outstanding: true,
-          payment_failure_threshold: 2,
+          // Monthly gets one missed month of grace; a yearly plan pauses on its
+          // first failed renewal, or a missed year would run on for free.
+          payment_failure_threshold: interval === 'YEAR' ? 1 : 2,
         },
       },
       mode,
@@ -217,6 +219,26 @@ export class PaypalClient {
     );
   }
 
+  /** How many failed payments PayPal allows before it suspends a subscription. */
+  async setFailureThreshold(
+    mode: PaypalMode,
+    planId: string,
+    threshold: number,
+  ) {
+    await this.request(
+      'PATCH',
+      `/v1/billing/plans/${encodeURIComponent(planId)}`,
+      [
+        {
+          op: 'replace',
+          path: '/payment_preferences/payment_failure_threshold',
+          value: threshold,
+        },
+      ],
+      mode,
+    );
+  }
+
   async setPlanActive(mode: PaypalMode, planId: string, active: boolean) {
     await this.request(
       'POST',
@@ -234,6 +256,8 @@ export class PaypalClient {
     email: string;
     returnUrl: string;
     cancelUrl: string;
+    /** First charge on this date instead of now (ISO time). */
+    startTime?: string;
   }) {
     return this.request<{
       id: string;
@@ -242,6 +266,7 @@ export class PaypalClient {
     }>('POST', '/v1/billing/subscriptions', {
       plan_id: input.planId,
       custom_id: input.customId,
+      ...(input.startTime ? { start_time: input.startTime } : {}),
       subscriber: { email_address: input.email },
       application_context: {
         brand_name: 'My Social Items',
@@ -265,6 +290,30 @@ export class PaypalClient {
       'POST',
       `/v1/billing/subscriptions/${encodeURIComponent(id)}/cancel`,
       { reason },
+    );
+  }
+
+  /** Every charge on a subscription between two dates. */
+  async listTransactions(id: string, start: Date, end: Date) {
+    const q = `start_time=${encodeURIComponent(start.toISOString())}&end_time=${encodeURIComponent(end.toISOString())}`;
+    const res = await this.request<{ transactions?: PaypalTransaction[] }>(
+      'GET',
+      `/v1/billing/subscriptions/${encodeURIComponent(id)}/transactions?${q}`,
+    );
+    return res.transactions ?? [];
+  }
+
+  /** Refunds a payment: all of it, or `amount` (e.g. "4.50") of it. */
+  refundSale(
+    mode: PaypalMode,
+    saleId: string,
+    amount?: { total: string; currency: string },
+  ) {
+    return this.request<{ id: string; state?: string }>(
+      'POST',
+      `/v1/payments/sale/${encodeURIComponent(saleId)}/refund`,
+      amount ? { amount } : {},
+      mode,
     );
   }
 
@@ -314,9 +363,27 @@ export type PaypalSubscription = {
   subscriber?: { email_address?: string };
   billing_info?: {
     next_billing_time?: string;
+    /** Money PayPal failed to collect and is still owed. */
+    outstanding_balance?: { value: string; currency_code: string };
+    failed_payments_count?: number;
     last_payment?: {
       amount?: { value: string; currency_code: string };
       time?: string;
     };
+    last_failed_payment?: {
+      amount?: { value: string; currency_code: string };
+      time?: string;
+    };
+  };
+};
+
+export type PaypalTransaction = {
+  /** The same id as the sale in PAYMENT.SALE webhooks. */
+  id: string;
+  status: string;
+  time?: string;
+  amount_with_breakdown?: {
+    gross_amount?: { value: string; currency_code: string };
+    fee_amount?: { value: string; currency_code: string };
   };
 };

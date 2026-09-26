@@ -92,7 +92,7 @@ export class EngineSyncService
       },
     });
 
-    const planHours = new Map<string, number>();
+    const accounts = new Map<string, { hours: number; covered: Set<string> }>();
     const hours = new Map<string, number>();
     for (const w of widgets) {
       // Just created (the owner may not have installed it yet) or seen lately.
@@ -102,11 +102,15 @@ export class EngineSyncService
         seenWidgets.has(w.id) ||
         seenAccounts.has(w.userId);
       if (!active) continue;
-      let h = planHours.get(w.userId);
-      if (h === undefined) {
-        h = (await this.billing.planFor(w.userId)).refreshHours;
-        planHours.set(w.userId, h);
+      let account = accounts.get(w.userId);
+      if (!account) {
+        const cover = await this.billing.coverage(w.userId);
+        account = { hours: cover.plan.refreshHours, covered: cover.widgets };
+        accounts.set(w.userId, account);
       }
+      // Paused by the plan's widget limit: nobody sees it, so no refreshes.
+      if (!account.covered.has(w.id)) continue;
+      const h = account.hours;
       hours.set(w.placeId, Math.min(hours.get(w.placeId) ?? h, h));
     }
     return hours;

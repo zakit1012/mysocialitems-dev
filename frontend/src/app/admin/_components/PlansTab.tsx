@@ -53,7 +53,7 @@ export function PlansTab({ token }: { token: string | null }) {
     setBusy(`save:${d.key}`);
     setMsg(null);
     try {
-      const r = await api<{ warnings: string[] }>(`/admin/billing/plans/${d.key}`, {
+      const r = await api<{ warnings: string[]; notified?: number }>(`/admin/billing/plans/${d.key}`, {
         method: "PUT",
         token,
         body: JSON.stringify({
@@ -77,7 +77,12 @@ export function PlansTab({ token }: { token: string | null }) {
       setMsg(
         r.warnings.length
           ? { ok: false, text: `Saved, but PayPal said: ${r.warnings.join("; ")}` }
-          : { ok: true, text: `${d.name} saved.` },
+          : {
+              ok: true,
+              text: r.notified
+                ? `${d.name} saved. ${r.notified} subscriber${r.notified === 1 ? " was" : "s were"} emailed about the new price.`
+                : `${d.name} saved.`,
+            },
       );
       await load();
     } catch (e) {
@@ -129,7 +134,8 @@ export function PlansTab({ token }: { token: string | null }) {
           Price changes on a plan that is already on PayPal are pushed there too. PayPal tells existing
           subscribers and applies the new price from their next cycle. Blank views = unlimited.
           Refresh = hours between automatic review updates (2-168). Yearly $ blank = 10x monthly (two months free).
-          Monthly and yearly are separate plans on PayPal.
+          Monthly and yearly are separate plans on PayPal. The PayPal ids fill in by themselves when you press
+          &quot;Monthly on …&quot; / &quot;Yearly on …&quot; at the end of a row; the Free plan never goes to PayPal.
         </p>
         <button type="button" onClick={addPlan} disabled={busy === "add"}
           className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-semibold hover:border-brand/40 hover:text-brand">
@@ -168,10 +174,10 @@ export function PlansTab({ token }: { token: string | null }) {
                   <td className="px-2 py-2 w-24"><input className={input} placeholder="unlimited" value={d.views} onChange={(e) => edit(d.key, "views", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={2} max={168} value={d.refreshHours} onChange={(e) => edit(d.key, "refreshHours", e.target.value)} /></td>
                   <td className="px-2 py-2"><input type="checkbox" checked={d.active} onChange={(e) => edit(d.key, "active", e.target.checked)} className="h-4 w-4 accent-brand" /></td>
-                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder="P-..." value={d.paypalPlanIdSandbox ?? ""} onChange={(e) => edit(d.key, "paypalPlanIdSandbox", e.target.value)} /></td>
-                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder="P-..." value={d.paypalPlanIdLive ?? ""} onChange={(e) => edit(d.key, "paypalPlanIdLive", e.target.value)} /></td>
-                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder="P-..." value={d.paypalYearlyIdSandbox ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalYearlyIdSandbox", e.target.value)} /></td>
-                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder="P-..." value={d.paypalYearlyIdLive ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalYearlyIdLive", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder={d.key === "FREE" ? "not needed" : "P-..."} value={d.paypalPlanIdSandbox ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalPlanIdSandbox", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder={d.key === "FREE" ? "not needed" : "P-..."} value={d.paypalPlanIdLive ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalPlanIdLive", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder={d.key === "FREE" ? "not needed" : "P-..."} value={d.paypalYearlyIdSandbox ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalYearlyIdSandbox", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder={d.key === "FREE" ? "not needed" : "P-..."} value={d.paypalYearlyIdLive ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalYearlyIdLive", e.target.value)} /></td>
                   <td className="whitespace-nowrap px-2 py-2">
                     <button type="button" onClick={() => save(d)} disabled={Boolean(busy)}
                       className="inline-flex items-center gap-1 rounded-lg gradient-brand px-2.5 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50">

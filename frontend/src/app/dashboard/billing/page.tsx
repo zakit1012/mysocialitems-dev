@@ -2,10 +2,13 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, CreditCard, TriangleAlert } from "lucide-react";
+import Link from "next/link";
+import { Check, CreditCard, FileText, TriangleAlert } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { fmtCents, fmtDay, PAYMENT_STATUS, type PaymentRow } from "@/lib/payments";
 
 type PlanCard = {
   // Admins can add plans, so any key is possible.
@@ -40,7 +43,10 @@ type Overview = {
   usage: { period: string; views: number; widgets: number; sources: number };
   plans: PlanCard[];
   billingEnabled: boolean;
+  details?: Details;
 };
+
+type Details = { name: string; address: string; taxId: string };
 
 export default function BillingPage() {
   return (
@@ -58,11 +64,19 @@ function Billing() {
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
   const [period, setPeriod] = useState<Interval | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
 
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      setData(await api<Overview>("/billing", { token }));
+      const [overview, paid] = await Promise.all([
+        api<Overview>("/billing", { token }),
+        // The history is extra: the page still works if it fails to load.
+        api<PaymentRow[]>("/billing/payments", { token }).catch((): PaymentRow[] => []),
+      ]);
+      setData(overview);
+      setPayments(paid);
     } catch (err) {
       setNotice({ kind: "bad", text: err instanceof Error ? err.message : "Could not load billing" });
     }
@@ -118,11 +132,11 @@ function Billing() {
   }
 
   async function cancel() {
-    if (!confirm("Cancel your subscription? You keep your plan until the end of the paid period.")) return;
+    setConfirmCancel(false);
     setBusy("cancel");
     try {
       await api("/billing/cancel", { method: "POST", token });
-      setNotice({ kind: "ok", text: "Subscription cancelled." });
+      setNotice({ kind: "ok", text: "Subscription cancelled. You will not be charged again; we have emailed you the details." });
       await load();
     } catch (err) {
       setNotice({ kind: "bad", text: err instanceof Error ? err.message : "Could not cancel" });
@@ -143,6 +157,8 @@ function Billing() {
   const isPaid = subscription.plan !== "FREE" && subscription.status !== "EXPIRED";
   // The toggle starts on the interval the account pays by.
   const every: Interval = period ?? subscription.interval ?? "month";
+  // Overdue or paused accounts are on Free limits; the dialog names the plan they pay for.
+  const planName = data.plans.find((p) => p.id === subscription.plan)?.name ?? plan.name;
   const renews = subscription.currentPeriodEnd
     ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
     : null;
@@ -180,7 +196,9 @@ function Billing() {
             <p className="mt-0.5 text-[13px] text-muted">
               {subscription.status === "CANCELLED" && renews
                 ? `Cancelled - paid features until ${renews}`
-                : subscription.status === "SUSPENDED"
+                : subscription.status === "PAST_DUE"
+                  ? "Payment overdue - update your payment method in PayPal; your plan returns once it goes through"
+                  : subscription.status === "SUSPENDED"
                   ? "Suspended by PayPal - update your payment method"
                   : isPaid && renews
                     ? `Renews ${renews}${subscription.interval === "year" ? " · billed yearly" : " · billed monthly"}`
@@ -192,10 +210,10 @@ function Billing() {
             </p>
           </div>
           {/* Only a PayPal subscription can be cancelled here; a plan set by support is changed by support. */}
-          {isPaid && subscription.status === "ACTIVE" && subscription.hasPaypal && (
+          {isPaid && CANCELLABLE.includes(subscription.status) && subscription.hasPaypal && (
             <button
               type="button"
-              onClick={cancel}
+              onClick={() => setConfirmCancel(true)}
               disabled={busy === "cancel"}
               className="rounded-lg border border-line px-3.5 py-2 text-[13px] font-medium text-coral transition hover:bg-coral/5 disabled:opacity-50"
             >
@@ -210,6 +228,21 @@ function Billing() {
           <Meter label="Domains" used={usage.sources} limit={plan.sources} />
         </div>
       </section>
+
+      <ConfirmDialog
+        open={confirmCancel}
+        danger
+        title={`Cancel your ${planName} subscription?`}
+        message={
+          subscription.status === "ACTIVE" && renews
+            ? `You will not be charged again. You keep ${planName} until ${renews}, then your account moves to the Free plan.`
+            : "You will not be charged again, and your account moves to the Free plan now."
+        }
+        confirmLabel="Cancel subscription"
+        cancelLabel="Keep my plan"
+        onCancel={() => setConfirmCancel(false)}
+        onConfirm={cancel}
+      />
 
       {/* plans */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -244,6 +277,7 @@ function Billing() {
           const samePlanOtherPeriod = p.id === plan.id && !free && !current;
           const yearly = every === "year" && !free;
           const available = yearly ? p.availableYearly : p.available;
+          const resumable = !free && subscription.status === "CANCELLED" && Boolean(renews) && Boolean(available);
           return (
             <div
               key={p.id}
@@ -278,7 +312,18 @@ function Billing() {
                 )}
               </ul>
               <div className="mt-auto pt-5">
-                {current ? (
+                {current && resumable ? (
+                  // Cancelled but still paid up: take it back, first charge when the paid time ends.
+                  <button
+                    type="button"
+                    onClick={() => upgrade(p.id, every)}
+                    disabled={Boolean(busy)}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg gradient-brand py-2.5 text-[13px] font-semibold text-white transition hover:shadow-glow disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busy === p.id ? <Spinner /> : <CreditCard className="h-4 w-4" />}
+                    Resume {p.name} - nothing to pay until {renews}
+                  </button>
+                ) : current ? (
                   <p className="rounded-lg bg-sand py-2 text-center text-[13px] font-semibold text-muted">
                     Current plan
                   </p>
@@ -302,9 +347,158 @@ function Billing() {
           );
         })}
       </div>
+
+      <PaymentHistory payments={payments} />
+      <BillingDetails token={token} initial={data.details ?? { name: "", address: "", taxId: "" }} />
     </div>
   );
 }
+
+function PaymentHistory({ payments }: { payments: PaymentRow[] }) {
+  return (
+    <section className="mt-8">
+      <h2 className="mb-3 font-bold">Payments and invoices</h2>
+      {payments.length === 0 ? (
+        <p className="rounded-2xl border border-line bg-card px-5 py-6 text-[13px] text-muted shadow-card">
+          No payments yet. Every payment shows up here with its invoice.
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-line bg-card shadow-card">
+          <table className="w-full min-w-[560px] text-[13px]">
+            <thead>
+              <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
+                {["Date", "Invoice", "Plan", "Amount", "Status", ""].map((h) => (
+                  <th key={h} className="px-4 py-3 font-bold">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {payments.map((p) => {
+                const status = PAYMENT_STATUS[p.status] ?? PAYMENT_STATUS.PAID;
+                return (
+                  <tr key={p.id} className="border-b border-line/60 last:border-0">
+                    <td className="whitespace-nowrap px-4 py-3">{fmtDay(p.paidAt)}</td>
+                    <td className="px-4 py-3 font-mono text-[12.5px]">
+                      {p.number}
+                      {p.test && (
+                        <span className="ml-1.5 rounded bg-amber-50 px-1 font-sans text-[10.5px] font-bold text-amber-700">
+                          TEST
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {p.planName} · {p.interval === "year" ? "yearly" : "monthly"}
+                    </td>
+                    <td className="px-4 py-3 font-semibold">
+                      {fmtCents(p.amountCents, p.currency)}
+                      {p.refundedCents > 0 && (
+                        <span className="ml-1 text-[12px] font-normal text-coral">
+                          (-{fmtCents(p.refundedCents, p.currency)})
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${status.tone}`}>
+                        {status.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/invoice/${p.id}`}
+                        target="_blank"
+                        className="inline-flex items-center gap-1 font-semibold text-brand hover:underline"
+                      >
+                        <FileText className="h-3.5 w-3.5" /> Invoice
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Who invoices are made out to. Starts from the saved details and keeps edits across reloads. */
+function BillingDetails({ token, initial }: { token: string | null; initial: Details }) {
+  const [form, setForm] = useState<Details>(initial);
+  // "" idle, "saving", "saved", or an error message.
+  const [state, setState] = useState("");
+  const field =
+    "mt-1 w-full rounded-lg border border-line bg-white px-3 py-2 text-[13px] font-normal text-ink outline-none transition focus:border-brand";
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setState("saving");
+    try {
+      setForm(await api<Details>("/billing/details", { method: "PUT", token, body: JSON.stringify(form) }));
+      setState("saved");
+    } catch (err) {
+      setState(err instanceof Error ? err.message : "Could not save");
+    }
+  }
+
+  return (
+    <section className="mt-8">
+      <h2 className="font-bold">Invoice details</h2>
+      <p className="mb-3 mt-0.5 text-[13px] text-muted">
+        Printed under &quot;Billed to&quot; on your invoices, including ones already issued. Leave blank to use your
+        account name.
+      </p>
+      <form onSubmit={save} className="grid gap-3 rounded-2xl border border-line bg-card p-5 shadow-card sm:grid-cols-2">
+        <label className="block text-[12.5px] font-semibold text-muted">
+          Name or company
+          <input
+            className={field}
+            maxLength={120}
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="Acme Dental Pvt Ltd"
+          />
+        </label>
+        <label className="block text-[12.5px] font-semibold text-muted">
+          Tax ID (GSTIN, VAT...)
+          <input
+            className={field}
+            maxLength={40}
+            value={form.taxId}
+            onChange={(e) => setForm({ ...form, taxId: e.target.value })}
+            placeholder="Optional"
+          />
+        </label>
+        <label className="block text-[12.5px] font-semibold text-muted sm:col-span-2">
+          Address
+          <textarea
+            className={`${field} min-h-20`}
+            maxLength={400}
+            value={form.address}
+            onChange={(e) => setForm({ ...form, address: e.target.value })}
+            placeholder="Street, city, postcode, country"
+          />
+        </label>
+        <div className="flex items-center gap-3 sm:col-span-2">
+          <button
+            type="submit"
+            disabled={state === "saving"}
+            className="rounded-lg gradient-brand px-4 py-2 text-[13px] font-semibold text-white transition hover:shadow-glow disabled:opacity-50"
+          >
+            {state === "saving" ? "Saving..." : "Save details"}
+          </button>
+          {state === "saved" && <span className="text-[13px] text-emerald-dark">Saved.</span>}
+          {state && state !== "saving" && state !== "saved" && <span className="text-[13px] text-coral">{state}</span>}
+        </div>
+      </form>
+    </section>
+  );
+}
+
+/** A PayPal subscription in these states can still be stopped from here. */
+const CANCELLABLE = ["ACTIVE", "PAST_DUE", "SUSPENDED"];
 
 /** The backend sends Number.MAX_SAFE_INTEGER for "no limit". */
 const UNLIMITED = 1_000_000;

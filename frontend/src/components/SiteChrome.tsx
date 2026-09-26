@@ -4,8 +4,8 @@ import { usePathname } from "next/navigation";
 import { SiteHeader } from "./SiteHeader";
 import { Footer } from "./Footer";
 
-/** Routes that bring their own shell (auth screens, dashboard sidebar). */
-const BARE_ROUTES = ["/login", "/register", "/dashboard", "/admin"];
+/** Routes that bring their own shell (auth screens, dashboard sidebar, invoices). */
+const BARE_ROUTES = ["/login", "/register", "/dashboard", "/admin", "/invoice"];
 
 export function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

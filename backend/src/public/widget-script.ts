@@ -49,6 +49,9 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;font-size:13.5px;font-weight:600;color:var(--btn-text);background:var(--btn);text-decoration:none;padding:9px 16px;border-radius:min(var(--r),999px);transition:opacity .2s;border:0;cursor:pointer;line-height:1.2}' +
     '.msi-btn:hover{opacity:.9}' +
     '.msi-btn svg{width:16px;height:16px;flex:none}' +
+    // SVG attributes lose to any site CSS (svg{fill:...}); say it in CSS too.
+    '.msi .msi-i-line,.msi .msi-i-line path{fill:none!important;stroke:currentColor!important}' +
+    '.msi .msi-i-fill,.msi .msi-i-fill path{fill:currentColor!important;stroke:none!important}' +
     '.msi-gbadge{display:inline-grid;place-items:center;width:22px;height:22px;margin-left:-5px;border-radius:50%;background:#fff;flex:none;box-shadow:0 1px 2px rgba(0,0,0,.18)}' +
     '.msi-btn .msi-gbadge svg{width:14px;height:14px}' +
     '.msi-items{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}' +
@@ -64,15 +67,27 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-showcase .msi-items{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:14px;align-items:stretch}' +
     '.msi-showcase .msi-card{display:flex;flex-direction:column;height:100%;padding:18px 16px 14px}' +
     '.msi-showcase .msi-text{flex:1}' +
-    '.msi-car{position:relative;padding:0 22px}' +
+    '.msi-car{position:relative;padding:0 48px}' +
     '.msi-car.msi-fits{padding:0}' +
     '.msi-carousel .msi-items{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;padding:2px 0 6px;align-items:stretch}' +
     '.msi-carousel .msi-items::-webkit-scrollbar{display:none}' +
     '.msi-carousel .msi-card{flex:0 0 var(--slide,min(280px,85%));scroll-snap-align:start}' +
-    '.msi-nav{position:absolute;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--head);cursor:pointer;font-size:20px;line-height:1;display:grid;place-items:center;box-shadow:0 2px 8px rgba(0,0,0,.15);z-index:1;padding:0}' +
-    '.msi-nav:hover{border-color:var(--btn);color:var(--btn)}' +
-    '.msi-prev{left:-6px}.msi-next{right:-6px}' +
-    '.msi-fits .msi-nav{display:none}' +
+    // The arrows sit in their own gutter, beside the cards, centred on them.
+    // Sites style every <button> (colours, hover fills, padding, transforms),
+    // so each look-defining property is pinned with !important, in every state.
+    '.msi .msi-nav{all:unset;box-sizing:border-box!important;position:absolute!important;top:calc(50% - 20px)!important;z-index:1;' +
+      'display:flex!important;align-items:center!important;justify-content:center!important;width:40px!important;height:40px!important;min-width:0!important;min-height:0!important;' +
+      'margin:0!important;padding:0!important;border:1px solid var(--line)!important;border-radius:50%!important;background:var(--card)!important;color:var(--head)!important;' +
+      'box-shadow:0 1px 2px rgba(0,0,0,.08),0 4px 14px rgba(0,0,0,.1)!important;font-size:0!important;line-height:0!important;text-shadow:none!important;opacity:1!important;' +
+      'transform:none!important;cursor:pointer!important;transition:box-shadow .2s,transform .15s!important}' +
+    '.msi .msi-nav:hover,.msi .msi-nav:focus{background:var(--card)!important;color:var(--head)!important;border-color:var(--line)!important;outline:none!important;box-shadow:0 2px 4px rgba(0,0,0,.1),0 8px 22px rgba(0,0,0,.14)!important}' +
+    '.msi .msi-nav:focus-visible{outline:2px solid var(--btn)!important;outline-offset:2px!important}' +
+    '.msi .msi-nav:active{transform:scale(.92)!important}' +
+    '.msi .msi-nav svg{display:block!important;width:20px!important;height:20px!important;margin:0!important;fill:none!important;stroke:currentColor!important;pointer-events:none}' +
+    '.msi .msi-nav svg path{fill:none!important;stroke:currentColor!important;stroke-width:2.4!important;stroke-linecap:round!important;stroke-linejoin:round!important}' +
+    '.msi .msi-prev{left:0!important;right:auto!important}.msi .msi-next{right:0!important;left:auto!important}' +
+    '.msi .msi-fits .msi-nav{display:none!important}' +
+    '@media (max-width:480px){.msi-car{padding:0 40px}.msi .msi-nav{width:34px!important;height:34px!important;top:calc(50% - 17px)!important}.msi .msi-nav svg{width:18px!important;height:18px!important}}' +
     '.msi-fits .msi-items{justify-content:center}' +
     '.msi-card{position:relative;border:1px solid var(--line);border-radius:var(--r);padding:14px;background:var(--card)}' +
     '.msi-g{position:absolute;top:13px;right:13px;width:16px;height:16px;line-height:0}' +
@@ -97,6 +112,9 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-pic-more{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.55);color:#fff;font-size:14px;font-weight:700;line-height:1}' +
     '.msi-more-btn{display:inline-block;background:none;border:0;padding:0;margin-top:6px;color:var(--btn);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}' +
     '.msi-more-btn:hover{text-decoration:underline}' +
+    '.msi .msi-more-btn,.msi .msi-more-btn:hover,.msi .msi-more-btn:focus{background:none!important;border:0!important;box-shadow:none!important;padding:0!important;min-height:0!important;color:var(--btn)!important;text-transform:none!important;letter-spacing:normal!important}' +
+    '.msi .msi-pic,.msi .msi-pic:hover,.msi .msi-pic:focus{background:none!important;border:0!important;box-shadow:none!important;padding:0!important;min-width:0!important;min-height:0!important}' +
+    '.msi .msi-btn,.msi .msi-btn:hover,.msi .msi-btn:focus,.msi .msi-btn:visited{color:var(--btn-text)!important;background:var(--btn)!important;text-decoration:none!important}' +
     '.msi-open .msi-text{display:block;-webkit-line-clamp:unset}' +
     '.msi-brand{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px}' +
     '.msi-brand svg{width:18px;height:18px;flex:none}' +
@@ -104,11 +122,15 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-hc .msi-brand,.msi-hc .msi-sum{justify-content:center}' +
     '.msi-lb{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;padding:60px 16px;cursor:zoom-out;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}' +
     '.msi-lb img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5);cursor:default;user-select:none}' +
-    '.msi-lb button{position:absolute;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;line-height:1;transition:background .2s}' +
-    '.msi-lb button:hover{background:rgba(255,255,255,.3)}' +
-    '.msi-lb-x{top:14px;right:14px;width:40px;height:40px;font-size:26px}' +
-    '.msi-lb-nav{top:50%;width:46px;height:46px;margin-top:-23px;font-size:30px}' +
-    '.msi-lb-prev{left:12px}.msi-lb-next{right:12px}' +
+    '.msi-lb button{all:unset;box-sizing:border-box!important;position:absolute!important;display:flex!important;align-items:center!important;justify-content:center!important;margin:0!important;padding:0!important;border:0!important;border-radius:50%!important;background:rgba(255,255,255,.14)!important;color:#fff!important;box-shadow:none!important;cursor:pointer!important;transform:none!important;transition:background .2s!important}' +
+    '.msi-lb button:hover,.msi-lb button:focus{background:rgba(255,255,255,.3)!important;color:#fff!important;outline:none!important}' +
+    '.msi-lb button:focus-visible{outline:2px solid #fff!important;outline-offset:2px!important}' +
+    '.msi-lb button svg{display:block!important;width:24px!important;height:24px!important;fill:none!important;stroke:#fff!important;pointer-events:none}' +
+    '.msi-lb button svg path{fill:none!important;stroke:#fff!important;stroke-width:2.2!important;stroke-linecap:round!important;stroke-linejoin:round!important}' +
+    '.msi-lb-x{top:14px!important;right:14px!important;width:42px!important;height:42px!important}' +
+    '.msi-lb-nav{top:calc(50% - 24px)!important;width:48px!important;height:48px!important}' +
+    '.msi-lb-nav svg{width:28px!important;height:28px!important}' +
+    '.msi-lb-prev{left:12px!important}.msi-lb-next{right:12px!important}' +
     '.msi-lb-count{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);padding:5px 11px;border-radius:999px;background:rgba(0,0,0,.5);color:#fff;font-size:13px;font-weight:600}' +
     '.msi-foot{margin-top:16px;display:flex;justify-content:var(--btn-pos,center)}' +
     '.msi-full .msi-foot .msi-btn{width:100%}' +
@@ -118,8 +140,11 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-powered a:hover{color:var(--btn)}' +
     '.msi-err{border:1px dashed #fecaca;background:#fef2f2;color:#b91c1c;border-radius:10px;padding:12px;font-size:13px}';
 
-  var CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
-  var STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
+  var PREV = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
+  var NEXT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
+  var CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  var CHAT = '<svg class="msi-i-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
+  var STAR = '<svg class="msi-i-fill" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
   var GOOGLE = '<svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>';
 
   /** A button's icon. The colored Google logo sits on a white badge so it stays visible on any button color. */
@@ -278,10 +303,10 @@ export function widgetScript(key: string, preview = false): string {
     box.setAttribute('aria-modal', 'true');
     box.setAttribute('aria-label', 'Review photos');
     box.innerHTML = '<img alt="Photo from the review" referrerpolicy="no-referrer">' +
-      '<button type="button" class="msi-lb-x" aria-label="Close">\\u00d7</button>' +
+      '<button type="button" class="msi-lb-x" aria-label="Close">' + CLOSE + '</button>' +
       (many
-        ? '<button type="button" class="msi-lb-nav msi-lb-prev" aria-label="Previous photo">\\u2039</button>' +
-          '<button type="button" class="msi-lb-nav msi-lb-next" aria-label="Next photo">\\u203a</button>' +
+        ? '<button type="button" class="msi-lb-nav msi-lb-prev" aria-label="Previous photo">' + PREV + '</button>' +
+          '<button type="button" class="msi-lb-nav msi-lb-next" aria-label="Next photo">' + NEXT + '</button>' +
           '<div class="msi-lb-count"></div>'
         : '');
     var img = box.querySelector('img');
@@ -406,9 +431,9 @@ export function widgetScript(key: string, preview = false): string {
         html += '<div class="msi-empty">No reviews to show yet.</div>';
       } else if (layout === 'carousel') {
         html += '<div class="msi-car">' +
-          '<button type="button" class="msi-nav msi-prev" aria-label="Previous">\\u2039</button>' +
+          '<button type="button" class="msi-nav msi-prev" aria-label="Previous reviews">' + PREV + '</button>' +
           '<div class="msi-items">' + items + '</div>' +
-          '<button type="button" class="msi-nav msi-next" aria-label="Next">\\u203a</button></div>';
+          '<button type="button" class="msi-nav msi-next" aria-label="Next reviews">' + NEXT + '</button></div>';
       } else {
         var style = '';
         if (cols && (layout === 'grid' || layout === 'quotes' || layout === 'showcase')) {

@@ -15,12 +15,17 @@ export class SourcesService {
     private readonly billing: BillingService,
   ) {}
 
-  list(userId: string) {
-    return this.prisma.source.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      include: { widget: { select: { id: true, placeName: true } } },
-    });
+  async list(userId: string) {
+    const [rows, cover] = await Promise.all([
+      this.prisma.source.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        include: { widget: { select: { id: true, placeName: true } } },
+      }),
+      this.billing.coverage(userId),
+    ]);
+    // Paused: over the plan's domain limit, so widgets do not load there.
+    return rows.map((s) => ({ ...s, paused: !cover.sources.has(s.id) }));
   }
 
   async create(userId: string, domainInput: unknown, widgetId?: string) {

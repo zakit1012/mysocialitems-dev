@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { UsageBanner } from "@/components/UsageBanner";
 import { LiveBadge, SetupChecklist } from "@/components/SetupChecklist";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 type Widget = {
   id: string;
@@ -17,6 +18,8 @@ type Widget = {
   createdAt: string;
   lastSeenAt?: string | null;
   lastSeenHost?: string | null;
+  /** Over the plan's widget limit: the embed does not show it. */
+  paused?: boolean;
 };
 
 export default function DashboardPage() {
@@ -103,21 +106,35 @@ function WidgetCard({ widget, onDelete }: { widget: Widget; onDelete: (id: strin
   const [copied, setCopied] = useState(false);
   const { token } = useAuth();
   const [deleting, setDeleting] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [failed, setFailed] = useState("");
 
   async function handleDelete() {
-    if (!window.confirm("Are you sure you want to delete this widget?")) return;
+    setAsking(false);
     setDeleting(true);
+    setFailed("");
     try {
       await api(`/widgets/${widget.id}`, { method: "DELETE", token });
       onDelete(widget.id);
-    } catch {
-      alert("Failed to delete widget");
+    } catch (err) {
+      setFailed(err instanceof Error ? err.message : "Could not delete the widget");
       setDeleting(false);
     }
   }
 
   return (
     <article className="flex flex-col rounded-4xl border border-line/60 bg-card p-5 shadow-card transition-shadow hover:shadow-panel">
+      <ConfirmDialog
+        open={asking}
+        danger
+        title={`Delete ${widget.placeName}?`}
+        message="The widget disappears from every website it is installed on, and its embed code stops working. This cannot be undone."
+        confirmLabel="Delete widget"
+        cancelLabel="Keep it"
+        onCancel={() => setAsking(false)}
+        onConfirm={handleDelete}
+      />
+      {failed && <p className="mb-3 rounded-lg bg-coral/10 px-3 py-2 text-[13px] text-coral">{failed}</p>}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-brand-wash text-brand">
@@ -125,6 +142,15 @@ function WidgetCard({ widget, onDelete }: { widget: Widget; onDelete: (id: strin
           </span>
           <div className="min-w-0">
             <h2 className="truncate font-semibold">{widget.placeName}</h2>
+            {widget.paused && (
+              <p className="mt-1 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11.5px] font-semibold text-amber-700">
+                Paused - over your plan&apos;s widget limit.{" "}
+                <Link href="/dashboard/billing" className="underline">
+                  Upgrade
+                </Link>{" "}
+                or delete another widget.
+              </p>
+            )}
             {widget.placeAddress && (
               <p className="mt-0.5 flex items-start gap-1 text-sm text-muted">
                 <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -147,7 +173,8 @@ function WidgetCard({ widget, onDelete }: { widget: Widget; onDelete: (id: strin
             Customize
           </Link>
           <button
-            onClick={handleDelete}
+            type="button"
+            onClick={() => setAsking(true)}
             disabled={deleting}
             className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-coral transition hover:bg-coral/10 disabled:opacity-50"
           >

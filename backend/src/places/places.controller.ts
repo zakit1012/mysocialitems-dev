@@ -2,9 +2,12 @@ import {
   BadRequestException,
   Controller,
   Get,
+  HttpException,
+  HttpStatus,
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { RedisService } from '../redis/redis.service';
 import { PlacesService } from './places.service';
 import { AutocompleteDto } from './dto/autocomplete.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -15,6 +18,10 @@ import { HiddenReviewsService } from '../moderation/hidden-reviews.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 
+// Every place the engine has not seen is a paid scrape. Looking at a few
+// dozen a day is plenty for choosing a business; a script is not.
+const NEW_PLACES_PER_DAY = 25;
+
 @Controller('places')
 @UseGuards(JwtAuthGuard)
 export class PlacesController {
@@ -23,7 +30,27 @@ export class PlacesController {
     private readonly engine: ReviewsEngineService,
     private readonly billing: BillingService,
     private readonly hidden: HiddenReviewsService,
+    private readonly redis: RedisService,
   ) {}
+
+  /** Counts each place an account looks up once a day, and stops past the cap. */
+  private async guardNewPlace(user: AuthUser, placeId: string) {
+    if (user.role === 'ADMIN') return;
+    const fresh = await this.redis
+      .setIfAbsent(`place-look:${user.id}:${placeId}`, 86_400)
+      .catch(() => false);
+    if (!fresh) return;
+    const day = new Date().toISOString().slice(0, 10);
+    const n = await this.redis
+      .incrWithTtl(`place-looks:${user.id}:${day}`, 86_400)
+      .catch(() => 0);
+    if (n > NEW_PLACES_PER_DAY) {
+      throw new HttpException(
+        'You have looked up a lot of places today. Please try again tomorrow.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
 
   /**
    * Reviews for a place the signed-in user is looking at, before a widget
@@ -40,6 +67,7 @@ export class PlacesController {
     if (!placeId) {
       throw new BadRequestException('placeId is required');
     }
+    await this.guardNewPlace(user, placeId);
     // Up to the plan's allowance, or 10 so a Free user sees what an upgrade adds.
     const plan = await this.billing.planFor(user.id);
     const max = Math.max(10, plan.reviews);

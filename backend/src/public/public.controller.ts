@@ -81,18 +81,22 @@ export class PublicController {
   private async resolve(key: string, req: Request) {
     const widget = await this.prisma.widget.findUnique({
       where: { publicKey: key },
-      include: { sources: { select: { domain: true } } },
+      include: { sources: { select: { id: true, domain: true } } },
       // Every page view lands here; the poster logo is never needed.
       omit: { logo: true },
     });
     if (!widget)
       return { ok: false as const, error: 'Unknown widget key', status: 404 };
 
-    const accountWide = await this.prisma.source.findMany({
-      where: { userId: widget.userId, widgetId: null },
-      select: { domain: true },
-    });
-    const allowed = [...widget.sources, ...accountWide].map((s) => s.domain);
+    const [accountWide, cover] = await Promise.all([
+      this.prisma.source.findMany({
+        where: { userId: widget.userId, widgetId: null },
+        select: { id: true, domain: true },
+      }),
+      this.billing.coverage(widget.userId),
+    ]);
+    const registered = [...widget.sources, ...accountWide];
+    const allowed = registered.map((s) => s.domain);
 
     const host = this.originOf(req);
     if (allowed.length === 0) {
@@ -118,8 +122,27 @@ export class PublicController {
         status: 403,
       };
     }
+    // Over the plan's limits (usually after a downgrade): paused, not gone.
+    const { plan } = cover;
+    if (!cover.widgets.has(widget.id)) {
+      return {
+        ok: false as const,
+        error: `This widget is paused: the ${plan.name} plan includes ${plan.widgets} widget${plan.widgets === 1 ? '' : 's'}. Upgrade, or remove a widget in the dashboard.`,
+        status: 402,
+      };
+    }
+    const covered = registered.some(
+      (s) => cover.sources.has(s.id) && hostMatches(host, [s.domain]),
+    );
+    if (!covered) {
+      return {
+        ok: false as const,
+        error: `${host} is paused: the ${plan.name} plan includes ${plan.sources} domain${plan.sources === 1 ? '' : 's'}. Upgrade, or remove a domain under Sources.`,
+        status: 402,
+      };
+    }
 
-    return { ok: true as const, widget, host };
+    return { ok: true as const, widget, host, plan };
   }
 
   /** The <script> tag. Always 200 so a bad domain shows a console error, not a broken page. */
@@ -142,17 +165,19 @@ export class PublicController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
+    // Cross-origin answers need CORS. Refusals get it too: their reason is
+    // not secret, and without it the script cannot read it - the owner would
+    // see a bare CORS failure instead of "example.com is not allowed".
+    const origin = (req.headers.origin as string) || '';
+    if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+
     const resolved = await this.resolve(key, req);
     if (!resolved.ok) {
       return res.status(resolved.status).json({ error: resolved.error });
     }
 
-    const { widget, host } = resolved;
-
-    // Anything cross-origin needs CORS, and the allow list has already run.
-    const origin = (req.headers.origin as string) || '';
-    if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
+    const { widget, host, plan } = resolved;
 
     const settings = normalizeSettings(widget.settings);
     // data-sort on the snippet may only pick one of the widget's own orders:
@@ -162,7 +187,6 @@ export class PublicController {
     // Only 5-star reviews are shown. Asking for just the allowance and then
     // filtering can leave one card, so take everything the engine has cached
     // for this place (no extra scrape) and cut to the allowance afterwards.
-    const plan = await this.billing.planFor(widget.userId);
     const result = await this.engine.fetchCached(
       widget.placeId,
       MAX_REVIEW_COUNT,
@@ -203,7 +227,9 @@ export class PublicController {
 
     // data-count on the snippet wins, then the widget's own setting; the plan
     // is the ceiling either way.
-    const wanted = Math.floor(Number(count)) || settings.reviewCount || 0;
+    // Never below zero: slice(0, -n) would hand out all but n reviews.
+    const wanted =
+      Math.max(0, Math.floor(Number(count)) || 0) || settings.reviewCount || 0;
     const shown = Math.min(wanted || usage.reviews, usage.reviews);
     const reviews = (
       await this.hidden.filter(widget.placeId, fiveStarOnly(result.reviews))

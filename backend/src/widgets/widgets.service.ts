@@ -29,13 +29,20 @@ export class WidgetsService {
   ) {}
 
   async list(userId: string) {
-    const rows = await this.prisma.widget.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      // The logo is only needed on the review tools page.
-      omit: { logo: true },
-    });
-    return rows.map(withSettings);
+    const [rows, cover] = await Promise.all([
+      this.prisma.widget.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        // The logo is only needed on the review tools page.
+        omit: { logo: true },
+      }),
+      this.billing.coverage(userId),
+    ]);
+    // Paused: over the plan's widget limit, so the embed does not show it.
+    return rows.map((w) => ({
+      ...withSettings(w),
+      paused: !cover.widgets.has(w.id),
+    }));
   }
 
   async create(userId: string, dto: CreateWidgetDto) {

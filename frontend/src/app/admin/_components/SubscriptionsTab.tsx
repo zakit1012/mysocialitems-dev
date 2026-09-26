@@ -23,6 +23,7 @@ const STATUS_TONE: Record<string, string> = {
   ACTIVE: "text-emerald-dark bg-emerald-wash",
   CANCELLED: "text-amber-700 bg-amber-50",
   SUSPENDED: "text-coral bg-coral/10",
+  PAST_DUE: "text-amber-700 bg-amber-50",
   EXPIRED: "text-muted bg-sand",
 };
 

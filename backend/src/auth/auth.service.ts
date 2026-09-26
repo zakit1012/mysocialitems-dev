@@ -1,5 +1,7 @@
 import {
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
   BadRequestException,
@@ -40,6 +42,10 @@ const LOGIN_TTL = 10 * 60;
 // A six digit code is a million guesses; without a cap the per-IP rate limit
 // alone still lets a botnet walk through it inside the ten minute window.
 const MAX_CODE_ATTEMPTS = 5;
+// Codes go to whatever address is typed in. Without a cap per address,
+// anyone could flood someone's inbox (or keep drawing fresh codes to guess).
+const CODES_PER_HOUR = 5;
+const CODE_GAP_SECONDS = 30;
 
 @Injectable()
 export class AuthService {
@@ -58,6 +64,7 @@ export class AuthService {
       throw new ConflictException('An account with this email already exists');
     }
 
+    await this.guardSends(email);
     const code = this.makeCode();
     const pending: SignupPending = {
       name: dto.name,
@@ -129,6 +136,7 @@ export class AuthService {
       throw new UnauthorizedException('No account found for this email');
     }
 
+    await this.guardSends(email);
     const code = this.makeCode();
     await this.redis.setJson(
       this.loginKey(email),
@@ -163,6 +171,27 @@ export class AuthService {
     await this.redis.del(this.loginKey(email));
     await this.redis.del(`${this.loginKey(email)}:tries`);
     return this.issue(user);
+  }
+
+  /** A short gap between codes to one address, and a few an hour at most. */
+  private async guardSends(email: string) {
+    if (
+      !(await this.redis.setIfAbsent(`code-gap:${email}`, CODE_GAP_SECONDS))
+    ) {
+      throw new HttpException(
+        'A code was just sent. Wait a few seconds before asking for another.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    if (
+      (await this.redis.incrWithTtl(`code-sends:${email}`, 3600)) >
+      CODES_PER_HOUR
+    ) {
+      throw new HttpException(
+        'Too many codes for this email. Try again in an hour.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
   }
 
   /** Burns the pending code after too many wrong guesses. */

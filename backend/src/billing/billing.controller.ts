@@ -4,7 +4,9 @@ import {
   Get,
   Headers,
   HttpCode,
+  Param,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
@@ -51,6 +53,30 @@ export class BillingController {
   @UseGuards(JwtAuthGuard)
   cancel(@CurrentUser() user: AuthUser) {
     return this.billing.cancel(user.id);
+  }
+
+  /** Every payment the customer has made, each with its invoice. */
+  @Get('payments')
+  @UseGuards(JwtAuthGuard)
+  payments(@CurrentUser() user: AuthUser) {
+    return this.billing.payments(user.id);
+  }
+
+  /** One invoice: the customer's own, or any for an admin. */
+  @Get('invoices/:id')
+  @UseGuards(JwtAuthGuard)
+  invoice(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.billing.invoice(user, id);
+  }
+
+  /** The name, address and tax id printed on invoices. */
+  @Put('details')
+  @UseGuards(JwtAuthGuard)
+  details(
+    @CurrentUser() user: AuthUser,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.billing.saveDetails(user.id, body ?? {});
   }
 
   /** PayPal calls this. Authenticated by PayPal's signature, not a JWT. */

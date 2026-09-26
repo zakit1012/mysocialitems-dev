@@ -6,12 +6,15 @@ import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/Button";
 import { Spinner } from "@/components/Spinner";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 type Source = {
   id: string;
   domain: string;
   hits: number;
   lastSeen: string | null;
+  /** Over the plan's domain limit: widgets do not load there. */
+  paused?: boolean;
   createdAt: string;
   widget: { id: string; placeName: string } | null;
 };
@@ -23,6 +26,7 @@ export default function SourcesPage() {
   const [sources, setSources] = useState<Source[]>([]);
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [domain, setDomain] = useState("");
+  const [removing, setRemoving] = useState<{ id: string; domain: string } | null>(null);
   const [widgetId, setWidgetId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -68,10 +72,17 @@ export default function SourcesPage() {
     }
   }
 
-  async function remove(id: string, name: string) {
-    if (!confirm(`Remove ${name}? Widgets will stop loading there.`)) return;
-    await api(`/sources/${id}`, { method: "DELETE", token });
-    await load();
+  async function remove() {
+    if (!removing) return;
+    const { id } = removing;
+    setRemoving(null);
+    setError("");
+    try {
+      await api(`/sources/${id}`, { method: "DELETE", token });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not remove that domain");
+    }
   }
 
   return (
@@ -151,8 +162,8 @@ export default function SourcesPage() {
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-line bg-card shadow-card">
-          <table className="w-full text-[13px]">
+        <div className="overflow-x-auto rounded-2xl border border-line bg-card shadow-card">
+          <table className="w-full min-w-[560px] text-[13px]">
             <thead>
               <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
                 <th className="px-4 py-3 font-bold">Domain</th>
@@ -165,7 +176,17 @@ export default function SourcesPage() {
             <tbody>
               {sources.map((s) => (
                 <tr key={s.id} className="border-b border-line/60 last:border-0">
-                  <td className="px-4 py-3 font-semibold">{s.domain}</td>
+                  <td className="px-4 py-3 font-semibold">
+                    {s.domain}
+                    {s.paused && (
+                      <span
+                        className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                        title="Over your plan's domain limit. Upgrade, or remove another domain."
+                      >
+                        Paused - over plan limit
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-muted">
                     {s.widget ? s.widget.placeName : "All widgets"}
                   </td>
@@ -178,7 +199,7 @@ export default function SourcesPage() {
                   <td className="px-4 py-3 text-right">
                     <button
                       type="button"
-                      onClick={() => remove(s.id, s.domain)}
+                      onClick={() => setRemoving({ id: s.id, domain: s.domain })}
                       aria-label={`Remove ${s.domain}`}
                       className="inline-flex items-center gap-1 text-coral transition hover:underline"
                     >
@@ -192,6 +213,17 @@ export default function SourcesPage() {
           </table>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(removing)}
+        danger
+        title={removing ? `Remove ${removing.domain}?` : "Remove domain"}
+        message="Widgets stop loading on this website straight away. You can add it again later."
+        confirmLabel="Remove domain"
+        cancelLabel="Keep it"
+        onCancel={() => setRemoving(null)}
+        onConfirm={remove}
+      />
     </div>
   );
 }

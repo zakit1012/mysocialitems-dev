@@ -75,6 +75,11 @@ export default function TermsPage() {
           plan&apos;s monthly views run out, its widgets stop showing until the next month or until you upgrade.
         </li>
         <li>
+          If a renewal payment fails, PayPal tries it again. If it is still unpaid five days after the renewal
+          date, your account moves to the Free plan&apos;s limits until the payment goes through; nothing is
+          deleted. For yearly plans we email you a week before each renewal.
+        </li>
+        <li>
           We may change prices or plan limits. A price change for an existing subscription takes effect from
           your next billing cycle, and we will tell you before it does.
         </li>

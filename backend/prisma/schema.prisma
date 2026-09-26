@@ -25,6 +25,7 @@ model User {
   sources      Source[]
   subscription Subscription?
   usage        Usage[]
+  payments     Payment[]
 }
 
 model Category {
@@ -184,7 +185,7 @@ model Subscription {
   userId               String    @unique
   /// FREE | PRO | BUSINESS - see src/billing/plans.ts
   plan                 String    @default("FREE")
-  /// ACTIVE | PENDING | CANCELLED | SUSPENDED | EXPIRED
+  /// ACTIVE | PAST_DUE | CANCELLED | SUSPENDED | EXPIRED
   status               String    @default("ACTIVE")
   paypalSubscriptionId String?   @unique
   /// Plan the user is checking out for, until PayPal confirms it.
@@ -194,10 +195,51 @@ model Subscription {
   cancelAtPeriodEnd    Boolean   @default(false)
   /// month | year
   interval             String    @default("month")
+  /// Printed on invoices under "Billed to" (all optional).
+  billingName          String?
+  billingAddress       String?
+  billingTaxId         String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Every payment PayPal collected, one row per charge. `number` is the
+/// invoice number the customer sees (MSI-00042), given in order of payment.
+model Payment {
+  id                   String    @id @default(cuid())
+  number               Int       @unique @default(autoincrement())
+  /// Kept (as null) if the account is deleted: the books still need it.
+  userId               String?
+  /// PayPal's transaction id. Unique, so a repeated webhook adds nothing.
+  paypalSaleId         String    @unique
+  paypalSubscriptionId String?
+  /// sandbox | live - sandbox rows are test payments, not revenue.
+  mode                 String    @default("live")
+  plan                 String
+  planName             String
+  /// month | year
+  interval             String    @default("month")
+  amountCents          Int
+  currency             String    @default("USD")
+  /// PayPal's fee. Admin only.
+  feeCents             Int?
+  refundedCents        Int       @default(0)
+  /// PAID | PARTIALLY_REFUNDED | REFUNDED | REVERSED
+  status               String    @default("PAID")
+  periodStart          DateTime
+  periodEnd            DateTime?
+  /// Who paid, as it was then - still readable if the account goes.
+  customerName         String
+  customerEmail        String
+  paidAt               DateTime  @default(now())
+  createdAt            DateTime  @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, paidAt])
+  @@index([paidAt])
 }
 
 /// Widget views per user per calendar month ("2026-09").

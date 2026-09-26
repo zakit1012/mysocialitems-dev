@@ -6,6 +6,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -43,6 +44,27 @@ export class AdminBillingController {
   @Post('subscriptions/:userId/refresh')
   refresh(@Param('userId') userId: string) {
     return this.billing.adminRefresh(userId);
+  }
+
+  // ---- payments
+  @Get('payments')
+  payments(@Query('mode') mode?: string) {
+    return this.billing.adminPayments(mode);
+  }
+
+  @Post('payments/:id/refund')
+  refund(@Param('id') id: string, @Body() body: { amount?: unknown }) {
+    return this.billing.adminRefund(id, body?.amount);
+  }
+
+  @Get('invoice-settings')
+  invoiceSettings() {
+    return this.billing.adminInvoiceSettings();
+  }
+
+  @Put('invoice-settings')
+  saveInvoiceSettings(@Body() body: Record<string, unknown>) {
+    return this.billing.adminSaveInvoiceSettings(body ?? {});
   }
 
   // ---- plans
