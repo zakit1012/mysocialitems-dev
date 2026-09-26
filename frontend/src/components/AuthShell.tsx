@@ -12,17 +12,18 @@ export function AuthShell({
   footer: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-10 gradient-subtle">
-      <div className="w-full max-w-[420px]">
-        <Link href="/" className="mb-8 block text-center text-2xl font-black gradient-brand-text">
+    // Sized to fit one screen, a laptop or a phone, without scrolling.
+    <div className="flex min-h-dvh items-center justify-center px-4 py-5 gradient-subtle">
+      <div className="w-full max-w-[440px]">
+        <Link href="/" className="mb-4 block text-center text-xl font-black gradient-brand-text">
           My Social Items
         </Link>
-        <div className="rounded-3xl bg-white p-7 shadow-panel">
-          <h1 className="text-2xl font-black tracking-tight">{title}</h1>
-          <p className="mt-1.5 text-sm leading-6 text-muted">{subtitle}</p>
-          <div className="mt-6">{children}</div>
+        <div className="rounded-3xl bg-white p-6 shadow-panel">
+          <h1 className="text-xl font-black tracking-tight">{title}</h1>
+          <p className="mt-1 text-[13px] leading-5 text-muted">{subtitle}</p>
+          <div className="mt-4">{children}</div>
         </div>
-        <p className="mt-5 text-center text-sm text-muted">{footer}</p>
+        <p className="mt-4 text-center text-sm text-muted">{footer}</p>
       </div>
     </div>
   );

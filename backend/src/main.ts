@@ -55,9 +55,11 @@ async function bootstrap() {
     }),
   );
 
+  // An Origin header never ends in "/", so "https://site.com/" in .env
+  // would never match and every call would fail as a CORS error.
   const frontends = (process.env.FRONTEND_URL ?? 'http://localhost:3002')
     .split(',')
-    .map((o) => o.trim())
+    .map((o) => o.trim().replace(/\/+$/, ''))
     .filter(Boolean);
   const devOrigins =
     process.env.NODE_ENV === 'production'

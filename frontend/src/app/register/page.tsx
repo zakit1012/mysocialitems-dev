@@ -107,7 +107,7 @@ export default function RegisterPage() {
       }
     >
       {!pendingEmail ? (
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} className="space-y-3">
           <TextField
             label="Full name"
             name="name"
@@ -128,27 +128,30 @@ export default function RegisterPage() {
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             placeholder="you@email.com"
           />
-          <PasswordField
-            label="Password"
-            name="password"
-            autoComplete="new-password"
-            required
-            minLength={6}
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            placeholder="At least 6 characters"
-          />
-          <PasswordField
-            label="Confirm password"
-            name="confirmPassword"
-            autoComplete="new-password"
-            required
-            minLength={6}
-            value={form.confirmPassword}
-            onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
-            placeholder="Re-enter password"
-            error={passwordMismatch ? "Passwords do not match" : undefined}
-          />
+          {/* Side by side, so the whole form fits on one screen. */}
+          <div className="grid grid-cols-2 gap-3">
+            <PasswordField
+              label="Password"
+              name="password"
+              autoComplete="new-password"
+              required
+              minLength={6}
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              placeholder="6+ chars"
+            />
+            <PasswordField
+              label="Confirm"
+              name="confirmPassword"
+              autoComplete="new-password"
+              required
+              minLength={6}
+              value={form.confirmPassword}
+              onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+              placeholder="Repeat it"
+            />
+          </div>
+          {passwordMismatch && <p className="text-sm text-coral">Passwords do not match</p>}
           {error && <p className="text-sm text-coral">{error}</p>}
           <Button type="submit" loading={busy} disabled={passwordMismatch}>
             Send verification code
@@ -166,7 +169,7 @@ export default function RegisterPage() {
           </p>
         </form>
       ) : (
-        <form onSubmit={onVerify} className="space-y-4">
+        <form onSubmit={onVerify} className="space-y-3">
           <button
             type="button"
             onClick={backToEdit}
