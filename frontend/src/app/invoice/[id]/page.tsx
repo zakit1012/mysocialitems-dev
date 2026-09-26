@@ -6,9 +6,9 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Spinner } from "@/components/Spinner";
 import { fmtCents, fmtDay, PAYMENT_STATUS } from "@/lib/payments";
 import { appHref } from "@/lib/site";
+import { Loader } from "@/components/Loader";
 
 type Invoice = {
   id: string;
@@ -66,9 +66,7 @@ export default function InvoicePage() {
 
   if (!invoice) {
     return (
-      <p className="flex flex-1 items-center justify-center gap-2 py-24 text-muted">
-        <Spinner /> Loading invoice...
-      </p>
+      <Loader label="Loading invoice" className="flex-1 py-24" />
     );
   }
 

@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { UsageBanner } from "@/components/UsageBanner";
 import { LiveBadge, SetupChecklist } from "@/components/SetupChecklist";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Loader } from "@/components/Loader";
 
 type Widget = {
   id: string;
@@ -79,11 +80,7 @@ export default function DashboardPage() {
 
       <div className="mt-8">
         {loading ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {Array.from({ length: 2 }, (_, i) => (
-              <WidgetSkeleton key={i} />
-            ))}
-          </div>
+          <Loader label="Loading your widgets" />
         ) : widgets.length === 0 && !error ? (
           <EmptyState />
         ) : (
@@ -245,21 +242,6 @@ function EmptyState() {
         <Plus className="h-4 w-4" />
         Pick a place
       </Link>
-    </div>
-  );
-}
-
-function WidgetSkeleton() {
-  return (
-    <div className="rounded-4xl border border-line/60 bg-card p-5 shadow-card">
-      <div className="flex items-center gap-3">
-        <div className="h-10 w-10 animate-pulse rounded-2xl bg-sand-deep" />
-        <div className="flex-1 space-y-2">
-          <div className="h-4 w-32 animate-pulse rounded-full bg-sand-deep" />
-          <div className="h-3 w-40 animate-pulse rounded-full bg-sand-deep" />
-        </div>
-      </div>
-      <div className="mt-6 h-9 w-full animate-pulse rounded-lg bg-sand-deep" />
     </div>
   );
 }

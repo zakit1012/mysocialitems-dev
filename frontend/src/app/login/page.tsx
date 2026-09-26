@@ -9,6 +9,7 @@ import { HOSTS, SITE } from "@/lib/site";
 import { Button } from "@/components/Button";
 import { PasswordField } from "@/components/PasswordField";
 import { TextField } from "@/components/TextField";
+import { Loader } from "@/components/Loader";
 
 /** Where signing in leads: the admin panel on its own host, else the dashboard. */
 function homePath() {
@@ -205,7 +206,7 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <Suspense
-      fallback={<p className="px-4 py-20 text-center text-muted">Loading...</p>}
+      fallback={<Loader full />}
     >
       <LoginForm />
     </Suspense>

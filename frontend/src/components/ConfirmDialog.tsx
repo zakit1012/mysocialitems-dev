@@ -18,6 +18,7 @@ export function ConfirmDialog({
   onCancel,
   altLabel,
   onAlt,
+  icon,
 }: {
   open: boolean;
   title: string;
@@ -30,6 +31,8 @@ export function ConfirmDialog({
   /** An optional third choice, shown on the left (e.g. "Leave without saving"). */
   altLabel?: string;
   onAlt?: () => void;
+  /** Replaces the warning sign, for a question that is not a warning. */
+  icon?: React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -59,7 +62,7 @@ export function ConfirmDialog({
           className={`grid h-11 w-11 place-items-center rounded-full ${danger ? "bg-coral/10 text-coral" : "bg-brand-wash text-brand"}`}
           aria-hidden
         >
-          <TriangleAlert className="h-5 w-5" />
+          {icon ?? <TriangleAlert className="h-5 w-5" />}
         </span>
         <h2 id="confirm-title" className="mt-4 text-lg font-bold tracking-tight">
           {title}

@@ -18,11 +18,11 @@ import {
   Wallet,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { Spinner } from "@/components/Spinner";
 import { LogoutButton } from "@/components/LogoutButton";
 import { SITE, appHref } from "@/lib/site";
 import { LogoMark, Wordmark } from "@/components/Logo";
 import { TwoFactorGate } from "./TwoFactorGate";
+import { Loader } from "@/components/Loader";
 
 const NAV = [
   { href: "/admin", label: "Overview", icon: Gauge },
@@ -51,9 +51,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   if (loading || !user) {
     return (
-      <div className="flex min-h-dvh items-center justify-center gap-2 bg-dark text-dark-text">
-        <Spinner className="h-5 w-5" /> Loading admin...
-      </div>
+      <Loader full dark label="Loading admin" />
     );
   }
 

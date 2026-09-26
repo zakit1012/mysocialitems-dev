@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Spinner } from "@/components/Spinner";
 import { AdminTable, SearchBox } from "../_components/AdminTable";
+import { Loader } from "@/components/Loader";
 
 type AdminSource = {
   id: string;
@@ -44,9 +44,7 @@ export default function AdminSourcesPage() {
       <SearchBox value={query} onChange={setQuery} placeholder="Search domain or owner" />
       {error && <p className="mb-4 rounded-xl bg-coral/10 px-4 py-2.5 text-coral">{error}</p>}
       {!sources ? (
-        <p className="flex items-center gap-2 text-muted">
-          <Spinner /> Loading...
-        </p>
+        <Loader label="Loading domains" />
       ) : (
         <AdminTable head={["Domain", "Owner", "Widget", "Loads", "Last seen"]} empty={shown.length === 0}>
           {shown.map((s) => (

@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Spinner } from "@/components/Spinner";
 import { timeAgo } from "@/lib/time";
 import { AdminTable, SearchBox } from "../_components/AdminTable";
+import { Loader } from "@/components/Loader";
 
 type AdminWidget = {
   id: string;
@@ -50,9 +50,7 @@ export default function AdminWidgetsPage() {
       <SearchBox value={query} onChange={setQuery} placeholder="Search business, owner or place ID" />
       {error && <p className="mb-4 rounded-xl bg-coral/10 px-4 py-2.5 text-coral">{error}</p>}
       {!widgets ? (
-        <p className="flex items-center gap-2 text-muted">
-          <Spinner /> Loading...
-        </p>
+        <Loader label="Loading widgets" />
       ) : (
         <AdminTable head={["Business", "Owner", "Domains", "Live", "Created"]} empty={shown.length === 0}>
           {shown.map((w) => (

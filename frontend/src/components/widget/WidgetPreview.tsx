@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Monitor, Smartphone } from "lucide-react";
-import { Spinner } from "@/components/Spinner";
 import { writeReviewUrl, type WidgetSettings } from "@/lib/widget-settings";
+import { Loader } from "@/components/Loader";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -158,9 +158,7 @@ export function WidgetPreview({
           <p className="mb-3 rounded-xl bg-coral/10 px-3.5 py-2.5 text-[12.5px] text-coral">{error}</p>
         )}
         {waiting && !error && (
-          <p className="flex items-center gap-2 py-16 text-[13px] text-muted justify-center">
-            <Spinner /> Loading reviews...
-          </p>
+          <Loader label="Loading reviews" className="py-16" />
         )}
         <div
           className={`transition-all duration-300 ${device === "mobile" ? "mx-auto w-[360px] max-w-full" : "w-full"} ${

@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SITE } from "@/lib/site";
+import { Loader } from "@/components/Loader";
 
 type Mode = "test" | "live";
 type Key = { value: string; set: boolean; secret: boolean };
@@ -78,9 +79,7 @@ export function DodoTab({ token }: { token: string | null }) {
 
   if (!data) {
     return (
-      <p className="flex items-center gap-2 p-4 text-muted">
-        {msg ? msg.text : <><Spinner /> Loading...</>}
-      </p>
+      msg ? <p className="p-4 text-muted">{msg.text}</p> : <Loader label="Loading payment settings" />
     );
   }
 
