@@ -27,7 +27,7 @@ import { WidgetPreview } from "@/components/widget/WidgetPreview";
 import { DEFAULT_SETTINGS, type Layout, type WidgetSettings } from "@/lib/widget-settings";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { FAQ } from "@/lib/faq";
-import { rupees, useInIndia } from "@/lib/region";
+import { rupees, useInIndiaOrUnknown } from "@/lib/region";
 import { HOSTS, SITE, appHref } from "@/lib/site";
 
 type PublicPlan = {
@@ -133,6 +133,9 @@ const APP_DOMAIN = HOSTS.app || SITE.domain;
 export default function HomePage() {
   const { user } = useAuth();
   const [plans, setPlans] = useState<PublicPlan[]>(DEFAULT_PLANS);
+  // Prices show once the real ones are in (or the call failed), so the
+  // built-in defaults never flash a different price first.
+  const [pricesReady, setPricesReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,7 +143,10 @@ export default function HomePage() {
       .then((rows) => {
         if (!cancelled && Array.isArray(rows) && rows.length) setPlans(rows);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setPricesReady(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -155,7 +161,7 @@ export default function HomePage() {
       <HowItWorks />
       <Spotlights />
       <FeatureGrid />
-      <Pricing plans={plans} loggedIn={loggedIn} />
+      <Pricing plans={plans} loggedIn={loggedIn} pricesReady={pricesReady} />
       <Faq plans={plans} />
       <FinalCta loggedIn={loggedIn} />
     </div>
@@ -519,10 +525,12 @@ function FeatureGrid() {
 
 /* ─────────────────────────────── pricing */
 
-function Pricing({ plans, loggedIn }: { plans: PublicPlan[]; loggedIn: boolean }) {
+function Pricing({ plans, loggedIn, pricesReady }: { plans: PublicPlan[]; loggedIn: boolean; pricesReady: boolean }) {
   const [yearly, setYearly] = useState(false);
-  // Visitors in India see rupees; everyone else sees dollars only.
-  const inIndia = useInIndia();
+  // Visitors in India see rupees; everyone else sees dollars only. Until both
+  // the region and the real prices are known, a placeholder holds the place.
+  const inIndia = useInIndiaOrUnknown();
+  const ready = pricesReady && inIndia !== null;
   return (
     <section id="pricing" className="scroll-mt-20 border-t border-line/60 bg-sand">
       <div className="mx-auto max-w-6xl px-4 py-20 md:py-28">
@@ -580,11 +588,15 @@ function Pricing({ plans, loggedIn }: { plans: PublicPlan[]; loggedIn: boolean }
                 )}
                 <h3 className="text-lg font-bold">{p.name}</h3>
                 <p className="mt-3 flex items-baseline gap-1">
-                  <span className="text-5xl font-black tracking-tight">{fmt(showYearly ? perYear : perMonth)}</span>
+                  {ready ? (
+                    <span className="text-5xl font-black tracking-tight">{fmt(showYearly ? perYear : perMonth)}</span>
+                  ) : (
+                    <span aria-label="Loading price" className="inline-block h-12 w-28 animate-pulse rounded-xl bg-sand-deep" />
+                  )}
                   <span className="text-sm text-muted">{free ? "forever" : showYearly ? "/year" : "/month"}</span>
                 </p>
                 <p className="mt-1 h-5 text-sm font-semibold text-emerald-dark">
-                  {showYearly && `${fmt(Math.round((perYear / 12) * 100) / 100)} a month, billed yearly`}
+                  {ready && showYearly && `${fmt(Math.round((perYear / 12) * 100) / 100)} a month, billed yearly`}
                 </p>
                 <ul className="mt-7 space-y-3 text-[15px] text-ink-soft">
                   {[

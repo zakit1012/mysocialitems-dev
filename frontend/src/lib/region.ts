@@ -23,6 +23,15 @@ export function useInIndia(): boolean {
   return useSyncExternalStore(noSubscribe, isIndiaTimeZone, () => false);
 }
 
+/**
+ * The same check, but null until the browser has answered (on the server
+ * and the first client render). Prices wait for it, so nobody in India
+ * sees a dollar price flash before the rupee one.
+ */
+export function useInIndiaOrUnknown(): boolean | null {
+  return useSyncExternalStore(noSubscribe, isIndiaTimeZone, () => null);
+}
+
 /** "₹399", "₹3,990", "₹33.25" - Indian digit grouping. */
 export const rupees = (n: number) =>
   `₹${n.toLocaleString("en-IN", { maximumFractionDigits: Number.isInteger(n) ? 0 : 2, minimumFractionDigits: Number.isInteger(n) ? 0 : 2 })}`;
