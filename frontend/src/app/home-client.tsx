@@ -26,6 +26,7 @@ import { useAuth } from "@/lib/auth";
 import { WidgetPreview } from "@/components/widget/WidgetPreview";
 import { DEFAULT_SETTINGS, type Layout, type WidgetSettings } from "@/lib/widget-settings";
 import { DEMO_DATA } from "@/lib/demo-data";
+import { SITE } from "@/lib/site";
 
 type PublicPlan = {
   id: string;
@@ -261,7 +262,7 @@ function Hero({ loggedIn }: { loggedIn: boolean }) {
           <BrowserFrame
             src="/marketing/editor.png"
             alt="The widget editor: layout options on the left, a live preview of a review carousel on the right"
-            url="mysocialitem.zedcircle.com/dashboard"
+            url={`${SITE.domain}/dashboard`}
             priority
           />
           {/* the same widget on a phone */}
@@ -460,7 +461,7 @@ function Spotlights() {
           ]}
           image="/marketing/editor.png"
           alt="The widget editor with layout, content, colors and style tabs next to a live preview"
-          url="mysocialitem.zedcircle.com/dashboard/widgets"
+          url={`${SITE.domain}/dashboard/widgets`}
         />
         <Spotlight
           flip
@@ -474,7 +475,7 @@ function Spotlights() {
           ]}
           image="/marketing/analytics.png"
           alt="The analytics page with monthly views, button clicks and a chart of views per day"
-          url="mysocialitem.zedcircle.com/dashboard/analytics"
+          url={`${SITE.domain}/dashboard/analytics`}
         />
       </div>
     </section>

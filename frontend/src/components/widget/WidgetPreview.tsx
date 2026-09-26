@@ -11,7 +11,7 @@ type Renderer = { render: (el: HTMLElement, data: unknown) => void };
 
 declare global {
   interface Window {
-    MySocialItems?: Renderer;
+    WidgetPop?: Renderer;
   }
 }
 
@@ -41,15 +41,15 @@ let loading: Promise<Renderer> | null = null;
  * can never drift from what visitors see on the customer's site.
  */
 function loadRenderer(): Promise<Renderer> {
-  if (window.MySocialItems?.render) return Promise.resolve(window.MySocialItems);
+  if (window.WidgetPop?.render) return Promise.resolve(window.WidgetPop);
   if (!loading) {
     loading = new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.src = `${API}/embed/widget.js?preview=1`;
       script.async = true;
       script.onload = () =>
-        window.MySocialItems?.render
-          ? resolve(window.MySocialItems)
+        window.WidgetPop?.render
+          ? resolve(window.WidgetPop)
           : reject(new Error("The widget script loaded but did not start."));
       script.onerror = () => {
         loading = null;

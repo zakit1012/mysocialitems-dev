@@ -5,6 +5,7 @@ import { Check, Copy, PlugZap } from "lucide-react";
 import { api } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { SITE } from "@/lib/site";
 
 type Mode = "test" | "live";
 type Key = { value: string; set: boolean; secret: boolean };
@@ -204,8 +205,8 @@ export function DodoTab({ token }: { token: string | null }) {
           </li>
           <li>Payment retries on, so Dodo tries a failed renewal again before the grace period ends.</li>
           <li>
-            Customer emails: Dodo can send its own receipts too. Turn them off if you only want the emails from My
-            Social Items.
+            Customer emails: Dodo can send its own receipts too. Turn them off if you only want the emails from{" "}
+            {SITE.name}.
           </li>
         </ul>
       </div>

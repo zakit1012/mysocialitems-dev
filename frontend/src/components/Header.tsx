@@ -4,6 +4,7 @@ import Link from "next/link";
 import { LayoutDashboard, UserRound } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { LogoutButton } from "./LogoutButton";
+import { SITE } from "@/lib/site";
 
 export function Header() {
   const { user } = useAuth();
@@ -15,7 +16,7 @@ export function Header() {
           href="/"
           className="shrink-0 text-xl font-black tracking-tight gradient-brand-text transition hover:opacity-80"
         >
-          My Social Items
+          {SITE.name}
         </Link>
 
         <nav className="mx-auto hidden items-center gap-1 text-sm font-medium text-muted lg:flex" aria-label="Sections">

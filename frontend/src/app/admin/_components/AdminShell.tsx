@@ -20,6 +20,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
 import { LogoutButton } from "@/components/LogoutButton";
+import { SITE } from "@/lib/site";
 
 const NAV = [
   { href: "/admin", label: "Overview", icon: Gauge },
@@ -59,7 +60,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-sand p-6 text-center">
         <ShieldAlert className="h-9 w-9 text-coral" />
         <p className="text-lg font-bold">Admins only</p>
-        <p className="max-w-sm text-sm text-muted">This area is for the people who run My Social Items.</p>
+        <p className="max-w-sm text-sm text-muted">This area is for the people who run {SITE.name}.</p>
         <Link href="/dashboard" className="mt-2 rounded-xl gradient-brand px-4 py-2 text-sm font-semibold text-white">
           Go to your dashboard
         </Link>
@@ -73,9 +74,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-dvh flex-col bg-sand md:flex-row">
       <aside className="flex shrink-0 flex-col bg-dark text-dark-text md:sticky md:top-0 md:h-dvh md:w-60">
         <div className="flex items-center gap-2.5 px-5 py-5">
-          <span className="grid h-9 w-9 place-items-center rounded-xl gradient-brand text-sm font-black text-white shadow-glow">M</span>
+          <span className="grid h-9 w-9 place-items-center rounded-xl gradient-brand text-sm font-black text-white shadow-glow">W</span>
           <div className="leading-tight">
-            <p className="text-[15px] font-black text-white">My Social Items</p>
+            <p className="text-[15px] font-black text-white">{SITE.name}</p>
             <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-brand-light">Super admin</p>
           </div>
         </div>

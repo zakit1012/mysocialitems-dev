@@ -27,6 +27,7 @@ import {
   PlanInput,
   UNLIMITED,
 } from './plans';
+import { PRODUCT_NAME } from '../common/product';
 
 type Resource = 'widgets' | 'sources';
 
@@ -65,7 +66,8 @@ const WEBHOOK_EVENTS = [
   'dispute.lost',
 ];
 
-export const invoiceNumber = (n: number) => `MSI-${String(n).padStart(5, '0')}`;
+export const invoiceNumber = (n: number) =>
+  `WPOP-${String(n).padStart(5, '0')}`;
 const fmtMoney = (cents: number, currency: string) =>
   `${currency === 'USD' ? '$' : currency === 'INR' ? '₹' : `${currency} `}${(cents / 100).toFixed(2)}`;
 
@@ -1279,7 +1281,7 @@ export class BillingService {
       out[k] = (await this.settings.get(`INVOICE_${k}`)) ?? '';
     }
     return {
-      name: out.SELLER_NAME || 'My Social Items',
+      name: out.SELLER_NAME || PRODUCT_NAME,
       address: out.SELLER_ADDRESS,
       email: out.SELLER_EMAIL,
       taxId: out.SELLER_TAX_ID,
@@ -1433,7 +1435,7 @@ export class BillingService {
     const free = await this.plans.free();
     await this.notify(
       userId,
-      'Welcome to My Social Items',
+      `Welcome to ${PRODUCT_NAME}`,
       `Your account is on the Free plan: ${free.widgets} widget, ${free.sources} domain, ` +
         `${free.reviews} reviews shown and ${fmtViews(free.views)} widget views a month. Upgrade any time from Billing.`,
     );
@@ -1817,7 +1819,7 @@ export class BillingService {
 
     const yearly = interval === 'year';
     const id = await this.dodo.createProduct(m, {
-      name: `My Social Items ${plan.name}${yearly ? ' (yearly)' : ''}`,
+      name: `${PRODUCT_NAME} ${plan.name}${yearly ? ' (yearly)' : ''}`,
       priceCents: Math.round(
         (yearly ? plan.priceYearlyUsd : plan.priceUsd) * 100,
       ),

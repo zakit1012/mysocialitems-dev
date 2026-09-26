@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Star } from "lucide-react";
 import { LEGAL } from "@/lib/legal";
+import { SITE } from "@/lib/site";
 
 export function Footer() {
   return (
@@ -12,7 +13,7 @@ export function Footer() {
               href="/"
               className="inline-block text-xl font-black tracking-tight gradient-brand-text"
             >
-              My Social Items
+              {SITE.name}
             </Link>
             <p className="mt-3 max-w-md text-sm leading-relaxed text-muted">
               Show your best Google reviews on your website with a widget that
@@ -47,7 +48,7 @@ export function Footer() {
         </div>
 
         <div className="mt-12 flex flex-col gap-3 border-t border-line pt-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} My Social Items — Google Review Widgets</p>
+          <p>© {new Date().getFullYear()} {SITE.name} — Google Review Widgets</p>
           <nav className="flex flex-wrap gap-x-4 gap-y-1" aria-label="Legal">
             <Link href="/terms" className="hover:text-brand">Terms</Link>
             <Link href="/privacy" className="hover:text-brand">Privacy</Link>

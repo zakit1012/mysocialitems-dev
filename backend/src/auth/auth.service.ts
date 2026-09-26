@@ -17,6 +17,7 @@ import { BillingService } from '../billing/billing.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { PRODUCT_NAME } from '../common/product';
 
 const publicUser = {
   id: true,
@@ -317,7 +318,7 @@ export class AuthService {
     });
     void this.mail.send(updated.email, 'Your password was changed', [
       `Hi ${updated.name},`,
-      'The password for your My Social Items account was just changed, and every other device was signed out.',
+      `The password for your ${PRODUCT_NAME} account was just changed, and every other device was signed out.`,
       'If this was not you, sign in with "Email code" on the login page, set a new password, and contact us.',
     ]);
     return this.issue(updated);
@@ -376,7 +377,7 @@ export class AuthService {
     // The old address hears about it, in case this was not its owner.
     void this.mail.send(before.email, 'Your email was changed', [
       `Hi ${updated.name},`,
-      `The email for your My Social Items account is now ${updated.email}. If this was not you, contact us straight away.`,
+      `The email for your ${PRODUCT_NAME} account is now ${updated.email}. If this was not you, contact us straight away.`,
     ]);
     return this.issue(updated);
   }
@@ -401,8 +402,8 @@ export class AuthService {
     await this.prisma.user.delete({ where: { id: userId } });
     void this.mail.send(user.email, 'Your account is deleted', [
       `Hi ${user.name},`,
-      'Your My Social Items account, widgets and settings are deleted, and any subscription is cancelled - you will not be charged again. Your widgets no longer show on your website.',
-      'Thank you for trying My Social Items.',
+      `Your ${PRODUCT_NAME} account, widgets and settings are deleted, and any subscription is cancelled - you will not be charged again. Your widgets no longer show on your website.`,
+      `Thank you for trying ${PRODUCT_NAME}.`,
     ]);
     return { ok: true };
   }

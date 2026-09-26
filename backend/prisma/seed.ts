@@ -9,8 +9,8 @@ import * as bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 const ACCOUNTS = [
-  { email: 'demo@socialdeal.local', name: 'Alex Demo', role: 'USER' },
-  { email: 'admin@socialdeal.local', name: 'Admin', role: 'ADMIN' },
+  { email: 'demo@widgetpop.local', name: 'Alex Demo', role: 'USER' },
+  { email: 'admin@widgetpop.local', name: 'Admin', role: 'ADMIN' },
 ];
 
 async function main() {

@@ -3,7 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { SiteChrome } from "@/components/SiteChrome";
-import { LEGAL } from "@/lib/legal";
+import { pageMetadata } from "@/lib/seo";
+import { SITE } from "@/lib/site";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,17 +16,31 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// The social cards a page falls back to when it sets none of its own.
+const cards = pageMetadata({ title: SITE.name, description: SITE.description, path: "/", absolute: true });
+
 export const metadata: Metadata = {
-  metadataBase: new URL(LEGAL.site),
-  title: "My Social Items — Google Review Widgets for Your Website",
-  description:
-    "Show your 5-star Google reviews on your website with a beautiful widget that updates itself. Free plan, no credit card, set up in minutes.",
-  openGraph: {
-    type: "website",
-    siteName: "My Social Items",
-    images: [{ url: "/marketing/editor.png", width: 2880, height: 1800, alt: "The My Social Items widget editor" }],
+  metadataBase: new URL(SITE.url),
+  applicationName: SITE.name,
+  title: {
+    default: `${SITE.name} — ${SITE.tagline}`,
+    template: `%s | ${SITE.name}`,
   },
-  twitter: { card: "summary_large_image" },
+  description: SITE.description,
+  keywords: [
+    "Google reviews widget",
+    "Google reviews for website",
+    "embed Google reviews",
+    "review widget",
+    "testimonial widget",
+    "WordPress Google reviews",
+    "Shopify reviews widget",
+    "Wix reviews widget",
+  ],
+  robots: { index: true, follow: true },
+  formatDetection: { telephone: false, email: false, address: false },
+  openGraph: cards.openGraph,
+  twitter: cards.twitter,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

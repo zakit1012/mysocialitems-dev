@@ -362,7 +362,7 @@ function InstallPanel({
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
 
-  const snippet = `<div data-msi-widget></div>\n<script src="${API_BASE}/embed/widget.js?key=${widget.publicKey}" async></script>`;
+  const snippet = `<div data-widgetpop></div>\n<script src="${API_BASE}/embed/widget.js?key=${widget.publicKey}" async></script>`;
   // Domains this widget will load on: its own, plus account-wide ones.
   const allowed = sources.filter((s) => !s.widget || s.widget.id === widget.id);
 

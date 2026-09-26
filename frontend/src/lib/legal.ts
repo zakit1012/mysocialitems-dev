@@ -1,10 +1,12 @@
+import { SITE } from "./site";
+
 /**
  * The business details the legal pages print. Fill in every blank before
  * going live - an empty value shows as a [bracketed placeholder] on the page.
  */
 export const LEGAL = {
-  product: "My Social Items",
-  site: "https://mysocialitem.zedcircle.com",
+  product: SITE.name,
+  site: SITE.url,
   /** Legal name of the business or person selling the service. */
   owner: "",
   /** Registered or business postal address. */

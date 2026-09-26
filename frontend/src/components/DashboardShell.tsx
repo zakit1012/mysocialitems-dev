@@ -17,6 +17,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "./Spinner";
 import { LogoutButton } from "./LogoutButton";
+import { SITE } from "@/lib/site";
 
 const LINKS = [
   { href: "/dashboard", label: "Widgets", icon: LayoutGrid },
@@ -69,11 +70,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* A slim icon rail that opens over the page on hover, so content keeps its width. */}
       <aside className="group/rail flex flex-col overflow-hidden border-b border-line bg-card text-ink md:fixed md:inset-y-0 md:left-0 md:z-40 md:w-[68px] md:border-b-0 md:border-r md:transition-[width,box-shadow] md:duration-200 md:ease-out md:hover:w-[224px] md:hover:shadow-panel md:has-[:focus-visible]:w-[224px] md:has-[:focus-visible]:shadow-panel">
         <div className="flex h-16 shrink-0 items-center px-[18px]">
-          <Link href="/" className="flex items-center gap-3" title="My Social Items">
+          <Link href="/" className="flex items-center gap-3" title={SITE.name}>
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg gradient-brand text-[13px] font-black text-white shadow-glow">
-              M
+              W
             </span>
-            <span className={`${label} text-[15px] font-black gradient-brand-text`}>My Social Items</span>
+            <span className={`${label} text-[15px] font-black gradient-brand-text`}>{SITE.name}</span>
           </Link>
         </div>
 
