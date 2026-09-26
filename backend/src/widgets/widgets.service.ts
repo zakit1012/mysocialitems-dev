@@ -13,10 +13,12 @@ import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { CreateWidgetDto } from './dto/create-widget.dto';
 import { UpdateWidgetDto } from './dto/update-widget.dto';
 import {
-  PRO_LAYOUTS,
-  layoutName,
+  backgroundMode,
   mergeSettings,
   normalizeSettings,
+  proChoices,
+  proMessage,
+  type WidgetSettings,
 } from './widget-settings';
 
 /** Stored settings may predate the current format; always hand out the current one. */
@@ -50,21 +52,40 @@ export class WidgetsService {
     }));
   }
 
-  /** Pro designs need a paid plan; the editor lets Free accounts try them only. */
-  private async assertLayoutAllowed(userId: string, layout?: string) {
-    if (!layout || !PRO_LAYOUTS.includes(layout)) return;
+  /**
+   * Pro designs and backgrounds need a paid plan; the editor lets Free
+   * accounts try them only. Only new choices are checked: after a downgrade
+   * a widget keeps what it had (the site shows the free look) and its other
+   * settings can still be edited.
+   */
+  private async assertProAllowed(
+    userId: string,
+    next: WidgetSettings,
+    previous: WidgetSettings = {},
+  ) {
+    const had = new Set(proChoices(previous).map((c) => c.key));
+    const added = proChoices(next).filter((c) => !had.has(c.key));
+    if (!added.length) return;
     if (isPaidPlan(await this.billing.planFor(userId))) return;
-    throw new ForbiddenException(
-      `${layoutName(layout)} is a Pro design. Upgrade to use it, or pick Grid, List or Carousel.`,
-    );
+    throw new ForbiddenException(proMessage(added.map((c) => c.label)));
+  }
+
+  /**
+   * The widget as its owner's editor should show it. On Free, a light widget
+   * saved before the background choice existed shows the theme panel on the
+   * site (the transparent look is Pro), so the editor shows that too.
+   */
+  async asShown<T extends { settings: unknown }>(userId: string, widget: T) {
+    const out = withSettings(widget);
+    const s = out.settings as WidgetSettings;
+    if (s.background || backgroundMode(s) !== 'transparent') return out;
+    if (isPaidPlan(await this.billing.planFor(userId))) return out;
+    return { ...out, settings: { ...s, background: 'theme' } };
   }
 
   async create(userId: string, dto: CreateWidgetDto) {
     await this.billing.assertCanAdd(userId, 'widgets');
-    await this.assertLayoutAllowed(
-      userId,
-      normalizeSettings(dto.settings).layout,
-    );
+    await this.assertProAllowed(userId, normalizeSettings(dto.settings));
     // Google checks the place is a real business. Its Places content (name,
     // address) may not be stored - only the place ID - so the name comes from
     // the review engine, which the preview has just filled for this place.
@@ -153,17 +174,17 @@ export class WidgetsService {
     if (!current) throw new NotFoundException('Widget not found.');
     if (dto.settings === undefined) return withSettings(current);
     const merged = mergeSettings(current.settings, dto.settings);
-    // Only a change of design is checked: after a downgrade, a widget saved
-    // with a Pro design can still have its colours edited (it shows as Grid).
-    if (merged.layout !== normalizeSettings(current.settings).layout) {
-      await this.assertLayoutAllowed(userId, merged.layout);
-    }
+    await this.assertProAllowed(
+      userId,
+      merged,
+      normalizeSettings(current.settings),
+    );
     const widget = await this.prisma.widget.update({
       where: { id, userId },
       data: { settings: merged },
       omit: { logo: true },
     });
-    return withSettings(widget);
+    return this.asShown(userId, widget);
   }
 
   async delete(userId: string, id: string) {

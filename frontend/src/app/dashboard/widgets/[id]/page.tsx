@@ -22,7 +22,7 @@ import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
 import { WidgetEditor } from "@/components/widget/WidgetEditor";
 import { WidgetPreview, type PreviewData, type PreviewReview } from "@/components/widget/WidgetPreview";
-import { isProLayout, layoutName, toPayload, type WidgetSettings } from "@/lib/widget-settings";
+import { newProChoices, proMessage, toPayload, type WidgetSettings } from "@/lib/widget-settings";
 import { useLeaveGuard } from "@/lib/use-leave-guard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { timeAgo } from "@/lib/time";
@@ -143,17 +143,15 @@ function WidgetStudio() {
   // Do not lose edits to a stray tab close or a click on the sidebar.
   const leaveGuard = useLeaveGuard(dirty && !saving);
   const isPaid = plan.id !== "" && plan.id !== "FREE";
-  // Choosing a Pro design needs a paid plan. One saved before a downgrade can
-  // stay (the site shows it as Grid) while other things are edited.
-  const proLocked = plan.id === "FREE" && isProLayout(draft.layout) && draft.layout !== saved.layout;
+  // Choosing a Pro design or background needs a paid plan. One saved before
+  // a downgrade can stay (the site shows the free look) while other things
+  // are edited.
+  const proLocked = plan.id === "FREE" ? newProChoices(draft, saved) : [];
 
   async function save(): Promise<boolean> {
     if (!widget) return false;
-    if (proLocked) {
-      setFlash({
-        ok: false,
-        text: `${layoutName(draft.layout)} is a Pro design. Upgrade to use it, or pick Grid, List or Carousel.`,
-      });
+    if (proLocked.length) {
+      setFlash({ ok: false, text: proMessage(proLocked) });
       return false;
     }
     setSaving(true);

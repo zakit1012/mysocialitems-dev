@@ -88,7 +88,7 @@ export class WidgetsController {
   async get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const widget = await this.widgets.get(user.id, id);
     if (!widget) throw new NotFoundException();
-    return widget;
+    return this.widgets.asShown(user.id, widget);
   }
 
   @Patch(':id')

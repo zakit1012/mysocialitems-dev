@@ -31,6 +31,8 @@ const BUTTON_ICONS = ['google', 'chat', 'star', 'none'];
 const RADII = ['none', 'md', 'lg'];
 const TEXT_LINES = ['3', '6', 'all'];
 const HEADER_ALIGNS = ['left', 'center'];
+/** A custom background is a backgroundColor; this picks between the other two. */
+const BACKGROUNDS = ['theme', 'transparent'];
 /** The review engine serves at most this many per call. */
 export const MAX_REVIEW_COUNT = 50;
 
@@ -100,6 +102,7 @@ export type WidgetSettings = {
   radius?: string;
   textLines?: string;
   headerAlign?: string;
+  background?: string;
 } & Partial<Record<(typeof COLOR_KEYS)[number], string>> &
   Partial<Record<(typeof BOOL_KEYS)[number], boolean>>;
 
@@ -144,6 +147,7 @@ export function normalizeSettings(raw: unknown): WidgetSettings {
     ['radius', RADII],
     ['textLines', TEXT_LINES],
     ['headerAlign', HEADER_ALIGNS],
+    ['background', BACKGROUNDS],
   ];
   for (const [key, allowed] of picks) {
     const v = oneOf(input[key], allowed);
@@ -163,6 +167,58 @@ export function normalizeSettings(raw: unknown): WidgetSettings {
     if (typeof input[key] === 'boolean') out[key] = input[key];
   }
   return out;
+}
+
+/**
+ * What sits behind the reviews: the theme's own panel, nothing (the site's
+ * own colour shows through) or a colour of the owner's choosing. Widgets
+ * saved before this choice existed: light sat on the site, dark in its panel.
+ */
+export function backgroundMode(
+  s: WidgetSettings,
+): 'theme' | 'transparent' | 'custom' {
+  if (s.backgroundColor) return 'custom';
+  if (s.background === 'theme' || s.background === 'transparent') {
+    return s.background;
+  }
+  return s.theme === 'dark' ? 'theme' : 'transparent';
+}
+
+/**
+ * The paid-plan choices a widget uses, keyed so a changed colour counts as
+ * a new choice. Free accounts can try these in the editor, not save them.
+ */
+export function proChoices(
+  s: WidgetSettings,
+): { key: string; label: string }[] {
+  const out: { key: string; label: string }[] = [];
+  if (s.layout && PRO_LAYOUTS.includes(s.layout)) {
+    out.push({
+      key: `layout:${s.layout}`,
+      label: `the ${layoutName(s.layout)} design`,
+    });
+  }
+  const bg = backgroundMode(s);
+  if (bg === 'transparent') {
+    out.push({ key: 'bg:transparent', label: 'a transparent background' });
+  }
+  if (bg === 'custom') {
+    out.push({
+      key: `bg:${s.backgroundColor}`,
+      label: 'a custom background colour',
+    });
+  }
+  return out;
+}
+
+/** "X is part of Pro" for one or more choices. */
+export function proMessage(labels: string[]): string {
+  const list =
+    labels.length > 1
+      ? `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`
+      : labels[0];
+  const them = labels.length > 1 ? 'them' : 'it';
+  return `${list.charAt(0).toUpperCase()}${list.slice(1)} ${labels.length > 1 ? 'are' : 'is'} part of Pro. Upgrade to use ${them}, or switch ${them} off to save.`;
 }
 
 /**
