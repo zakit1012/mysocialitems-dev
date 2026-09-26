@@ -18,6 +18,11 @@ export const LAYOUTS = [
   'showcase',
   'carousel',
 ];
+/** Designs for paid plans. Free accounts can try them in the editor only. */
+export const PRO_LAYOUTS = ['masonry', 'quotes', 'showcase'];
+export const layoutName = (layout: string) =>
+  layout.charAt(0).toUpperCase() + layout.slice(1);
+
 // Widgets show 5-star reviews only, so a rating order would add nothing.
 export const SORTS = ['mostRelevant', 'newest'];
 const COLUMNS = ['1', '2', '3', '4'];

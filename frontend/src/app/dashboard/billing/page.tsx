@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Check, CreditCard, FileText, TriangleAlert } from "lucide-react";
+import { Check, CreditCard, FileText, RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
@@ -50,7 +50,7 @@ type Details = { name: string; address: string; taxId: string };
 
 export default function BillingPage() {
   return (
-    <Suspense fallback={<p className="flex items-center gap-2 text-muted"><Spinner /> Loading...</p>}>
+    <Suspense fallback={<BillingSkeleton />}>
       <Billing />
     </Suspense>
   );
@@ -66,6 +66,9 @@ function Billing() {
   const [period, setPeriod] = useState<Interval | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  // One confirm per PayPal return, even if the page re-renders with a
+  // refreshed sign-in token while it is running.
+  const confirmed = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -91,6 +94,8 @@ function Billing() {
       setNotice({ kind: "bad", text: "Checkout was cancelled. Nothing was charged." });
       router.replace("/dashboard/billing");
     } else if (status === "return" && subscriptionId) {
+      if (confirmed.current === subscriptionId) return;
+      confirmed.current = subscriptionId;
       setBusy("confirm");
       api<{ status: string }>("/billing/confirm", {
         method: "POST",
@@ -145,12 +150,41 @@ function Billing() {
     }
   }
 
-  if (!data) {
+  if (busy === "confirm") {
     return (
-      <p className="flex items-center gap-2 text-muted">
-        <Spinner /> {busy === "confirm" ? "Confirming your payment with PayPal..." : "Loading billing..."}
-      </p>
+      <StatusCard
+        icon={<Spinner className="h-6 w-6" />}
+        title="Confirming your payment"
+        text="PayPal is telling us about your new plan. This usually takes a few seconds - please keep this page open."
+        slowText="Still working. PayPal can be slow at times; your payment is safe. If this takes more than a minute, refresh the page - the plan switches on as soon as PayPal confirms."
+      />
     );
+  }
+
+  if (!data) {
+    // A failed load used to spin forever; say what went wrong and offer a retry.
+    if (notice?.kind === "bad") {
+      return (
+        <StatusCard
+          icon={<TriangleAlert className="h-6 w-6 text-coral" />}
+          title="Billing did not load"
+          text={notice.text}
+          action={
+            <button
+              type="button"
+              onClick={() => {
+                setNotice(null);
+                void load();
+              }}
+              className="mt-5 inline-flex items-center gap-2 rounded-xl gradient-brand px-4 py-2 text-sm font-semibold text-white"
+            >
+              <RefreshCw className="h-4 w-4" /> Try again
+            </button>
+          }
+        />
+      );
+    }
+    return <BillingSkeleton />;
   }
 
   const { plan, subscription, usage } = data;
@@ -188,7 +222,8 @@ function Billing() {
       )}
 
       {/* current plan + usage */}
-      <section className="mb-6 rounded-2xl border border-line bg-card p-5 shadow-card">
+      <section className="relative mb-6 rounded-2xl border border-line bg-card p-5 shadow-card">
+        {busy === "cancel" && <BusyOverlay text={`Cancelling your ${planName} subscription with PayPal...`} />}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-[11.5px] font-bold uppercase tracking-wide text-muted">Current plan</p>
@@ -228,6 +263,8 @@ function Billing() {
           <Meter label="Domains" used={usage.sources} limit={plan.sources} />
         </div>
       </section>
+
+      {openingCheckout(busy) && <FullBusy text="Taking you to PayPal..." />}
 
       <ConfirmDialog
         open={confirmCancel}
@@ -494,6 +531,88 @@ function BillingDetails({ token, initial }: { token: string | null; initial: Det
         </div>
       </form>
     </section>
+  );
+}
+
+/** Any busy state that is a plan id: checkout is being opened on PayPal. */
+const openingCheckout = (busy: string) => Boolean(busy) && !["confirm", "cancel"].includes(busy);
+
+/** A centred card for a whole-page state: confirming, or a failed load. */
+function StatusCard({
+  icon,
+  title,
+  text,
+  slowText,
+  action,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  text: string;
+  /** Shown instead of `text` after 15 seconds. */
+  slowText?: string;
+  action?: React.ReactNode;
+}) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!slowText) return;
+    const timer = setTimeout(() => setSlow(true), 15_000);
+    return () => clearTimeout(timer);
+  }, [slowText]);
+  return (
+    <div className="mx-auto mt-10 max-w-md rounded-3xl border border-line bg-card p-8 text-center shadow-card">
+      <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-brand-wash text-brand">{icon}</span>
+      <h1 className="mt-5 text-lg font-black tracking-tight">{title}</h1>
+      <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{slow && slowText ? slowText : text}</p>
+      {slowText && (
+        <p className="mt-5 inline-flex items-center gap-1.5 text-[12px] font-medium text-emerald-dark">
+          <ShieldCheck className="h-3.5 w-3.5" /> Secure payment by PayPal
+        </p>
+      )}
+      {action}
+    </div>
+  );
+}
+
+/** Grey blocks in the shape of the page while it loads. */
+function BillingSkeleton() {
+  const block = "animate-pulse rounded-2xl bg-sand-deep/70";
+  return (
+    <div aria-busy="true" aria-label="Loading billing">
+      <div className={`${block} h-8 w-40`} />
+      <div className={`${block} mt-2 h-4 w-72`} />
+      <div className={`${block} mt-6 h-44`} />
+      <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <div className={`${block} h-72`} />
+        <div className={`${block} h-72`} />
+        <div className={`${block} h-72`} />
+      </div>
+    </div>
+  );
+}
+
+/** Covers one card while something about it is being done. */
+function BusyOverlay({ text }: { text: string }) {
+  return (
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-2xl bg-card/85 backdrop-blur-[2px]" role="status">
+      <Spinner className="h-6 w-6 text-brand" />
+      <p className="text-[13px] font-semibold text-ink">{text}</p>
+      <p className="text-[12px] text-muted">This takes a few seconds.</p>
+    </div>
+  );
+}
+
+/** Covers the page while the browser is on its way to PayPal. */
+function FullBusy({ text }: { text: string }) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-sand/80 backdrop-blur-sm" role="status">
+      <span className="grid h-14 w-14 place-items-center rounded-full bg-card shadow-card">
+        <Spinner className="h-6 w-6 text-brand" />
+      </span>
+      <p className="text-sm font-semibold text-ink">{text}</p>
+      <p className="inline-flex items-center gap-1.5 text-[12px] text-muted">
+        <ShieldCheck className="h-3.5 w-3.5 text-emerald-dark" /> You pay on PayPal&apos;s own secure page
+      </p>
+    </div>
   );
 }
 

@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import type { User } from "./types";
 
 type AuthContextValue = {
@@ -22,7 +22,7 @@ type AuthContextValue = {
     name: string;
     email: string;
     password: string;
-    role?: "USER" | "MERCHANT";
+    role?: "USER";
   }) => Promise<void>;
   verifySignup: (email: string, code: string) => Promise<User>;
   logout: () => void;
@@ -42,11 +42,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     setToken(stored);
-    api<User>("/auth/me", { token: stored })
-      .then(setUser)
-      .catch(() => {
-        localStorage.removeItem("sd_token");
-        setToken(null);
+    // Swap the stored token for a fresh one: every visit restarts the 7 days,
+    // so only someone away for a week has to sign in again.
+    api<{ user: User; token: string }>("/auth/refresh", { method: "POST", token: stored })
+      .then((r) => {
+        localStorage.setItem("sd_token", r.token);
+        setToken(r.token);
+        setUser(r.user);
+      })
+      .catch((err) => {
+        // Only a rejected token signs out. A server that is down for a
+        // minute must not log everyone out.
+        if (err instanceof ApiError && err.status === 401) {
+          localStorage.removeItem("sd_token");
+          setToken(null);
+        }
       })
       .finally(() => setLoading(false));
   }, []);
@@ -96,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       name: string;
       email: string;
       password: string;
-      role?: "USER" | "MERCHANT";
+      role?: "USER";
     }) => {
       await api("/auth/register", {
         method: "POST",

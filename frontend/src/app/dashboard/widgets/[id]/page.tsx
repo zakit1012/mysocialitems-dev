@@ -22,7 +22,9 @@ import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
 import { WidgetEditor } from "@/components/widget/WidgetEditor";
 import { WidgetPreview, type PreviewData, type PreviewReview } from "@/components/widget/WidgetPreview";
-import { toPayload, type WidgetSettings } from "@/lib/widget-settings";
+import { isProLayout, layoutName, toPayload, type WidgetSettings } from "@/lib/widget-settings";
+import { useLeaveGuard } from "@/lib/use-leave-guard";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { timeAgo } from "@/lib/time";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -137,16 +139,22 @@ function WidgetStudio() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widget?.id]);
 
-  // Do not lose edits to a stray tab close.
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  // Do not lose edits to a stray tab close or a click on the sidebar.
+  const leaveGuard = useLeaveGuard(dirty && !saving);
+  const isPaid = plan.id !== "" && plan.id !== "FREE";
+  // Choosing a Pro design needs a paid plan. One saved before a downgrade can
+  // stay (the site shows it as Grid) while other things are edited.
+  const proLocked = plan.id === "FREE" && isProLayout(draft.layout) && draft.layout !== saved.layout;
 
-  async function save() {
-    if (!widget) return;
+  async function save(): Promise<boolean> {
+    if (!widget) return false;
+    if (proLocked) {
+      setFlash({
+        ok: false,
+        text: `${layoutName(draft.layout)} is a Pro design. Upgrade to use it, or pick Grid, List or Carousel.`,
+      });
+      return false;
+    }
     setSaving(true);
     setFlash(null);
     try {
@@ -161,8 +169,10 @@ function WidgetStudio() {
       setFlash({ ok: true, text: "Saved. Your website shows the new look on its next page load." });
       const nextSort = w.settings.sort ?? "mostRelevant";
       if (nextSort !== previousSort) void loadReviews(widget.id, nextSort);
+      return true;
     } catch (err) {
       setFlash({ ok: false, text: err instanceof Error ? err.message : "Could not save" });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -239,7 +249,7 @@ function WidgetStudio() {
           )}
           <button
             type="button"
-            onClick={save}
+            onClick={() => void save()}
             disabled={!dirty || saving}
             className="inline-flex items-center gap-1.5 rounded-xl gradient-brand px-4 py-2 text-[13px] font-bold text-white shadow-glow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
           >
@@ -279,7 +289,13 @@ function WidgetStudio() {
 
       {tab === "customize" ? (
         <div className="mt-5 grid items-start gap-5 lg:grid-cols-[320px_1fr]">
-          <WidgetEditor value={draft} onChange={setDraft} maxReviews={plan.reviews} planName={plan.name} />
+          <WidgetEditor
+            value={draft}
+            onChange={setDraft}
+            maxReviews={plan.reviews}
+            planName={plan.name}
+            canUsePro={isPaid || plan.id === ""}
+          />
           <div className="min-w-0">
             <WidgetPreview data={preview} settings={draft} busy={reviewsBusy} note={reviewsNote} branding={plan.id === "FREE"} />
           </div>
@@ -304,6 +320,21 @@ function WidgetStudio() {
           dirty={dirty}
         />
       )}
+
+      <ConfirmDialog
+        open={leaveGuard.asking}
+        title="Save your changes?"
+        message="Your design changes are not saved yet. Leave now and they are lost; your website keeps showing the last saved look."
+        confirmLabel="Save changes"
+        cancelLabel="Stay"
+        altLabel="Leave without saving"
+        onConfirm={async () => {
+          if (await save()) leaveGuard.leave();
+          else leaveGuard.stay();
+        }}
+        onCancel={leaveGuard.stay}
+        onAlt={leaveGuard.leave}
+      />
     </div>
   );
 }

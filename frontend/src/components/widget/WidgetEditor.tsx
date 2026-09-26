@@ -21,6 +21,8 @@ import {
   COLOR_FIELDS,
   SORT_OPTIONS,
   isOn,
+  isProLayout,
+  layoutName,
   themeColor,
   type ButtonIcon,
   type ColorKey,
@@ -103,6 +105,7 @@ export function WidgetEditor({
   maxReviews,
   planName,
   footer,
+  canUsePro = true,
 }: {
   value: WidgetSettings;
   onChange: (next: WidgetSettings) => void;
@@ -110,6 +113,8 @@ export function WidgetEditor({
   maxReviews: number;
   planName?: string;
   footer?: ReactNode;
+  /** False on Free: Pro designs carry a badge and can be tried, not saved. */
+  canUsePro?: boolean;
 }) {
   const [tab, setTab] = useState<TabId>("layout");
   const set = (patch: Partial<WidgetSettings>) => onChange({ ...value, ...patch });
@@ -146,12 +151,17 @@ export function WidgetEditor({
                     type="button"
                     title={l.hint}
                     onClick={() => set({ layout: l.id })}
-                    className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 text-[11.5px] font-semibold transition ${
+                    className={`relative flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 text-[11.5px] font-semibold transition ${
                       layout === l.id
                         ? "border-brand bg-brand-wash text-brand"
                         : "border-line text-muted hover:border-brand/40 hover:text-ink"
                     }`}
                   >
+                    {!canUsePro && isProLayout(l.id) && (
+                      <span className="absolute right-1 top-1 rounded bg-amber-100 px-1 text-[9px] font-bold uppercase leading-4 tracking-wide text-amber-700">
+                        Pro
+                      </span>
+                    )}
                     <span className={layout === l.id ? "text-brand/70" : "text-hint/60"}>
                       <LayoutSketch id={l.id} />
                     </span>
@@ -159,6 +169,15 @@ export function WidgetEditor({
                   </button>
                 ))}
               </div>
+              {!canUsePro && isProLayout(layout) && (
+                <p className="mt-2.5 rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800">
+                  {layoutName(layout)} is a Pro design. Try it here; to use it on your site,{" "}
+                  <Link href="/dashboard/billing" className="font-semibold underline">
+                    upgrade
+                  </Link>
+                  . Grid, List and Carousel are free.
+                </p>
+              )}
             </Section>
 
             {layout === "carousel" && (

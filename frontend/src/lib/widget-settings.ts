@@ -4,6 +4,12 @@
  */
 
 export type Layout = "grid" | "masonry" | "list" | "quotes" | "showcase" | "carousel";
+
+/** Designs for paid plans. A Free account can try them here, not save them. */
+export const PRO_LAYOUTS: Layout[] = ["masonry", "quotes", "showcase"];
+export const isProLayout = (layout?: string) => PRO_LAYOUTS.includes(layout as Layout);
+export const layoutName = (layout?: string) =>
+  layout ? layout.charAt(0).toUpperCase() + layout.slice(1) : "";
 export type Sort = "mostRelevant" | "newest";
 export type ButtonIcon = "google" | "chat" | "star" | "none";
 

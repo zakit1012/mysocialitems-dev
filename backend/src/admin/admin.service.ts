@@ -7,15 +7,11 @@ export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
   async overview() {
-    const [users, widgets, sources, deals, vouchers, reviews] =
-      await Promise.all([
-        this.prisma.user.count(),
-        this.prisma.widget.count(),
-        this.prisma.source.count(),
-        this.prisma.deal.count(),
-        this.prisma.voucher.count(),
-        this.prisma.review.count(),
-      ]);
+    const [users, widgets, sources] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.widget.count(),
+      this.prisma.source.count(),
+    ]);
     const since = new Date(Date.now() - 7 * 24 * 3600 * 1000);
     const newUsers = await this.prisma.user.count({
       where: { createdAt: { gte: since } },
@@ -27,9 +23,6 @@ export class AdminService {
       users,
       widgets,
       sources,
-      deals,
-      vouchers,
-      reviews,
       newUsers,
       paying,
     };
@@ -46,7 +39,7 @@ export class AdminService {
         city: true,
         createdAt: true,
         _count: {
-          select: { widgets: true, sources: true, deals: true, vouchers: true },
+          select: { widgets: true, sources: true },
         },
         subscription: {
           select: { plan: true, status: true, currentPeriodEnd: true },

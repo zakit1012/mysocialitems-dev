@@ -437,9 +437,13 @@ export function widgetScript(key: string, preview = false): string {
       } else {
         var style = '';
         if (cols && (layout === 'grid' || layout === 'quotes' || layout === 'showcase')) {
+          // Each layout's own gap (see CSS), and 1px of slack: with the gap
+          // counted wrong, or on the exact edge, the chosen number of
+          // columns never fits and the browser drops one.
+          var gap = layout === 'quotes' ? 16 : layout === 'showcase' ? 14 : 12;
           style = cols === 1
             ? 'grid-template-columns:1fr'
-            : 'grid-template-columns:repeat(auto-fit,minmax(max(220px,calc((100% - ' + (cols - 1) * 12 + 'px) / ' + cols + ')),1fr))';
+            : 'grid-template-columns:repeat(auto-fit,minmax(max(220px,calc((100% - ' + (cols - 1) * gap + 'px) / ' + cols + ' - 1px)),1fr))';
         }
         html += '<div class="msi-items"' + (style ? ' style="' + style + '"' : '') + '>' + items + '</div>';
       }

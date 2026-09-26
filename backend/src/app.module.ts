@@ -6,11 +6,6 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
-import { CategoriesModule } from './categories/categories.module';
-import { DealsModule } from './deals/deals.module';
-import { FavoritesModule } from './favorites/favorites.module';
-import { VouchersModule } from './vouchers/vouchers.module';
-import { ReviewsModule } from './reviews/reviews.module';
 import { WidgetsModule } from './widgets/widgets.module';
 import { SourcesModule } from './sources/sources.module';
 import { PublicModule } from './public/public.module';
@@ -36,11 +31,6 @@ import { AppService } from './app.service';
     RedisModule,
     MailModule,
     AuthModule,
-    CategoriesModule,
-    DealsModule,
-    FavoritesModule,
-    VouchersModule,
-    ReviewsModule,
     PlacesModule,
     WidgetsModule,
     SourcesModule,

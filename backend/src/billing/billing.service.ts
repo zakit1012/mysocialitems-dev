@@ -1086,7 +1086,9 @@ export class BillingService {
   ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return;
-    await this.mail.send(
+    // Not awaited: a customer coming back from PayPal, or a webhook, must not
+    // wait on the mail server. send() never throws.
+    void this.mail.send(
       user.email,
       subject,
       [`Hi ${user.name},`, line],

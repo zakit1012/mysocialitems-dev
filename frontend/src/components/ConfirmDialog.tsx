@@ -16,6 +16,8 @@ export function ConfirmDialog({
   danger = false,
   onConfirm,
   onCancel,
+  altLabel,
+  onAlt,
 }: {
   open: boolean;
   title: string;
@@ -25,6 +27,9 @@ export function ConfirmDialog({
   danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  /** An optional third choice, shown on the left (e.g. "Leave without saving"). */
+  altLabel?: string;
+  onAlt?: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -47,7 +52,7 @@ export function ConfirmDialog({
         // A click on the dimmed backdrop lands on the dialog element itself.
         if (e.target === ref.current) onCancel();
       }}
-      className="m-auto w-[min(92vw,400px)] rounded-2xl border border-line bg-card p-0 text-ink shadow-panel backdrop:bg-ink/40 backdrop:backdrop-blur-[2px]"
+      className={`m-auto ${altLabel ? "w-[min(92vw,470px)]" : "w-[min(92vw,400px)]"} rounded-2xl border border-line bg-card p-0 text-ink shadow-panel backdrop:bg-ink/40 backdrop:backdrop-blur-[2px]`}
     >
       <div className="p-6">
         <span
@@ -60,7 +65,16 @@ export function ConfirmDialog({
           {title}
         </h2>
         {message && <div className="mt-1.5 text-sm leading-relaxed text-muted">{message}</div>}
-        <div className="mt-6 flex justify-end gap-2">
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          {altLabel && onAlt && (
+            <button
+              type="button"
+              onClick={onAlt}
+              className="mr-auto rounded-xl px-2 py-2 text-sm font-semibold text-coral transition hover:underline"
+            >
+              {altLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={onCancel}

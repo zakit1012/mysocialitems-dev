@@ -48,4 +48,14 @@ export class AuthController {
   me(@CurrentUser() user: AuthUser) {
     return this.auth.me(user.id);
   }
+
+  /**
+   * A fresh 7-day token for a signed-in user. The app asks on every visit, so
+   * someone who keeps using it stays signed in; 7 days away signs them out.
+   */
+  @Post('refresh')
+  @UseGuards(JwtAuthGuard)
+  refresh(@CurrentUser() user: AuthUser) {
+    return this.auth.refresh(user.id);
+  }
 }

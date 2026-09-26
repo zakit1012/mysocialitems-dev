@@ -32,6 +32,18 @@ export async function api<T>(
     }
   }
 
+  // A signed-in call refused as unauthorized: the session ran out. Inside the
+  // app, go to the login page (and come back after) instead of error boxes.
+  if (response.status === 401 && token && typeof window !== "undefined") {
+    localStorage.removeItem("sd_token");
+    const { pathname, search } = window.location;
+    if (/^\/(dashboard|admin|invoice)(\/|$)/.test(pathname)) {
+      // A full page load on purpose: it clears everything the old session held.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.assign(`${window.location.origin}/login?next=${encodeURIComponent(pathname + search)}`);
+    }
+  }
+
   if (!response.ok) {
     const payload = data as { message?: string | string[] } | null;
     const message = Array.isArray(payload?.message)

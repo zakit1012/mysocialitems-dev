@@ -22,6 +22,7 @@ import { HiddenReviewsService } from '../moderation/hidden-reviews.service';
 import { hostFrom, hostMatches } from '../sources/domain.util';
 import {
   MAX_REVIEW_COUNT,
+  PRO_LAYOUTS,
   SORTS,
   fiveStarOnly,
   normalizeSettings,
@@ -180,6 +181,14 @@ export class PublicController {
     const { widget, host, plan } = resolved;
 
     const settings = normalizeSettings(widget.settings);
+    // A Pro design on an account that is no longer paid shows as Grid.
+    if (
+      settings.layout &&
+      PRO_LAYOUTS.includes(settings.layout) &&
+      !isPaidPlan(plan)
+    ) {
+      settings.layout = 'grid';
+    }
     // data-sort on the snippet may only pick one of the widget's own orders:
     // "lowest rated" would leave a 5-star-only widget empty.
     const order =

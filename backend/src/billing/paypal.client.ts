@@ -10,6 +10,8 @@ export type PaypalMode = 'sandbox' | 'live';
 
 type Token = { value: string; expiresAt: number };
 
+const PAYPAL_TIMEOUT_MS = 20_000;
+
 /**
  * PayPal REST client. Credentials come from the admin panel (SettingsService,
  * falling back to .env), with separate sandbox and live keys and a switch
@@ -68,6 +70,7 @@ export class PaypalClient {
     }
     const res = await fetch(`${this.base(mode)}/v1/oauth2/token`, {
       method: 'POST',
+      signal: AbortSignal.timeout(PAYPAL_TIMEOUT_MS),
       headers: {
         Authorization: `Basic ${Buffer.from(`${id}:${secret}`).toString('base64')}`,
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -103,14 +106,23 @@ export class PaypalClient {
     mode?: PaypalMode,
   ): Promise<T> {
     const m = mode ?? (await this.mode());
+    const token = await this.accessToken(m);
     const res = await fetch(`${this.base(m)}${path}`, {
       method,
+      // PayPal almost always answers in a second or two; never let a stuck
+      // call hold a customer's page (or the hourly check) open for minutes.
+      signal: AbortSignal.timeout(PAYPAL_TIMEOUT_MS),
       headers: {
-        Authorization: `Bearer ${await this.accessToken(m)}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         Prefer: 'return=representation',
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+    }).catch((err: unknown) => {
+      this.log.error(`PayPal ${m} ${method} ${path} failed: ${String(err)}`);
+      throw new BadGatewayException(
+        'PayPal did not answer in time. Please try again in a minute.',
+      );
     });
     const text = await res.text();
     if (!res.ok) {

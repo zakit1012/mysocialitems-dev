@@ -12,7 +12,12 @@ import { BillingService } from '../billing/billing.service';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { CreateWidgetDto } from './dto/create-widget.dto';
 import { UpdateWidgetDto } from './dto/update-widget.dto';
-import { mergeSettings, normalizeSettings } from './widget-settings';
+import {
+  PRO_LAYOUTS,
+  layoutName,
+  mergeSettings,
+  normalizeSettings,
+} from './widget-settings';
 
 /** Stored settings may predate the current format; always hand out the current one. */
 function withSettings<T extends { settings: unknown }>(widget: T): T {
@@ -45,8 +50,21 @@ export class WidgetsService {
     }));
   }
 
+  /** Pro designs need a paid plan; the editor lets Free accounts try them only. */
+  private async assertLayoutAllowed(userId: string, layout?: string) {
+    if (!layout || !PRO_LAYOUTS.includes(layout)) return;
+    if (isPaidPlan(await this.billing.planFor(userId))) return;
+    throw new ForbiddenException(
+      `${layoutName(layout)} is a Pro design. Upgrade to use it, or pick Grid, List or Carousel.`,
+    );
+  }
+
   async create(userId: string, dto: CreateWidgetDto) {
     await this.billing.assertCanAdd(userId, 'widgets');
+    await this.assertLayoutAllowed(
+      userId,
+      normalizeSettings(dto.settings).layout,
+    );
     // Google checks the place is a real business. Its Places content (name,
     // address) may not be stored - only the place ID - so the name comes from
     // the review engine, which the preview has just filled for this place.
@@ -134,9 +152,15 @@ export class WidgetsService {
     });
     if (!current) throw new NotFoundException('Widget not found.');
     if (dto.settings === undefined) return withSettings(current);
+    const merged = mergeSettings(current.settings, dto.settings);
+    // Only a change of design is checked: after a downgrade, a widget saved
+    // with a Pro design can still have its colours edited (it shows as Grid).
+    if (merged.layout !== normalizeSettings(current.settings).layout) {
+      await this.assertLayoutAllowed(userId, merged.layout);
+    }
     const widget = await this.prisma.widget.update({
       where: { id, userId },
-      data: { settings: mergeSettings(current.settings, dto.settings) },
+      data: { settings: merged },
       omit: { logo: true },
     });
     return withSettings(widget);

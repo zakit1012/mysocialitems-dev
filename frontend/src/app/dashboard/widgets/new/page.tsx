@@ -10,7 +10,9 @@ import { WidgetEditor } from "@/components/widget/WidgetEditor";
 import { WidgetPreview, type PreviewData, type PreviewReview } from "@/components/widget/WidgetPreview";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { DEFAULT_SETTINGS, toPayload, type WidgetSettings } from "@/lib/widget-settings";
+import { DEFAULT_SETTINGS, isProLayout, layoutName, toPayload, type WidgetSettings } from "@/lib/widget-settings";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useLeaveGuard } from "@/lib/use-leave-guard";
 
 type EngineResponse = {
   business: PreviewData["business"];
@@ -36,6 +38,11 @@ export default function NewWidgetPage() {
   // How many reviews a widget may show on the user's current plan.
   const [plan, setPlan] = useState({ id: "FREE", name: "Free", reviews: 3 });
   const [settings, setSettings] = useState<WidgetSettings>(DEFAULT_SETTINGS);
+  const isPaid = plan.id !== "FREE";
+  const proLocked = !isPaid && isProLayout(settings.layout);
+  // Reviews fetched but the widget not saved yet: a stray click on the sidebar
+  // must not throw that away, or the place has to be fetched all over again.
+  const leaveGuard = useLeaveGuard(status === "preview");
 
   useEffect(() => {
     if (!token) return;
@@ -102,6 +109,10 @@ export default function NewWidgetPage() {
 
   async function createWidget() {
     if (!place) return;
+    if (proLocked) {
+      setError(`${layoutName(settings.layout)} is a Pro design. Upgrade to use it, or pick Grid, List or Carousel.`);
+      return;
+    }
     setStatus("saving");
     setError("");
     try {
@@ -173,11 +184,13 @@ export default function NewWidgetPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                setPlace(null);
-                setEngine(null);
-                setStatus("idle");
-              }}
+              onClick={() =>
+                leaveGuard.guard(() => {
+                  setPlace(null);
+                  setEngine(null);
+                  setStatus("idle");
+                })
+              }
               className="inline-flex items-center gap-1 rounded-xl border border-line bg-card px-3 py-2 text-[12.5px] font-semibold text-muted hover:text-brand"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Pick another place
@@ -251,6 +264,7 @@ export default function NewWidgetPage() {
               onChange={setSettings}
               maxReviews={plan.reviews}
               planName={plan.name}
+              canUsePro={isPaid}
               footer={
                 <>
                   <Button loading={status === "saving"} onClick={createWidget} className="h-11">
@@ -265,6 +279,21 @@ export default function NewWidgetPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={leaveGuard.asking}
+        title="Save this widget first?"
+        message={`The reviews for ${place?.name ?? "this place"} are fetched and your design is ready, but the widget is not saved. If you leave now, you will have to find the place and fetch its reviews again.`}
+        confirmLabel="Save widget"
+        cancelLabel="Stay"
+        altLabel="Leave without saving"
+        onConfirm={() => {
+          leaveGuard.stay();
+          void createWidget();
+        }}
+        onCancel={leaveGuard.stay}
+        onAlt={leaveGuard.leave}
+      />
     </div>
   );
 }

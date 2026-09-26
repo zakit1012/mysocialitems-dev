@@ -28,6 +28,9 @@ model User {
   payments     Payment[]
 }
 
+/// Category, Deal, Favorite, Voucher and Review belong to the old deals app.
+/// No code uses them any more; the tables stay so that existing rows are not
+/// dropped by the next `prisma db push`.
 model Category {
   id        String   @id @default(cuid())
   slug      String   @unique
