@@ -33,8 +33,8 @@ export default function PrivacyPage() {
       <ul>
         <li>Account details: your name, email address and password (stored only as a secure hash).</li>
         <li>
-          Widget details: the businesses you pick (Google place ID, name and address), your widget settings,
-          and the website domains you allow the widget on.
+          Widget details: the businesses you pick (Google place ID and name), your widget settings, an optional
+          logo for your review poster, and the website domains you allow the widget on.
         </li>
         <li>
           Billing details: your plan, subscription status and PayPal subscription ID. Payments are handled by
@@ -53,6 +53,10 @@ export default function PrivacyPage() {
           minutes. We keep counts, not the addresses themselves.
         </li>
         <li>We count clicks on the widget&apos;s buttons. We do not set cookies on visitors&apos; devices.</li>
+        <li>
+          Reviewer profile photos and review photos in a widget load straight from Google&apos;s image servers,
+          so Google receives the visitor&apos;s IP address for those images, under Google&apos;s own privacy policy.
+        </li>
       </ul>
       <p>
         <strong>About reviewers</strong>
@@ -129,8 +133,9 @@ export default function PrivacyPage() {
       </p>
       <p>
         <strong>Reviewers:</strong> if a widget shows your review and you want it removed from our widgets,
-        email us with a link to the review and we will remove it. Changes you make to the review on Google
-        also reach the widget when it next refreshes.
+        email us with the business name and your reviewer name, and we will stop showing it in every widget
+        for that business. Editing or deleting the review on Google also reaches the widget when it next
+        refreshes.
       </p>
 
       <h2>7. Security</h2>

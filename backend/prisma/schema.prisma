@@ -109,17 +109,24 @@ model Review {
 }
 
 model Widget {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   // Public key goes in the embed snippet. The widget id stays private so a
   // leaked key cannot be used against the authenticated API.
-  publicKey    String   @unique
+  publicKey    String    @unique
   placeId      String
   placeName    String
   placeAddress String?
   userId       String
-  settings     Json?    @default("{}")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  settings     Json?     @default("{}")
+  /// The last time a visitor's page loaded this widget, and on which site.
+  /// Shown to the owner as "installed and live".
+  lastSeenAt   DateTime?
+  lastSeenHost String?
+  /// Business logo for the review QR poster: a small image data URL, resized
+  /// in the browser before upload. Never sent to the public embed.
+  logo         String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   sources Source[]
@@ -185,6 +192,8 @@ model Subscription {
   currentPeriodEnd     DateTime?
   /// Cancelled on PayPal, but paid up until currentPeriodEnd.
   cancelAtPeriodEnd    Boolean   @default(false)
+  /// month | year
+  interval             String    @default("month")
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -220,24 +229,28 @@ model BillingEvent {
 /// Plans live in the database so the super admin can change prices and limits
 /// without a deploy. `key` is what Subscription.plan stores.
 model BillingPlan {
-  key                 String   @id
-  name                String
-  priceUsd            Float    @default(0)
-  sources             Int      @default(1)
-  widgets             Int      @default(1)
-  reviews             Int      @default(3)
+  key                   String   @id
+  name                  String
+  priceUsd              Float    @default(0)
+  sources               Int      @default(1)
+  widgets               Int      @default(1)
+  reviews               Int      @default(3)
   /// null = unlimited
-  views               Int?
+  views                 Int?
   /// Hours between automatic review refreshes. null = the default for the
   /// plan's key (FREE 48, PRO 24, BUSINESS 12), so existing rows need no backfill.
-  refreshHours        Int?
-  active              Boolean  @default(true)
-  sortOrder           Int      @default(0)
+  refreshHours          Int?
+  active                Boolean  @default(true)
+  sortOrder             Int      @default(0)
   /// PayPal keeps its own copy of each paid plan, one per environment.
-  paypalPlanIdSandbox String?
-  paypalPlanIdLive    String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  paypalPlanIdSandbox   String?
+  paypalPlanIdLive      String?
+  /// Yearly billing. null price = 10x the monthly price (two months free).
+  priceYearlyUsd        Float?
+  paypalYearlyIdSandbox String?
+  paypalYearlyIdLive    String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 /// Runtime settings edited from the admin panel (PayPal keys, mode, ...).
@@ -247,4 +260,20 @@ model AppSetting {
   value     String
   secret    Boolean  @default(false)
   updatedAt DateTime @updatedAt
+}
+
+/// A review kept out of every widget for its place, because the reviewer asked
+/// us to stop showing it. Matched on the author and the start of the text:
+/// the scraper does not always give a review id.
+model HiddenReview {
+  id        String   @id @default(cuid())
+  placeId   String
+  author    String
+  /// Empty = every review by this author for the place.
+  textStart String   @default("")
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@unique([placeId, author, textStart])
+  @@index([placeId])
 }

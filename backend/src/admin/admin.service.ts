@@ -58,6 +58,7 @@ export class AdminService {
   widgets() {
     return this.prisma.widget.findMany({
       orderBy: { createdAt: 'desc' },
+      omit: { logo: true },
       include: {
         user: { select: { id: true, email: true, name: true } },
         sources: { select: { domain: true, hits: true } },

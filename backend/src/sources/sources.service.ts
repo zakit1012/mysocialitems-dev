@@ -34,6 +34,7 @@ export class SourcesService {
     if (widgetId) {
       const widget = await this.prisma.widget.findFirst({
         where: { id: widgetId, userId },
+        select: { id: true },
       });
       if (!widget) throw new NotFoundException('Widget not found');
     }

@@ -8,6 +8,7 @@ import { Spinner } from "@/components/Spinner";
 import { PlansTab } from "./PlansTab";
 import { SubscriptionsTab } from "./SubscriptionsTab";
 import { PaypalTab } from "./PaypalTab";
+import { HiddenReviewsTab } from "./HiddenReviewsTab";
 
 type Overview = {
   users: number;
@@ -49,7 +50,7 @@ type AdminSource = {
   widget: { placeName: string } | null;
 };
 
-const TABS = ["Users", "Subscriptions", "Plans", "PayPal", "Widgets", "Sources"] as const;
+const TABS = ["Users", "Subscriptions", "Plans", "PayPal", "Widgets", "Sources", "Hidden reviews"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function AdminPage() {
@@ -189,6 +190,7 @@ export default function AdminPage() {
         {tab === "Subscriptions" && <SubscriptionsTab token={token} />}
         {tab === "Plans" && <PlansTab token={token} />}
         {tab === "PayPal" && <PaypalTab token={token} />}
+        {tab === "Hidden reviews" && <HiddenReviewsTab token={token} />}
 
         {tab === "Widgets" && (
           <Table head={["Place", "Owner", "Domains", "Key", "Created"]}>

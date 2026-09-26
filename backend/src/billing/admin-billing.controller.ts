@@ -81,17 +81,31 @@ export class AdminBillingController {
         body.paypalPlanIdLive === undefined
           ? undefined
           : str(body.paypalPlanIdLive) || null,
+      // "" or null -> back to 10x the monthly price
+      priceYearlyUsd:
+        body.priceYearlyUsd === null || body.priceYearlyUsd === ''
+          ? null
+          : num(body.priceYearlyUsd),
+      paypalYearlyIdSandbox:
+        body.paypalYearlyIdSandbox === undefined
+          ? undefined
+          : str(body.paypalYearlyIdSandbox) || null,
+      paypalYearlyIdLive:
+        body.paypalYearlyIdLive === undefined
+          ? undefined
+          : str(body.paypalYearlyIdLive) || null,
     });
   }
 
   @Post('plans/:key/paypal')
   createOnPaypal(
     @Param('key') key: string,
-    @Body() body: { mode?: PaypalMode },
+    @Body() body: { mode?: PaypalMode; interval?: string },
   ) {
     const mode =
       body?.mode === 'live' || body?.mode === 'sandbox' ? body.mode : undefined;
-    return this.billing.adminCreateOnPaypal(key, mode);
+    const interval = body?.interval === 'year' ? 'year' : 'month';
+    return this.billing.adminCreateOnPaypal(key, mode, interval);
   }
 
   // ---- PayPal keys

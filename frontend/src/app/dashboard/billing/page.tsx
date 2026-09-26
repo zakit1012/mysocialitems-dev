@@ -17,8 +17,14 @@ type PlanCard = {
   reviews: number;
   views: number;
   refreshHours: number;
+  priceYearlyUsd: number;
   available: boolean;
+  availableYearly?: boolean;
 };
+
+type Interval = "month" | "year";
+
+const money = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
 
 type Overview = {
   plan: PlanCard;
@@ -28,6 +34,8 @@ type Overview = {
     currentPeriodEnd: string | null;
     cancelAtPeriodEnd: boolean;
     pendingPlan: string | null;
+    interval?: Interval;
+    hasPaypal?: boolean;
   };
   usage: { period: string; views: number; widgets: number; sources: number };
   plans: PlanCard[];
@@ -49,6 +57,7 @@ function Billing() {
   const [data, setData] = useState<Overview | null>(null);
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
+  const [period, setPeriod] = useState<Interval | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -92,14 +101,14 @@ function Billing() {
     load();
   }, [token, params, router, load]);
 
-  async function upgrade(plan: string) {
+  async function upgrade(plan: string, every: Interval) {
     setBusy(plan);
     setNotice(null);
     try {
       const r = await api<{ approveUrl: string }>("/billing/checkout", {
         method: "POST",
         token,
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, interval: every }),
       });
       window.location.href = r.approveUrl;
     } catch (err) {
@@ -132,6 +141,8 @@ function Billing() {
 
   const { plan, subscription, usage } = data;
   const isPaid = subscription.plan !== "FREE" && subscription.status !== "EXPIRED";
+  // The toggle starts on the interval the account pays by.
+  const every: Interval = period ?? subscription.interval ?? "month";
   const renews = subscription.currentPeriodEnd
     ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
     : null;
@@ -172,13 +183,16 @@ function Billing() {
                 : subscription.status === "SUSPENDED"
                   ? "Suspended by PayPal - update your payment method"
                   : isPaid && renews
-                    ? `Renews ${renews}`
+                    ? `Renews ${renews}${subscription.interval === "year" ? " · billed yearly" : " · billed monthly"}`
                     : plan.id === "ADMIN"
                       ? "Admin account - no limits"
-                      : "Free forever"}
+                      : plan.id !== "FREE"
+                        ? "Active"
+                        : "Free forever"}
             </p>
           </div>
-          {isPaid && subscription.status === "ACTIVE" && (
+          {/* Only a PayPal subscription can be cancelled here; a plan set by support is changed by support. */}
+          {isPaid && subscription.status === "ACTIVE" && subscription.hasPaypal && (
             <button
               type="button"
               onClick={cancel}
@@ -198,10 +212,38 @@ function Billing() {
       </section>
 
       {/* plans */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-bold">Plans</h2>
+        <div className="flex rounded-xl border border-line bg-card p-1" role="group" aria-label="Billing period">
+          {(
+            [
+              ["month", "Monthly"],
+              ["year", "Yearly · 2 months free"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={every === id}
+              onClick={() => setPeriod(id)}
+              className={`rounded-lg px-3 py-1.5 text-[13px] font-semibold transition ${
+                every === id ? "gradient-brand text-white" : "text-muted hover:text-ink"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="grid gap-4 md:grid-cols-3">
         {data.plans.map((p) => {
-          // The plan in force (a cancelled plan runs to the end of its period).
-          const current = p.id === plan.id;
+          const free = p.id === "FREE";
+          // The plan in force (a cancelled plan runs to the end of its period),
+          // on the billing period shown.
+          const current = p.id === plan.id && (free || (subscription.interval ?? "month") === every);
+          const samePlanOtherPeriod = p.id === plan.id && !free && !current;
+          const yearly = every === "year" && !free;
+          const available = yearly ? p.availableYearly : p.available;
           return (
             <div
               key={p.id}
@@ -211,30 +253,48 @@ function Billing() {
             >
               <p className="font-bold">{p.name}</p>
               <p className="mt-2">
-                <span className="text-3xl font-black">${p.priceUsd}</span>
-                <span className="text-[13px] text-muted">{p.priceUsd ? " / month" : ""}</span>
+                <span className="text-3xl font-black">{money(yearly ? p.priceYearlyUsd : p.priceUsd)}</span>
+                <span className="text-[13px] text-muted">{free ? "" : yearly ? " / year" : " / month"}</span>
               </p>
+              {yearly && (
+                <p className="text-[12px] font-semibold text-emerald-dark">
+                  {money(Math.round((p.priceYearlyUsd / 12) * 100) / 100)} a month, saves{" "}
+                  {money(Math.max(0, Math.round((p.priceUsd * 12 - p.priceYearlyUsd) * 100) / 100))}
+                </p>
+              )}
               <ul className="mt-4 space-y-2 text-[13px]">
                 <Feature>{p.widgets} widget{p.widgets === 1 ? "" : "s"}</Feature>
                 <Feature>{p.sources} domain{p.sources === 1 ? "" : "s"}</Feature>
                 <Feature>{p.reviews} reviews per widget</Feature>
                 <Feature>{p.views >= UNLIMITED ? "Unlimited views" : `${p.views.toLocaleString()} views a month`}</Feature>
                 <Feature>Reviews update every {p.refreshHours} hours</Feature>
+                {free ? (
+                  <Feature>Small &quot;Powered by&quot; link on widgets</Feature>
+                ) : (
+                  <>
+                    <Feature>No &quot;Powered by&quot; link</Feature>
+                    <Feature>Review QR code poster and share link</Feature>
+                  </>
+                )}
               </ul>
               <div className="mt-auto pt-5">
                 {current ? (
                   <p className="rounded-lg bg-sand py-2 text-center text-[13px] font-semibold text-muted">
                     Current plan
                   </p>
-                ) : p.id === "FREE" ? null : (
+                ) : free ? null : (
                   <button
                     type="button"
-                    onClick={() => upgrade(p.id)}
-                    disabled={!p.available || Boolean(busy)}
+                    onClick={() => upgrade(p.id, every)}
+                    disabled={!available || Boolean(busy)}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-lg gradient-brand py-2.5 text-[13px] font-semibold text-white transition hover:shadow-glow disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busy === p.id ? <Spinner /> : <CreditCard className="h-4 w-4" />}
-                    {p.available ? `Choose ${p.name} with PayPal` : "Coming soon"}
+                    {!available
+                      ? "Coming soon"
+                      : samePlanOtherPeriod
+                        ? `Switch to ${yearly ? "yearly" : "monthly"} with PayPal`
+                        : `Choose ${p.name}${yearly ? " yearly" : ""} with PayPal`}
                   </button>
                 )}
               </div>

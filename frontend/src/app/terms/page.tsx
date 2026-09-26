@@ -65,8 +65,9 @@ export default function TermsPage() {
       <h2>4. Plans, billing and limits</h2>
       <ul>
         <li>
-          The Free plan is free. Paid plans are billed monthly in advance through PayPal and renew automatically
-          until you cancel. Prices are shown in US dollars and may exclude taxes that apply to you.
+          The Free plan is free. Paid plans are billed monthly or yearly in advance through PayPal, as you choose,
+          and renew automatically until you cancel. Prices are shown in US dollars and may exclude taxes that
+          apply to you.
         </li>
         <li>
           Each plan has limits, such as widgets, websites, reviews shown per widget, monthly views and how often

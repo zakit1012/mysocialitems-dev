@@ -197,7 +197,7 @@ export function PlaceAutocomplete({ onSelect }: Props) {
       </div>
       {error && <p className="mt-2 text-sm text-coral">{error}</p>}
       {open && suggestions.length > 0 && (
-        <ul className="absolute z-20 mt-2 max-h-72 w-full overflow-auto rounded-2xl border border-line bg-white shadow-panel">
+        <ul className="absolute z-20 mt-2 max-h-80 w-full overflow-auto rounded-2xl border border-line bg-white shadow-panel">
           {suggestions.map((item) => (
             <li key={item.placeId}>
               <button
@@ -225,6 +225,10 @@ export function PlaceAutocomplete({ onSelect }: Props) {
               </button>
             </li>
           ))}
+          {/* Google's terms: predictions shown without a map carry its attribution. */}
+          <li className="sticky bottom-0 border-t border-line bg-white px-4 py-2 text-right text-[11px] text-muted" aria-label="Results from Google Maps">
+            <span style={{ fontFamily: "Roboto, Arial, sans-serif" }}>Google Maps</span>
+          </li>
         </ul>
       )}
 

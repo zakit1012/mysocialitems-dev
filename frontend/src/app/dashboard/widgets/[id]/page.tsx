@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Check,
+  CheckCircle2,
   ChevronLeft,
   Code2,
   Copy,
@@ -12,6 +13,7 @@ import {
   MapPin,
   Paintbrush,
   Plus,
+  RefreshCw,
   Store,
   TriangleAlert,
 } from "lucide-react";
@@ -21,6 +23,7 @@ import { Spinner } from "@/components/Spinner";
 import { WidgetEditor } from "@/components/widget/WidgetEditor";
 import { WidgetPreview, type PreviewData, type PreviewReview } from "@/components/widget/WidgetPreview";
 import { toPayload, type WidgetSettings } from "@/lib/widget-settings";
+import { timeAgo } from "@/lib/time";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -31,6 +34,8 @@ type Widget = {
   placeName: string;
   placeAddress: string | null;
   settings: WidgetSettings;
+  lastSeenAt: string | null;
+  lastSeenHost: string | null;
 };
 
 type Source = { id: string; domain: string; widget: { id: string } | null };
@@ -63,7 +68,7 @@ function WidgetStudio() {
   const [saved, setSaved] = useState<WidgetSettings>({});
   const [draft, setDraft] = useState<WidgetSettings>({});
   const [sources, setSources] = useState<Source[]>([]);
-  const [plan, setPlan] = useState({ name: "", reviews: 3 });
+  const [plan, setPlan] = useState({ id: "", name: "", reviews: 3 });
   // ?tab=install straight after creating a widget, or from the dashboard;
   // a click on the tabs overrides it.
   const [picked, setTab] = useState<Tab | null>(null);
@@ -89,12 +94,12 @@ function WidgetStudio() {
         const [w, , billing] = await Promise.all([
           api<Widget>(`/widgets/${id}`, { token }),
           loadSources(),
-          api<{ plan: { name: string; reviews: number } }>("/billing", { token }).catch(() => null),
+          api<{ plan: { id: string; name: string; reviews: number } }>("/billing", { token }).catch(() => null),
         ]);
         setWidget(w);
         setSaved(w.settings ?? {});
         setDraft(w.settings ?? {});
-        if (billing) setPlan({ name: billing.plan.name, reviews: billing.plan.reviews });
+        if (billing) setPlan({ id: billing.plan.id, name: billing.plan.name, reviews: billing.plan.reviews });
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : "Could not load this widget.");
       }
@@ -162,6 +167,16 @@ function WidgetStudio() {
       setSaving(false);
     }
   }
+
+  // "Is it live yet?" - read the widget again for its last-seen fields only,
+  // so unsaved edits in the editor are left alone.
+  const recheck = useCallback(async () => {
+    if (!widget) return;
+    const w = await api<Widget>(`/widgets/${widget.id}`, { token });
+    setWidget((current) =>
+      current ? { ...current, lastSeenAt: w.lastSeenAt, lastSeenHost: w.lastSeenHost } : current,
+    );
+  }, [widget, token]);
 
   if (loadError) {
     return (
@@ -266,7 +281,7 @@ function WidgetStudio() {
         <div className="mt-5 grid items-start gap-5 lg:grid-cols-[320px_1fr]">
           <WidgetEditor value={draft} onChange={setDraft} maxReviews={plan.reviews} planName={plan.name} />
           <div className="min-w-0">
-            <WidgetPreview data={preview} settings={draft} busy={reviewsBusy} note={reviewsNote} />
+            <WidgetPreview data={preview} settings={draft} busy={reviewsBusy} note={reviewsNote} branding={plan.id === "FREE"} />
           </div>
         </div>
       ) : (
@@ -275,7 +290,17 @@ function WidgetStudio() {
           sources={sources}
           token={token}
           reload={loadSources}
-          preview={<WidgetPreview data={preview} settings={saved} busy={reviewsBusy} note={reviewsNote} title="How it looks now" />}
+          recheck={recheck}
+          preview={
+            <WidgetPreview
+              data={preview}
+              settings={saved}
+              busy={reviewsBusy}
+              note={reviewsNote}
+              title="How it looks now"
+              branding={plan.id === "FREE"}
+            />
+          }
           dirty={dirty}
         />
       )}
@@ -288,6 +313,7 @@ function InstallPanel({
   sources,
   token,
   reload,
+  recheck,
   preview,
   dirty,
 }: {
@@ -295,10 +321,12 @@ function InstallPanel({
   sources: Source[];
   token: string | null;
   reload: () => Promise<void>;
+  recheck: () => Promise<void>;
   preview: React.ReactNode;
   dirty: boolean;
 }) {
   const [copied, setCopied] = useState("");
+  const [checking, setChecking] = useState(false);
   const [domain, setDomain] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
@@ -409,10 +437,38 @@ function InstallPanel({
           </p>
         </Step>
 
-        <Step n={3} title="Done">
-          <p className="text-[12.5px] text-muted">
-            Reviews refresh on their own, on your plan&apos;s schedule.
-          </p>
+        <Step n={3} title="Check it's live">
+          {widget.lastSeenAt ? (
+            <p className="flex items-start gap-2 rounded-xl bg-emerald-wash px-3 py-2.5 text-[12.5px] text-emerald-dark">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                <b>Live{widget.lastSeenHost ? ` on ${widget.lastSeenHost}` : ""}.</b> Last seen {timeAgo(widget.lastSeenAt)}.
+                Reviews refresh on their own, on your plan&apos;s schedule.
+              </span>
+            </p>
+          ) : (
+            <p className="flex items-start gap-2 rounded-xl bg-amber-wash px-3 py-2.5 text-[12.5px] text-amber-dark">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Not seen on your site yet.{" "}
+                {allowed.length === 0
+                  ? "Add your domain in step 1, paste the code, then open that page once."
+                  : "After pasting the code, open that page in your browser once, then check again."}
+              </span>
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={checking}
+            onClick={async () => {
+              setChecking(true);
+              await recheck().catch(() => undefined);
+              setChecking(false);
+            }}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-semibold text-ink transition hover:border-brand/40 hover:text-brand disabled:opacity-50"
+          >
+            {checking ? <Spinner /> : <RefreshCw className="h-3.5 w-3.5" />} Check again
+          </button>
           <div className="mt-3 grid gap-2">
             {[
               ["Widget key", widget.publicKey, "key"],

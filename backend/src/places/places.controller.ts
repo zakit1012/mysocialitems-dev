@@ -11,6 +11,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { BillingService } from '../billing/billing.service';
 import { MAX_REVIEW_COUNT, fiveStarOnly } from '../widgets/widget-settings';
+import { HiddenReviewsService } from '../moderation/hidden-reviews.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 
@@ -21,6 +22,7 @@ export class PlacesController {
     private readonly places: PlacesService,
     private readonly engine: ReviewsEngineService,
     private readonly billing: BillingService,
+    private readonly hidden: HiddenReviewsService,
   ) {}
 
   /**
@@ -55,7 +57,9 @@ export class PlacesController {
     );
     return {
       ...result,
-      reviews: fiveStarOnly(result.reviews).slice(0, wanted),
+      reviews: (
+        await this.hidden.filter(placeId, fiveStarOnly(result.reviews))
+      ).slice(0, wanted),
     };
   }
 

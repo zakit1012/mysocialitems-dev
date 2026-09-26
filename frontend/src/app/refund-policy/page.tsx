@@ -13,7 +13,7 @@ export default function RefundPolicyPage() {
   return (
     <LegalPage title="Refund & Cancellation Policy" current="/refund-policy">
       <p>
-        {LEGAL.product} has a Free plan, so you can try it before you pay. Paid plans are monthly
+        {LEGAL.product} has a Free plan, so you can try it before you pay. Paid plans are monthly or yearly
         subscriptions billed in advance through PayPal.
       </p>
 
@@ -37,8 +37,8 @@ export default function RefundPolicyPage() {
           payment for it and we will refund that payment in full.
         </li>
         <li>
-          <strong>Renewals:</strong> monthly renewals are not refunded, including for a partly used month. Cancel
-          before your renewal date to avoid the next charge.
+          <strong>Renewals:</strong> monthly and yearly renewals are not refunded, including for a partly used
+          period. Cancel before your renewal date to avoid the next charge.
         </li>
         <li>
           <strong>Our mistakes:</strong> duplicate charges, charges after you cancelled, or a paid feature that

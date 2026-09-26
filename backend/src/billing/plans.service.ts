@@ -9,8 +9,10 @@ import {
   DEFAULT_PLANS,
   FREE_KEY,
   Plan,
+  PlanInput,
   UNLIMITED,
   defaultRefreshHours,
+  defaultYearlyPrice,
 } from './plans';
 
 @Injectable()
@@ -34,6 +36,9 @@ export class PlansService {
       sortOrder: row.sortOrder,
       paypalPlanIdSandbox: row.paypalPlanIdSandbox,
       paypalPlanIdLive: row.paypalPlanIdLive,
+      priceYearlyUsd: row.priceYearlyUsd ?? defaultYearlyPrice(row.priceUsd),
+      paypalYearlyIdSandbox: row.paypalYearlyIdSandbox,
+      paypalYearlyIdLive: row.paypalYearlyIdLive,
     };
   }
 
@@ -70,12 +75,14 @@ export class PlansService {
     return plan;
   }
 
-  /** Paid plan whose PayPal id (in either environment) matches. */
+  /** Paid plan whose PayPal id (in either environment, monthly or yearly) matches. */
   async byPaypalId(paypalPlanId: string): Promise<Plan | undefined> {
     return (await this.all()).find(
       (p) =>
         p.paypalPlanIdSandbox === paypalPlanId ||
-        p.paypalPlanIdLive === paypalPlanId,
+        p.paypalPlanIdLive === paypalPlanId ||
+        p.paypalYearlyIdSandbox === paypalPlanId ||
+        p.paypalYearlyIdLive === paypalPlanId,
     );
   }
 
@@ -83,7 +90,7 @@ export class PlansService {
     this.cache = null;
   }
 
-  async upsert(input: Partial<Plan> & { key: string }) {
+  async upsert(input: PlanInput) {
     const key = input.key
       .trim()
       .toUpperCase()
@@ -100,6 +107,13 @@ export class PlansService {
       !(Number.isFinite(input.priceUsd) && input.priceUsd >= 0)
     ) {
       throw new BadRequestException('Price must be $0 or more.');
+    }
+    if (
+      input.priceYearlyUsd !== undefined &&
+      input.priceYearlyUsd !== null &&
+      !(Number.isFinite(input.priceYearlyUsd) && input.priceYearlyUsd >= 0)
+    ) {
+      throw new BadRequestException('Yearly price must be $0 or more.');
     }
     const whole = (v: number | undefined, label: string, max: number) => {
       if (v !== undefined && !(Number.isInteger(v) && v >= 1 && v <= max)) {
@@ -154,6 +168,13 @@ export class PlansService {
       sortOrder: input.sortOrder,
       paypalPlanIdSandbox: input.paypalPlanIdSandbox,
       paypalPlanIdLive: input.paypalPlanIdLive,
+      // null clears it back to "10x monthly"
+      priceYearlyUsd:
+        input.priceYearlyUsd === undefined || input.priceYearlyUsd === null
+          ? input.priceYearlyUsd
+          : Math.round(input.priceYearlyUsd * 100) / 100,
+      paypalYearlyIdSandbox: input.paypalYearlyIdSandbox,
+      paypalYearlyIdLive: input.paypalYearlyIdLive,
     };
     // undefined means "leave as is"
     for (const k of Object.keys(data) as (keyof typeof data)[]) {

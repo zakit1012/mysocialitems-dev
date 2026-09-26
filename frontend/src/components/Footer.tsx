@@ -15,8 +15,8 @@ export function Footer() {
               My Social Items
             </Link>
             <p className="mt-3 max-w-md text-sm leading-relaxed text-muted">
-              Embed stunning Google review widgets on your website. Boost trust,
-              improve SEO, and win more customers.
+              Show your best Google reviews on your website with a widget that
+              keeps itself up to date. Build trust and win more customers.
             </p>
             <div className="mt-6 flex flex-wrap gap-2 text-sm">
               <FooterLink href="/dashboard">Dashboard</FooterLink>
@@ -33,7 +33,7 @@ export function Footer() {
               <p className="text-base font-semibold text-ink">Get Started</p>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-muted">
-              Ready to showcase verified customer reviews on your site? Setup takes less than two minutes.
+              Ready to show your best Google reviews on your site? Setup takes about two minutes.
             </p>
             <div className="mt-5">
               <Link

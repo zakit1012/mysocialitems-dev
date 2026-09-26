@@ -14,9 +14,11 @@ import { PaypalClient, PaypalMode } from './paypal.client';
 import { PlansService } from './plans.service';
 import {
   ADMIN_LIMITS,
+  BillingInterval,
   currentPeriod,
   FREE_KEY,
   Plan,
+  PlanInput,
   UNLIMITED,
 } from './plans';
 
@@ -209,11 +211,26 @@ export class BillingService {
   private async paypalPlanId(
     plan: Plan,
     mode?: PaypalMode,
+    interval: BillingInterval = 'month',
   ): Promise<string | undefined> {
     const m = mode ?? (await this.paypal.mode());
+    const id =
+      interval === 'year'
+        ? m === 'live'
+          ? plan.paypalYearlyIdLive
+          : plan.paypalYearlyIdSandbox
+        : m === 'live'
+          ? plan.paypalPlanIdLive
+          : plan.paypalPlanIdSandbox;
+    return id ?? undefined;
+  }
+
+  /** Whether a PayPal plan id is one of this plan's yearly ones. */
+  private static isYearlyId(plan: Plan, paypalPlanId?: string) {
     return (
-      (m === 'live' ? plan.paypalPlanIdLive : plan.paypalPlanIdSandbox) ??
-      undefined
+      Boolean(paypalPlanId) &&
+      (plan.paypalYearlyIdSandbox === paypalPlanId ||
+        plan.paypalYearlyIdLive === paypalPlanId)
     );
   }
 
@@ -242,9 +259,14 @@ export class BillingService {
         reviews: p.reviews,
         views: p.views,
         refreshHours: p.refreshHours,
+        priceYearlyUsd: p.priceYearlyUsd,
         available:
           p.key === FREE_KEY ||
           (enabled && Boolean(await this.paypalPlanId(p))),
+        availableYearly:
+          p.key !== FREE_KEY &&
+          enabled &&
+          Boolean(await this.paypalPlanId(p, undefined, 'year')),
       });
     }
 
@@ -256,6 +278,8 @@ export class BillingService {
         currentPeriodEnd: sub.currentPeriodEnd,
         cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
         pendingPlan: sub.pendingPlan,
+        interval: sub.interval,
+        hasPaypal: Boolean(sub.paypalSubscriptionId),
       },
       usage: {
         period: currentPeriod(),
@@ -271,14 +295,17 @@ export class BillingService {
   // --------------------------------------------------------------- checkout
 
   /** Creates a PayPal subscription and returns the page the user approves it on. */
-  async startCheckout(userId: string, planKey: string) {
+  async startCheckout(userId: string, planKey: string, intervalRaw?: string) {
     const plan = await this.plans.get(String(planKey ?? ''));
     if (!plan || plan.key === FREE_KEY || !plan.active) {
       throw new BadRequestException('Pick a paid plan.');
     }
-    const paypalPlan = await this.paypalPlanId(plan);
+    const interval: BillingInterval = intervalRaw === 'year' ? 'year' : 'month';
+    const paypalPlan = await this.paypalPlanId(plan, undefined, interval);
     if (!paypalPlan || !(await this.paypal.configured())) {
-      throw new BadRequestException(`${plan.name} is not available yet.`);
+      throw new BadRequestException(
+        `${plan.name}${interval === 'year' ? ' yearly' : ''} is not available yet.`,
+      );
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -287,9 +314,12 @@ export class BillingService {
     if (
       sub.status === 'ACTIVE' &&
       sub.plan === plan.key &&
+      sub.interval === interval &&
       !sub.cancelAtPeriodEnd
     ) {
-      throw new BadRequestException(`You are already on ${plan.name}.`);
+      throw new BadRequestException(
+        `You are already on ${plan.name}${interval === 'year' ? ' yearly' : ''}.`,
+      );
     }
 
     const created = await this.paypal.createSubscription({
@@ -365,6 +395,7 @@ export class BillingService {
         reviews: p.reviews,
         views: p.views >= UNLIMITED ? null : p.views,
         refreshHours: p.refreshHours,
+        priceYearlyUsd: p.priceYearlyUsd,
       }));
   }
 
@@ -579,6 +610,12 @@ export class BillingService {
         pendingPlan: null,
         cancelAtPeriodEnd: false,
         currentPeriodEnd: nextBilling ? new Date(nextBilling) : null,
+        // Only a matched PayPal id says which one it is; otherwise keep it.
+        interval: matched
+          ? BillingService.isYearlyId(matched, paypalPlan)
+            ? 'year'
+            : 'month'
+          : before.interval,
       },
     });
 
@@ -806,58 +843,78 @@ export class BillingService {
    * the new price is pushed there too - otherwise checkout would still charge
    * the old amount.
    */
-  async adminSavePlan(input: Partial<Plan> & { key: string }) {
+  async adminSavePlan(input: PlanInput) {
     const before = await this.plans.get(input.key.toUpperCase());
     const saved = await this.plans.upsert(input);
     const warnings: string[] = [];
 
-    const priceChanged =
-      before &&
-      input.priceUsd !== undefined &&
-      before.priceUsd !== input.priceUsd;
+    const monthlyChanged = before && before.priceUsd !== saved.priceUsd;
+    const yearlyChanged =
+      before && before.priceYearlyUsd !== saved.priceYearlyUsd;
     const activeChanged =
       before && input.active !== undefined && before.active !== input.active;
 
     for (const mode of ['sandbox', 'live'] as const) {
-      const id =
-        mode === 'live' ? saved.paypalPlanIdLive : saved.paypalPlanIdSandbox;
-      if (!id || !(await this.paypal.configured(mode))) continue;
-      try {
-        if (priceChanged)
-          await this.paypal.updatePlanPrice(mode, id, saved.priceUsd);
-        if (activeChanged)
-          await this.paypal.setPlanActive(mode, id, saved.active);
-      } catch (err) {
-        warnings.push(`${mode}: ${err instanceof Error ? err.message : err}`);
+      if (!(await this.paypal.configured(mode))) continue;
+      const ids: [string | null, number, boolean | undefined][] = [
+        [
+          mode === 'live' ? saved.paypalPlanIdLive : saved.paypalPlanIdSandbox,
+          saved.priceUsd,
+          monthlyChanged,
+        ],
+        [
+          mode === 'live'
+            ? saved.paypalYearlyIdLive
+            : saved.paypalYearlyIdSandbox,
+          saved.priceYearlyUsd,
+          yearlyChanged,
+        ],
+      ];
+      for (const [id, price, priceChanged] of ids) {
+        if (!id) continue;
+        try {
+          if (priceChanged) await this.paypal.updatePlanPrice(mode, id, price);
+          if (activeChanged)
+            await this.paypal.setPlanActive(mode, id, saved.active);
+        } catch (err) {
+          warnings.push(`${mode}: ${err instanceof Error ? err.message : err}`);
+        }
       }
     }
     return { plan: saved, warnings };
   }
 
-  /** Create this plan on PayPal (current or given mode) and remember its id. */
-  async adminCreateOnPaypal(key: string, mode?: PaypalMode) {
+  /** Create this plan on PayPal (current or given mode, monthly or yearly) and remember its id. */
+  async adminCreateOnPaypal(
+    key: string,
+    mode?: PaypalMode,
+    interval: BillingInterval = 'month',
+  ) {
     const plan = await this.plans.get(key);
     if (!plan) throw new NotFoundException('Unknown plan.');
     if (plan.key === FREE_KEY || plan.priceUsd <= 0) {
       throw new BadRequestException('Free plans do not go to PayPal.');
     }
     const m = mode ?? (await this.paypal.mode());
-    const existing =
-      m === 'live' ? plan.paypalPlanIdLive : plan.paypalPlanIdSandbox;
+    const existing = await this.paypalPlanId(plan, m, interval);
     if (existing)
       throw new BadRequestException(`Already on PayPal ${m}: ${existing}`);
 
+    const yearly = interval === 'year';
     const id = await this.paypal.createPlan(
       m,
-      `My Social Items ${plan.name}`,
-      plan.priceUsd,
+      `My Social Items ${plan.name}${yearly ? ' (yearly)' : ''}`,
+      yearly ? plan.priceYearlyUsd : plan.priceUsd,
+      yearly ? 'YEAR' : 'MONTH',
     );
-    return this.plans.upsert({
-      key: plan.key,
-      ...(m === 'live'
-        ? { paypalPlanIdLive: id }
-        : { paypalPlanIdSandbox: id }),
-    });
+    const field = yearly
+      ? m === 'live'
+        ? 'paypalYearlyIdLive'
+        : 'paypalYearlyIdSandbox'
+      : m === 'live'
+        ? 'paypalPlanIdLive'
+        : 'paypalPlanIdSandbox';
+    return this.plans.upsert({ key: plan.key, [field]: id });
   }
 
   // ---- PayPal keys

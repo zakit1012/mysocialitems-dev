@@ -4,7 +4,7 @@
  */
 
 export type Layout = "grid" | "masonry" | "list" | "quotes" | "showcase" | "carousel";
-export type Sort = "mostRelevant" | "newest" | "highestRanking";
+export type Sort = "mostRelevant" | "newest";
 export type ButtonIcon = "google" | "chat" | "star" | "none";
 
 export type ColorKey =
@@ -148,7 +148,6 @@ export function themeColor(key: ColorKey, theme: "light" | "dark" = "light"): st
 export const SORT_OPTIONS: { value: Sort; label: string }[] = [
   { value: "mostRelevant", label: "Most relevant" },
   { value: "newest", label: "Newest first" },
-  { value: "highestRanking", label: "Highest rated" },
 ];
 
 export const writeReviewUrl = (placeId: string) =>

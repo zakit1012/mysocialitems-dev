@@ -113,6 +113,9 @@ export function widgetScript(key: string, preview = false): string {
     '.msi-foot{margin-top:16px;display:flex;justify-content:var(--btn-pos,center)}' +
     '.msi-full .msi-foot .msi-btn{width:100%}' +
     '.msi-empty{color:var(--muted);font-size:13px;padding:8px 0}' +
+    '.msi-powered{margin-top:14px;text-align:center;font-size:11.5px;color:var(--muted)}' +
+    '.msi-powered a{color:inherit;text-decoration:none}' +
+    '.msi-powered a:hover{color:var(--btn)}' +
     '.msi-err{border:1px dashed #fecaca;background:#fef2f2;color:#b91c1c;border-radius:10px;padding:12px;font-size:13px}';
 
   var CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
@@ -423,6 +426,12 @@ export function widgetScript(key: string, preview = false): string {
         buttonIcon(s.allButtonIcon || (s.buttonIcon ? 'google' : 'none')) + 'See all reviews on Google</a></div>';
     }
 
+    // Free plan widgets link back to us; paid plans send no branding.
+    if (data.branding && data.branding.url) {
+      html += '<div class="msi-powered"><a target="_blank" rel="noopener" href="' + url(data.branding.url) + '">' +
+        'Powered by <b>My Social Items</b></a></div>';
+    }
+
     // The preview re-renders on every settings change; drop the last
     // carousel's timer and resize listener first.
     if (host.__msiTimer) clearInterval(host.__msiTimer);
@@ -495,13 +504,31 @@ export function widgetScript(key: string, preview = false): string {
       });
   }
 
+  /**
+   * Loads a widget only when it comes near the screen: the rest of the page
+   * is never held up, and a visitor who never scrolls that far is not a view.
+   */
+  function watch(host) {
+    if (!('IntersectionObserver' in window)) return mount(host, 0);
+    var io = new IntersectionObserver(function (entries) {
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].isIntersecting) {
+          io.disconnect();
+          mount(host, 0);
+          return;
+        }
+      }
+    }, { rootMargin: '600px 0px' });
+    io.observe(host);
+  }
+
   function boot() {
     var nodes = document.querySelectorAll('[data-msi-widget]');
     if (!nodes.length) {
       console.warn('[my-social-items] Nothing to mount. Add <div data-msi-widget></div>.');
       return;
     }
-    for (var i = 0; i < nodes.length; i++) mount(nodes[i], 0);
+    for (var i = 0; i < nodes.length; i++) watch(nodes[i]);
   }
 
   if (document.readyState === 'loading') {

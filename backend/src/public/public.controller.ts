@@ -10,12 +10,15 @@ import {
   Res,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { BillingService } from '../billing/billing.service';
+import { isPaidPlan } from '../billing/plans';
 import { RedisService } from '../redis/redis.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { HiddenReviewsService } from '../moderation/hidden-reviews.service';
 import { hostFrom, hostMatches } from '../sources/domain.util';
 import {
   MAX_REVIEW_COUNT,
@@ -42,7 +45,17 @@ export class PublicController {
     private readonly billing: BillingService,
     private readonly redis: RedisService,
     private readonly analytics: AnalyticsService,
+    private readonly config: ConfigService,
+    private readonly hidden: HiddenReviewsService,
   ) {}
+
+  /** Our site, for the "Powered by" link on Free widgets. */
+  private siteUrl(): string {
+    return (this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3002')
+      .split(',')[0]
+      .trim()
+      .replace(/\/+$/, '');
+  }
 
   /**
    * True the first time this visitor loads this widget in the window. Keyed
@@ -69,6 +82,8 @@ export class PublicController {
     const widget = await this.prisma.widget.findUnique({
       where: { publicKey: key },
       include: { sources: { select: { domain: true } } },
+      // Every page view lands here; the poster logo is never needed.
+      omit: { logo: true },
     });
     if (!widget)
       return { ok: false as const, error: 'Unknown widget key', status: 404 };
@@ -176,12 +191,23 @@ export class PublicController {
     }
 
     void this.analytics.record(widget.id, { loads: 1, views: isNew ? 1 : 0 });
+    if (isNew) {
+      // "Installed and live" in the dashboard. Once per visitor per window.
+      this.prisma.widget
+        .update({
+          where: { id: widget.id },
+          data: { lastSeenAt: new Date(), lastSeenHost: host },
+        })
+        .catch(() => undefined);
+    }
 
     // data-count on the snippet wins, then the widget's own setting; the plan
     // is the ceiling either way.
     const wanted = Math.floor(Number(count)) || settings.reviewCount || 0;
     const shown = Math.min(wanted || usage.reviews, usage.reviews);
-    const reviews = fiveStarOnly(result.reviews).slice(0, shown);
+    const reviews = (
+      await this.hidden.filter(widget.placeId, fiveStarOnly(result.reviews))
+    ).slice(0, shown);
 
     // Best effort - a counter is not worth failing a page render over.
     this.prisma.source
@@ -202,6 +228,10 @@ export class PublicController {
       business: result.business,
       reviews,
       link: result.link,
+      // Free widgets carry a small "Powered by" link; paid plans do not.
+      branding: isPaidPlan(plan)
+        ? null
+        : { url: `${this.siteUrl()}/?ref=widget` },
       served: result.served,
       took_ms: result.took_ms,
       error: result.error,

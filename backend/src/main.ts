@@ -36,6 +36,8 @@ async function bootstrap() {
   assertProductionConfig();
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // A business logo for the review poster travels as a data URL (~300 KB max).
+  app.useBodyParser('json', { limit: '600kb' });
 
   // Behind nginx every request arrives from 127.0.0.1. Without this, rate
   // limiting would treat all users as one and lock the whole site out.

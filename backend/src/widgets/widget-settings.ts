@@ -18,7 +18,8 @@ export const LAYOUTS = [
   'showcase',
   'carousel',
 ];
-export const SORTS = ['mostRelevant', 'newest', 'highestRanking'];
+// Widgets show 5-star reviews only, so a rating order would add nothing.
+export const SORTS = ['mostRelevant', 'newest'];
 const COLUMNS = ['1', '2', '3', '4'];
 const BUTTON_POSITIONS = ['left', 'center', 'right', 'full'];
 const BUTTON_ICONS = ['google', 'chat', 'star', 'none'];

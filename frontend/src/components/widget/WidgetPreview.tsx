@@ -68,12 +68,15 @@ export function WidgetPreview({
   busy,
   note,
   title = "Live preview",
+  branding = false,
 }: {
   data: PreviewData | null;
   settings: WidgetSettings;
   busy?: boolean;
   note?: string;
   title?: string;
+  /** Show the "Powered by" link a Free plan widget carries. */
+  branding?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [renderer, setRenderer] = useState<Renderer | null>(null);
@@ -92,13 +95,14 @@ export function WidgetPreview({
       business: data.business,
       reviews: data.reviews,
       link: data.link,
+      branding: branding ? { url: window.location.origin } : null,
       widget: {
         placeName: data.placeName,
         settings,
         writeReviewUrl: writeReviewUrl(data.placeId),
       },
     });
-  }, [renderer, data, settings, device]);
+  }, [renderer, data, settings, device, branding]);
 
   const waiting = busy || (!renderer && !error) || !data;
 

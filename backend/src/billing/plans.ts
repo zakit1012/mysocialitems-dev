@@ -18,7 +18,28 @@ export type Plan = {
   sortOrder: number;
   paypalPlanIdSandbox: string | null;
   paypalPlanIdLive: string | null;
+  /** Price for a year paid up front. */
+  priceYearlyUsd: number;
+  paypalYearlyIdSandbox: string | null;
+  paypalYearlyIdLive: string | null;
 };
+
+export type BillingInterval = 'month' | 'year';
+
+/** What an admin save sends: any field, and a yearly price of null resets it. */
+export type PlanInput = Partial<Omit<Plan, 'priceYearlyUsd'>> & {
+  key: string;
+  priceYearlyUsd?: number | null;
+};
+
+/** Everything except Free: no "Powered by" link, and the review tools. */
+export function isPaidPlan(plan: Plan): boolean {
+  return plan.key !== FREE_KEY;
+}
+
+/** A yearly price nobody set: ten months, so two months come free. */
+export const defaultYearlyPrice = (monthly: number) =>
+  Math.round(monthly * 10 * 100) / 100;
 
 /** Stands in for "no limit" in memory; stored as NULL in the database. */
 export const UNLIMITED = Number.MAX_SAFE_INTEGER;
@@ -27,7 +48,11 @@ export const FREE_KEY = 'FREE';
 
 export const DEFAULT_PLANS: Omit<
   Plan,
-  'paypalPlanIdSandbox' | 'paypalPlanIdLive'
+  | 'paypalPlanIdSandbox'
+  | 'paypalPlanIdLive'
+  | 'priceYearlyUsd'
+  | 'paypalYearlyIdSandbox'
+  | 'paypalYearlyIdLive'
 >[] = [
   {
     key: 'FREE',
@@ -81,6 +106,9 @@ export const ADMIN_LIMITS: Plan = {
   sortOrder: 99,
   paypalPlanIdSandbox: null,
   paypalPlanIdLive: null,
+  priceYearlyUsd: 0,
+  paypalYearlyIdSandbox: null,
+  paypalYearlyIdLive: null,
 };
 
 /** Plans saved before refresh hours existed, or added without one. */

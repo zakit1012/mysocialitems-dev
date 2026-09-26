@@ -167,6 +167,7 @@ export class PaypalClient {
     mode: PaypalMode,
     name: string,
     priceUsd: number,
+    interval: 'MONTH' | 'YEAR' = 'MONTH',
   ): Promise<string> {
     const productId = await this.ensureProduct(mode);
     const plan = await this.request<{ id: string }>(
@@ -178,7 +179,7 @@ export class PaypalClient {
         status: 'ACTIVE',
         billing_cycles: [
           {
-            frequency: { interval_unit: 'MONTH', interval_count: 1 },
+            frequency: { interval_unit: interval, interval_count: 1 },
             tenure_type: 'REGULAR',
             sequence: 1,
             total_cycles: 0,

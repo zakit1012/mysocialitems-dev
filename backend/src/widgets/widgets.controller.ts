@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Param,
@@ -19,6 +20,7 @@ import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { BillingService } from '../billing/billing.service';
 import { MAX_REVIEW_COUNT, fiveStarOnly } from './widget-settings';
+import { HiddenReviewsService } from '../moderation/hidden-reviews.service';
 
 @Controller('widgets')
 @UseGuards(JwtAuthGuard)
@@ -27,6 +29,7 @@ export class WidgetsController {
     private readonly widgets: WidgetsService,
     private readonly engine: ReviewsEngineService,
     private readonly billing: BillingService,
+    private readonly hidden: HiddenReviewsService,
   ) {}
 
   /** The owner's own preview. Skips the domain lock that the public embed applies. */
@@ -48,10 +51,27 @@ export class WidgetsController {
       MAX_REVIEW_COUNT,
       sort,
     );
+    await this.widgets.syncName(user.id, id, result.business?.name);
     return {
       ...result,
-      reviews: fiveStarOnly(result.reviews).slice(0, plan.reviews),
+      reviews: (
+        await this.hidden.filter(widget.placeId, fiveStarOnly(result.reviews))
+      ).slice(0, plan.reviews),
     };
+  }
+
+  @Get(':id/logo')
+  getLogo(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.widgets.getLogo(user.id, id);
+  }
+
+  @Put(':id/logo')
+  setLogo(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { logo?: unknown },
+  ) {
+    return this.widgets.setLogo(user.id, id, body?.logo ?? null);
   }
 
   @Get()

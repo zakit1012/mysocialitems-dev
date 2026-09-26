@@ -20,6 +20,9 @@ type Plan = {
   sortOrder: number;
   paypalPlanIdSandbox: string | null;
   paypalPlanIdLive: string | null;
+  priceYearlyUsd: number;
+  paypalYearlyIdSandbox: string | null;
+  paypalYearlyIdLive: string | null;
 };
 
 type Draft = Omit<Plan, "views"> & { views: string };
@@ -65,6 +68,10 @@ export function PlansTab({ token }: { token: string | null }) {
           sortOrder: d.sortOrder,
           paypalPlanIdSandbox: d.paypalPlanIdSandbox ?? "",
           paypalPlanIdLive: d.paypalPlanIdLive ?? "",
+          // blank = 10x the monthly price
+          priceYearlyUsd: String(d.priceYearlyUsd ?? "").trim() === "" ? "" : Number(d.priceYearlyUsd),
+          paypalYearlyIdSandbox: d.paypalYearlyIdSandbox ?? "",
+          paypalYearlyIdLive: d.paypalYearlyIdLive ?? "",
         }),
       });
       setMsg(
@@ -80,12 +87,12 @@ export function PlansTab({ token }: { token: string | null }) {
     }
   }
 
-  async function pushToPaypal(d: Draft) {
-    setBusy(`pp:${d.key}`);
+  async function pushToPaypal(d: Draft, interval: "month" | "year") {
+    setBusy(`pp:${interval}:${d.key}`);
     setMsg(null);
     try {
-      await api(`/admin/billing/plans/${d.key}/paypal`, { method: "POST", token, body: JSON.stringify({ mode }) });
-      setMsg({ ok: true, text: `${d.name} created on PayPal ${mode}.` });
+      await api(`/admin/billing/plans/${d.key}/paypal`, { method: "POST", token, body: JSON.stringify({ mode, interval }) });
+      setMsg({ ok: true, text: `${d.name}${interval === "year" ? " yearly" : ""} created on PayPal ${mode}.` });
       await load();
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : "PayPal failed" });
@@ -121,7 +128,8 @@ export function PlansTab({ token }: { token: string | null }) {
         <p className="text-[12.5px] text-muted">
           Price changes on a plan that is already on PayPal are pushed there too. PayPal tells existing
           subscribers and applies the new price from their next cycle. Blank views = unlimited.
-          Refresh = hours between automatic review updates (2-168).
+          Refresh = hours between automatic review updates (2-168). Yearly $ blank = 10x monthly (two months free).
+          Monthly and yearly are separate plans on PayPal.
         </p>
         <button type="button" onClick={addPlan} disabled={busy === "add"}
           className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-semibold hover:border-brand/40 hover:text-brand">
@@ -136,10 +144,10 @@ export function PlansTab({ token }: { token: string | null }) {
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1060px] text-[12.5px]">
+        <table className="w-full min-w-[1600px] text-[12.5px]">
           <thead>
             <tr className="border-b border-line text-left text-[10.5px] uppercase tracking-wide text-muted">
-              {["Key", "Name", "Price $", "Sources", "Widgets", "Reviews", "Views/mo", "Refresh h", "On", "PayPal sandbox id", "PayPal live id", ""].map((h) => (
+              {["Key", "Name", "Price $", "Yearly $", "Sources", "Widgets", "Reviews", "Views/mo", "Refresh h", "On", "PayPal sandbox id", "PayPal live id", "Yearly sandbox id", "Yearly live id", ""].map((h) => (
                 <th key={h} className="px-2 py-2 font-bold">{h}</th>
               ))}
             </tr>
@@ -147,11 +155,13 @@ export function PlansTab({ token }: { token: string | null }) {
           <tbody>
             {drafts.map((d) => {
               const idForMode = mode === "live" ? d.paypalPlanIdLive : d.paypalPlanIdSandbox;
+              const yearlyIdForMode = mode === "live" ? d.paypalYearlyIdLive : d.paypalYearlyIdSandbox;
               return (
                 <tr key={d.key} className="border-b border-line/60 align-middle last:border-0">
                   <td className="px-2 py-2 font-mono font-semibold">{d.key}</td>
-                  <td className="px-2 py-2 w-28"><input className={input} value={d.name} onChange={(e) => edit(d.key, "name", e.target.value)} /></td>
-                  <td className="px-2 py-2 w-20"><input className={input} type="number" step="0.01" min={0} value={d.priceUsd} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "priceUsd", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-36"><input className={input} value={d.name} onChange={(e) => edit(d.key, "name", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-24"><input className={input} type="number" step="0.01" min={0} value={d.priceUsd} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "priceUsd", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-24"><input className={input} type="number" step="0.01" min={0} placeholder="10x" value={d.priceYearlyUsd ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "priceYearlyUsd", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={0} value={d.sources} onChange={(e) => edit(d.key, "sources", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={0} value={d.widgets} onChange={(e) => edit(d.key, "widgets", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={1} max={50} value={d.reviews} onChange={(e) => edit(d.key, "reviews", e.target.value)} /></td>
@@ -160,16 +170,25 @@ export function PlansTab({ token }: { token: string | null }) {
                   <td className="px-2 py-2"><input type="checkbox" checked={d.active} onChange={(e) => edit(d.key, "active", e.target.checked)} className="h-4 w-4 accent-brand" /></td>
                   <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder="P-..." value={d.paypalPlanIdSandbox ?? ""} onChange={(e) => edit(d.key, "paypalPlanIdSandbox", e.target.value)} /></td>
                   <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder="P-..." value={d.paypalPlanIdLive ?? ""} onChange={(e) => edit(d.key, "paypalPlanIdLive", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder="P-..." value={d.paypalYearlyIdSandbox ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalYearlyIdSandbox", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder="P-..." value={d.paypalYearlyIdLive ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalYearlyIdLive", e.target.value)} /></td>
                   <td className="whitespace-nowrap px-2 py-2">
                     <button type="button" onClick={() => save(d)} disabled={Boolean(busy)}
                       className="inline-flex items-center gap-1 rounded-lg gradient-brand px-2.5 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50">
                       {busy === `save:${d.key}` ? <Spinner className="h-3 w-3" /> : <Check className="h-3.5 w-3.5" />} Save
                     </button>
                     {d.key !== "FREE" && !idForMode && (
-                      <button type="button" onClick={() => pushToPaypal(d)} disabled={Boolean(busy)}
-                        title={`Create this plan on PayPal ${mode}`}
+                      <button type="button" onClick={() => pushToPaypal(d, "month")} disabled={Boolean(busy)}
+                        title={`Create the monthly plan on PayPal ${mode}`}
                         className="ml-1.5 inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-semibold hover:border-brand/40 hover:text-brand disabled:opacity-50">
-                        {busy === `pp:${d.key}` ? <Spinner className="h-3 w-3" /> : <CloudUpload className="h-3.5 w-3.5" />} PayPal {mode}
+                        {busy === `pp:month:${d.key}` ? <Spinner className="h-3 w-3" /> : <CloudUpload className="h-3.5 w-3.5" />} Monthly on {mode}
+                      </button>
+                    )}
+                    {d.key !== "FREE" && !yearlyIdForMode && (
+                      <button type="button" onClick={() => pushToPaypal(d, "year")} disabled={Boolean(busy)}
+                        title={`Create the yearly plan on PayPal ${mode}`}
+                        className="ml-1.5 inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-semibold hover:border-brand/40 hover:text-brand disabled:opacity-50">
+                        {busy === `pp:year:${d.key}` ? <Spinner className="h-3 w-3" /> : <CloudUpload className="h-3.5 w-3.5" />} Yearly on {mode}
                       </button>
                     )}
                   </td>

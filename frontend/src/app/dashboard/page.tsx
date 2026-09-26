@@ -6,6 +6,7 @@ import { Check, Copy, MapPin, Plus, Store } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { UsageBanner } from "@/components/UsageBanner";
+import { LiveBadge, SetupChecklist } from "@/components/SetupChecklist";
 
 type Widget = {
   id: string;
@@ -14,19 +15,28 @@ type Widget = {
   placeName: string;
   placeAddress?: string | null;
   createdAt: string;
+  lastSeenAt?: string | null;
+  lastSeenHost?: string | null;
 };
 
 export default function DashboardPage() {
   const { token } = useAuth();
   const [widgets, setWidgets] = useState<Widget[]>([]);
+  const [domains, setDomains] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!token) return;
     setLoading(true);
-    api<Widget[]>("/widgets", { token })
-      .then(setWidgets)
+    Promise.all([
+      api<Widget[]>("/widgets", { token }),
+      api<unknown[]>("/sources", { token }).catch(() => []),
+    ])
+      .then(([w, s]) => {
+        setWidgets(w);
+        setDomains(s.length);
+      })
       .catch((err) =>
         setError(err instanceof Error ? err.message : "Could not load widgets"),
       )
@@ -56,6 +66,7 @@ export default function DashboardPage() {
       </header>
 
       <UsageBanner />
+      {!loading && !error && <SetupChecklist widgets={widgets} domains={domains} />}
 
       {error && (
         <p className="mt-6 rounded-2xl bg-coral/10 px-4 py-3 text-sm text-coral">
@@ -175,14 +186,17 @@ function WidgetCard({ widget, onDelete }: { widget: Widget; onDelete: (id: strin
         </button>
       </div>
 
-      <p className="mt-4 border-t border-line/60 pt-3 text-xs text-muted">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line/60 pt-3 text-xs text-muted">
+        <LiveBadge widget={widget} />
+        <span>
         Added{" "}
         {new Date(widget.createdAt).toLocaleDateString(undefined, {
           day: "numeric",
           month: "short",
           year: "numeric",
         })}
-      </p>
+        </span>
+      </div>
     </article>
   );
 }

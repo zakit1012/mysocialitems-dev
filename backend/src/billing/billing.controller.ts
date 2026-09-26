@@ -31,8 +31,11 @@ export class BillingController {
 
   @Post('checkout')
   @UseGuards(JwtAuthGuard)
-  checkout(@CurrentUser() user: AuthUser, @Body() body: { plan: string }) {
-    return this.billing.startCheckout(user.id, body?.plan);
+  checkout(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { plan: string; interval?: string },
+  ) {
+    return this.billing.startCheckout(user.id, body?.plan, body?.interval);
   }
 
   @Post('confirm')

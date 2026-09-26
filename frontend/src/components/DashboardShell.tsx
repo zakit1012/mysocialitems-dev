@@ -11,6 +11,7 @@ import {
   LayoutGrid,
   LogOut,
   Plus,
+  QrCode,
   Shield,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -19,6 +20,7 @@ import { Spinner } from "./Spinner";
 const LINKS = [
   { href: "/dashboard", label: "Widgets", icon: LayoutGrid },
   { href: "/dashboard/analytics", label: "Analytics", icon: ChartColumn },
+  { href: "/dashboard/get-reviews", label: "Get reviews", icon: QrCode },
   { href: "/dashboard/sources", label: "Sources", icon: Globe },
   { href: "/dashboard/widgets/new", label: "New widget", icon: Plus },
   { href: "/dashboard/billing", label: "Billing", icon: CreditCard },

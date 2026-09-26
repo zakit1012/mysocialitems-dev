@@ -34,13 +34,13 @@ export default function NewWidgetPage() {
   const [tookMs, setTookMs] = useState<number | null>(null);
   const [importNote, setImportNote] = useState("");
   // How many reviews a widget may show on the user's current plan.
-  const [plan, setPlan] = useState({ name: "Free", reviews: 3 });
+  const [plan, setPlan] = useState({ id: "FREE", name: "Free", reviews: 3 });
   const [settings, setSettings] = useState<WidgetSettings>(DEFAULT_SETTINGS);
 
   useEffect(() => {
     if (!token) return;
-    api<{ plan: { name: string; reviews: number } }>("/billing", { token })
-      .then((b) => setPlan({ name: b.plan.name, reviews: b.plan.reviews }))
+    api<{ plan: { id: string; name: string; reviews: number } }>("/billing", { token })
+      .then((b) => setPlan({ id: b.plan.id, name: b.plan.name, reviews: b.plan.reviews }))
       .catch(() => undefined);
   }, [token]);
 
@@ -260,7 +260,7 @@ export default function NewWidgetPage() {
               }
             />
             <div className="min-w-0">
-              <WidgetPreview data={preview} settings={previewSettings} note={note} />
+              <WidgetPreview data={preview} settings={previewSettings} note={note} branding={plan.id === "FREE"} />
             </div>
           </div>
         )}
