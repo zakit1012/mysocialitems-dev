@@ -5,7 +5,7 @@ import { SiteHeader } from "./SiteHeader";
 import { Footer } from "./Footer";
 
 /** Routes that bring their own shell (auth screens, dashboard sidebar). */
-const BARE_ROUTES = ["/login", "/register", "/dashboard"];
+const BARE_ROUTES = ["/login", "/register", "/dashboard", "/admin"];
 
 export function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

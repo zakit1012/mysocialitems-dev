@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "./Spinner";
+import { LogoutButton } from "./LogoutButton";
 
 const LINKS = [
   { href: "/dashboard", label: "Widgets", icon: LayoutGrid },
@@ -26,10 +27,8 @@ const LINKS = [
   { href: "/dashboard/billing", label: "Billing", icon: CreditCard },
 ];
 
-const ADMIN_LINK = { href: "/dashboard/admin", label: "Admin", icon: Shield };
-
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const { user, loading, logout } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -56,7 +55,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const links = user.role === "ADMIN" ? [...LINKS, ADMIN_LINK] : LINKS;
+  const links = LINKS;
   // The widget editor needs every pixel for its live preview.
   const wide = pathname.startsWith("/dashboard/widgets/");
   // Labels hide while the rail is slim and fade in when it opens on hover.
@@ -127,18 +126,21 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               <p className="truncate text-[11px] text-muted">{user.email}</p>
             </div>
           </div>
-          <button
-            type="button"
-            title="Log out"
-            onClick={() => {
-              logout();
-              router.push("/login");
-            }}
-            className="mt-2 flex w-full items-center gap-3 rounded-xl px-[12px] py-2 text-[13px] text-muted transition hover:bg-brand-wash hover:text-brand"
-          >
+          {/* The super admin panel lives apart from the customer dashboard. */}
+          {user.role === "ADMIN" && (
+            <Link
+              href="/admin"
+              title="Admin panel"
+              className="mt-2 flex w-full items-center gap-3 rounded-xl px-[12px] py-2 text-[13px] text-muted transition hover:bg-brand-wash hover:text-brand"
+            >
+              <Shield className="h-[18px] w-[18px] shrink-0" />
+              <span className={label}>Admin panel</span>
+            </Link>
+          )}
+          <LogoutButton className="mt-1 flex w-full items-center gap-3 rounded-xl px-[12px] py-2 text-[13px] text-muted transition hover:bg-brand-wash hover:text-brand">
             <LogOut className="h-[18px] w-[18px] shrink-0" />
             <span className={label}>Log out</span>
-          </button>
+          </LogoutButton>
         </div>
       </aside>
 

@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { LayoutDashboard, UserRound } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { LogoutButton } from "./LogoutButton";
 
 export function Header() {
-  const { user, logout } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
 
   return (
     <header className="sticky top-0 z-30 glass shadow-header">
@@ -49,15 +48,12 @@ export function Header() {
                 </span>
                 <span className="max-w-24 truncate">{user.name.split(" ")[0]}</span>
               </Link>
-              <button
-                onClick={() => {
-                  logout();
-                  router.push("/");
-                }}
+              <LogoutButton
+                redirectTo="/"
                 className="rounded-full px-3 py-2 text-muted transition hover:bg-sand-deep hover:text-ink"
               >
                 Log out
-              </button>
+              </LogoutButton>
             </>
           ) : (
             <>
