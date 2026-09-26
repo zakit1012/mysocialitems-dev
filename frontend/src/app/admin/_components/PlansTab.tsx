@@ -19,6 +19,9 @@ type Plan = {
   active: boolean;
   sortOrder: number;
   priceYearlyUsd: number;
+  /** What customers in India pay; blank = Dodo converts the dollar price. */
+  priceInr: number | null;
+  priceYearlyInr: number | null;
   dodoMonthlyIdTest: string | null;
   dodoMonthlyIdLive: string | null;
   dodoYearlyIdTest: string | null;
@@ -76,6 +79,9 @@ export function PlansTab({ token }: { token: string | null }) {
           sortOrder: d.sortOrder,
           // blank = 10x the monthly price
           priceYearlyUsd: String(d.priceYearlyUsd ?? "").trim() === "" ? "" : Number(d.priceYearlyUsd),
+          // blank = no rupee price; yearly blank = 10x the monthly rupee price
+          priceInr: String(d.priceInr ?? "").trim() === "" ? null : Number(d.priceInr),
+          priceYearlyInr: String(d.priceYearlyInr ?? "").trim() === "" ? null : Number(d.priceYearlyInr),
           dodoMonthlyIdTest: d.dodoMonthlyIdTest ?? "",
           dodoMonthlyIdLive: d.dodoMonthlyIdLive ?? "",
           dodoYearlyIdTest: d.dodoYearlyIdTest ?? "",
@@ -137,7 +143,7 @@ export function PlansTab({ token }: { token: string | null }) {
           Each paid plan is a product on Dodo Payments, one for monthly and one for yearly, in test and in live
           mode. Press &quot;Monthly on …&quot; / &quot;Yearly on …&quot; at the end of a row to create them; the ids
           fill in by themselves. A new price is sent to Dodo for new subscribers - people already paying keep
-          their price. Blank views = unlimited. Refresh = hours between review updates (2-168). Yearly $ blank =
+          their price. Price ₹ is what customers in India see and pay; blank = they are shown dollars. Blank views = unlimited. Refresh = hours between review updates (2-168). Yearly $ blank =
           10x monthly (two months free). The Free plan never goes to Dodo.
         </p>
         <button type="button" onClick={addPlan} disabled={busy === "add"}
@@ -156,7 +162,7 @@ export function PlansTab({ token }: { token: string | null }) {
         <table className="w-full min-w-[1600px] text-[12.5px]">
           <thead>
             <tr className="border-b border-line text-left text-[10.5px] uppercase tracking-wide text-muted">
-              {["Key", "Name", "Price $", "Yearly $", "Sources", "Widgets", "Reviews", "Views/mo", "Refresh h", "On", ...PRODUCT_FIELDS.map(([, h]) => h), ""].map((h) => (
+              {["Key", "Name", "Price $", "Yearly $", "Price ₹", "Yearly ₹", "Sources", "Widgets", "Reviews", "Views/mo", "Refresh h", "On", ...PRODUCT_FIELDS.map(([, h]) => h), ""].map((h) => (
                 <th key={h} className="px-2 py-2 font-bold">{h}</th>
               ))}
             </tr>
@@ -171,6 +177,8 @@ export function PlansTab({ token }: { token: string | null }) {
                   <td className="px-2 py-2 w-36"><input className={input} value={d.name} onChange={(e) => edit(d.key, "name", e.target.value)} /></td>
                   <td className="px-2 py-2 w-24"><input className={input} type="number" step="0.01" min={0} value={d.priceUsd} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "priceUsd", e.target.value)} /></td>
                   <td className="px-2 py-2 w-24"><input className={input} type="number" step="0.01" min={0} placeholder="10x" value={d.priceYearlyUsd ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "priceYearlyUsd", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-24"><input className={input} type="number" step="1" min={5} placeholder="₹" value={d.priceInr ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "priceInr", e.target.value)} /></td>
+                  <td className="px-2 py-2 w-24"><input className={input} type="number" step="1" min={5} placeholder="10x" value={d.priceYearlyInr ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "priceYearlyInr", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={0} value={d.sources} onChange={(e) => edit(d.key, "sources", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={0} value={d.widgets} onChange={(e) => edit(d.key, "widgets", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={1} max={50} value={d.reviews} onChange={(e) => edit(d.key, "reviews", e.target.value)} /></td>
