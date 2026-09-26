@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage } from "@/components/LegalPage";
 import { LEGAL, legal } from "@/lib/legal";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: `Terms of Service — ${LEGAL.product}`,
-  description: `The terms that apply when you use ${LEGAL.product}.`,
-};
+export const metadata: Metadata = pageMetadata({
+  title: "Terms of Service",
+  description: `The terms that apply when you use ${LEGAL.product} to show Google reviews on your website: accounts, plans, payments and acceptable use.`,
+  path: "/terms",
+});
 
 export default function TermsPage() {
   const owner = legal("owner", "Business legal name");

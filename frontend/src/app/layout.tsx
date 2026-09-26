@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { SiteChrome } from "@/components/SiteChrome";
-import { LEGAL } from "@/lib/legal";
+import { pageMetadata } from "@/lib/seo";
+import { SITE } from "@/lib/site";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,17 +16,47 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const HOME_TITLE = `Free ${SITE.tagline} | ${SITE.name}`;
+
+// The social cards a page falls back to when it sets none of its own.
+const cards = pageMetadata({ title: HOME_TITLE, description: SITE.description, path: "/", absolute: true });
+
+export const viewport: Viewport = {
+  themeColor: "#E8446D",
+};
+
 export const metadata: Metadata = {
-  metadataBase: new URL(LEGAL.site),
-  title: "My Social Items — Google Review Widgets for Your Website",
-  description:
-    "Show your 5-star Google reviews on your website with a beautiful widget that updates itself. Free plan, no credit card, set up in minutes.",
-  openGraph: {
-    type: "website",
-    siteName: "My Social Items",
-    images: [{ url: "/marketing/editor.png", width: 2880, height: 1800, alt: "The My Social Items widget editor" }],
+  metadataBase: new URL(SITE.url),
+  applicationName: SITE.name,
+  title: {
+    default: HOME_TITLE,
+    template: `%s | ${SITE.name}`,
   },
-  twitter: { card: "summary_large_image" },
+  description: SITE.description,
+  keywords: [
+    "Google reviews widget",
+    "free Google reviews widget",
+    "Google reviews for website",
+    "embed Google reviews on website",
+    "Google business reviews widget",
+    "review widget for website",
+    "testimonial widget",
+    "WordPress Google reviews widget",
+    "Shopify Google reviews",
+    "Wix Google reviews widget",
+  ],
+  creator: SITE.name,
+  publisher: SITE.name,
+  category: "business",
+  robots: {
+    index: true,
+    follow: true,
+    // Let Google show the large preview image and full snippets.
+    googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
+  },
+  formatDetection: { telephone: false, email: false, address: false },
+  openGraph: cards.openGraph,
+  twitter: cards.twitter,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

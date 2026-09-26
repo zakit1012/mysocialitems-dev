@@ -1,11 +1,62 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import HomePage from "./home-client";
+import { FAQ } from "@/lib/faq";
+import { pageMetadata } from "@/lib/seo";
+import { SITE } from "@/lib/site";
+
+export const metadata: Metadata = pageMetadata({
+  title: `Free ${SITE.tagline} | ${SITE.name}`,
+  description: SITE.description,
+  path: "/",
+  absolute: true,
+});
+
+// What search engines read about the product: the site's name (so results
+// say "WidgetPop", not the domain), the logo, the free plan and the FAQ.
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    { "@type": "WebSite", "@id": `${SITE.url}/#website`, name: SITE.name, url: SITE.url },
+    {
+      "@type": "Organization",
+      "@id": `${SITE.url}/#organization`,
+      name: SITE.name,
+      url: SITE.url,
+      logo: `${SITE.url}/brand/icon-512.png`,
+    },
+    {
+      "@type": "SoftwareApplication",
+      name: SITE.name,
+      url: SITE.url,
+      image: `${SITE.url}/brand/og.jpg`,
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web",
+      description: SITE.description,
+      publisher: { "@id": `${SITE.url}/#organization` },
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free plan" },
+    },
+    {
+      "@type": "FAQPage",
+      mainEntity: Object.values(FAQ).map((item) => ({
+        "@type": "Question",
+        name: item.q,
+        acceptedAnswer: { "@type": "Answer", text: item.a },
+      })),
+    },
+  ],
+};
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="px-4 py-20 text-center">Loading...</div>}>
-      <HomePage />
-    </Suspense>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }}
+      />
+      <Suspense fallback={<div className="px-4 py-20 text-center">Loading...</div>}>
+        <HomePage />
+      </Suspense>
+    </>
   );
 }
-

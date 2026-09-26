@@ -17,6 +17,8 @@ import {
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "./Spinner";
 import { LogoutButton } from "./LogoutButton";
+import { SITE, adminHref, siteHref } from "@/lib/site";
+import { LogoMark, Wordmark } from "./Logo";
 
 const LINKS = [
   { href: "/dashboard", label: "Widgets", icon: LayoutGrid },
@@ -69,11 +71,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* A slim icon rail that opens over the page on hover, so content keeps its width. */}
       <aside className="group/rail flex flex-col overflow-hidden border-b border-line bg-card text-ink md:fixed md:inset-y-0 md:left-0 md:z-40 md:w-[68px] md:border-b-0 md:border-r md:transition-[width,box-shadow] md:duration-200 md:ease-out md:hover:w-[224px] md:hover:shadow-panel md:has-[:focus-visible]:w-[224px] md:has-[:focus-visible]:shadow-panel">
         <div className="flex h-16 shrink-0 items-center px-[18px]">
-          <Link href="/" className="flex items-center gap-3" title="My Social Items">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg gradient-brand text-[13px] font-black text-white shadow-glow">
-              M
-            </span>
-            <span className={`${label} text-[15px] font-black gradient-brand-text`}>My Social Items</span>
+          <Link href="/dashboard" className="flex items-center gap-3" title={SITE.name}>
+            <LogoMark className="h-8 w-8 shadow-glow" />
+            <Wordmark className={`${label} text-[15px]`} />
           </Link>
         </div>
 
@@ -104,7 +104,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <Link
-          href="/"
+          href={siteHref("/")}
           title="Back to site"
           className="mx-[12px] mt-4 flex items-center gap-3 rounded-xl px-[12px] py-2.5 text-[13px] text-muted transition hover:bg-brand-wash hover:text-ink"
         >
@@ -133,7 +133,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           {/* The super admin panel lives apart from the customer dashboard. */}
           {user.role === "ADMIN" && (
             <Link
-              href="/admin"
+              href={adminHref("/admin")}
               title="Admin panel"
               className="mt-2 flex w-full items-center gap-3 rounded-xl px-[12px] py-2 text-[13px] text-muted transition hover:bg-brand-wash hover:text-brand"
             >

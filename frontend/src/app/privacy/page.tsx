@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage } from "@/components/LegalPage";
 import { LEGAL, legal } from "@/lib/legal";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: `Privacy Policy — ${LEGAL.product}`,
-  description: `How ${LEGAL.product} collects, uses and protects personal data.`,
-};
+export const metadata: Metadata = pageMetadata({
+  title: "Privacy Policy",
+  description: `How ${LEGAL.product} collects, uses and protects personal data: your account, the businesses you add, and the visitors who see your review widgets.`,
+  path: "/privacy",
+});
 
 export default function PrivacyPage() {
   const owner = legal("owner", "Business legal name");

@@ -9,6 +9,7 @@ import { AuthShell } from "@/components/AuthShell";
 import { Button } from "@/components/Button";
 import { PasswordField } from "@/components/PasswordField";
 import { TextField } from "@/components/TextField";
+import { siteHref } from "@/lib/site";
 
 export default function RegisterPage() {
   const { requestSignup, verifySignup } = useAuth();
@@ -158,11 +159,11 @@ export default function RegisterPage() {
           </Button>
           <p className="text-center text-xs text-muted">
             By creating an account you agree to our{" "}
-            <Link href="/terms" className="font-medium text-brand hover:underline">
+            <Link href={siteHref("/terms")} className="font-medium text-brand hover:underline">
               Terms of Service
             </Link>{" "}
             and{" "}
-            <Link href="/privacy" className="font-medium text-brand hover:underline">
+            <Link href={siteHref("/privacy")} className="font-medium text-brand hover:underline">
               Privacy Policy
             </Link>
             .

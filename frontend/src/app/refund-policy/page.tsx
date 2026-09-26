@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage } from "@/components/LegalPage";
 import { LEGAL, legal } from "@/lib/legal";
+import { pageMetadata } from "@/lib/seo";
+import { appHref } from "@/lib/site";
 
-export const metadata: Metadata = {
-  title: `Refund & Cancellation Policy — ${LEGAL.product}`,
-  description: `How cancelling and refunds work for ${LEGAL.product} plans.`,
-};
+export const metadata: Metadata = pageMetadata({
+  title: "Refund & Cancellation Policy",
+  description: `How cancelling and refunds work for ${LEGAL.product} plans: cancel any time from Billing, and a 7-day refund on your first payment.`,
+  path: "/refund-policy",
+});
 
 export default function RefundPolicyPage() {
   const email = legal("email", "Contact email");
@@ -20,7 +23,7 @@ export default function RefundPolicyPage() {
       <h2>Cancelling</h2>
       <ul>
         <li>
-          Cancel any time from <Link href="/dashboard/billing">Billing</Link> in your dashboard. Changed your mind
+          Cancel any time from <Link href={appHref("/dashboard/billing")}>Billing</Link> in your dashboard. Changed your mind
           before the period ends? Resume it from the same page.
         </li>
         <li>

@@ -26,6 +26,8 @@ import { useAuth } from "@/lib/auth";
 import { WidgetPreview } from "@/components/widget/WidgetPreview";
 import { DEFAULT_SETTINGS, type Layout, type WidgetSettings } from "@/lib/widget-settings";
 import { DEMO_DATA } from "@/lib/demo-data";
+import { FAQ } from "@/lib/faq";
+import { HOSTS, SITE, appHref } from "@/lib/site";
 
 type PublicPlan = {
   id: string;
@@ -121,6 +123,9 @@ const DEMO_LAYOUTS: { id: Layout; label: string }[] = [
   { id: "list", label: "List" },
 ];
 
+/** The address bar in the screenshots: where the dashboard really lives. */
+const APP_DOMAIN = HOSTS.app || SITE.domain;
+
 export default function HomePage() {
   const { user } = useAuth();
   const [plans, setPlans] = useState<PublicPlan[]>(DEFAULT_PLANS);
@@ -158,7 +163,7 @@ export default function HomePage() {
 function PrimaryCta({ loggedIn, label = "Create your free widget" }: { loggedIn: boolean; label?: string }) {
   return (
     <Link
-      href={loggedIn ? "/dashboard" : "/register"}
+      href={appHref(loggedIn ? "/dashboard" : "/register")}
       className="group inline-flex items-center justify-center gap-2 rounded-full gradient-brand px-7 py-3.5 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_32px_rgba(232,68,109,0.4)]"
     >
       {loggedIn ? (
@@ -261,7 +266,7 @@ function Hero({ loggedIn }: { loggedIn: boolean }) {
           <BrowserFrame
             src="/marketing/editor.png"
             alt="The widget editor: layout options on the left, a live preview of a review carousel on the right"
-            url="mysocialitem.zedcircle.com/dashboard"
+            url={`${APP_DOMAIN}/dashboard`}
             priority
           />
           {/* the same widget on a phone */}
@@ -460,7 +465,7 @@ function Spotlights() {
           ]}
           image="/marketing/editor.png"
           alt="The widget editor with layout, content, colors and style tabs next to a live preview"
-          url="mysocialitem.zedcircle.com/dashboard/widgets"
+          url={`${APP_DOMAIN}/dashboard/widgets`}
         />
         <Spotlight
           flip
@@ -474,7 +479,7 @@ function Spotlights() {
           ]}
           image="/marketing/analytics.png"
           alt="The analytics page with monthly views, button clicks and a chart of views per day"
-          url="mysocialitem.zedcircle.com/dashboard/analytics"
+          url={`${APP_DOMAIN}/dashboard/analytics`}
         />
       </div>
     </section>
@@ -589,7 +594,7 @@ function Pricing({ plans, loggedIn }: { plans: PublicPlan[]; loggedIn: boolean }
                   ))}
                 </ul>
                 <Link
-                  href={loggedIn ? "/dashboard/billing" : "/register"}
+                  href={appHref(loggedIn ? "/dashboard/billing" : "/register")}
                   className={`mt-8 block rounded-full py-3 text-center text-sm font-bold transition ${
                     featured
                       ? "gradient-brand text-white shadow-glow hover:shadow-[0_0_32px_rgba(232,68,109,0.35)]"
@@ -613,26 +618,14 @@ function Faq({ plans }: { plans: PublicPlan[] }) {
   const cadence = plans.map((p) => `${p.refreshHours} hours on ${p.name}`).join(", ");
   const free = plans.find((p) => p.priceUsd <= 0);
   const items = [
-    {
-      q: "Do I need to log in to Google or give you access?",
-      a: "No. Search for your business by name or paste its Google Maps link, and we find its public reviews. You only add businesses you own or are allowed to represent.",
-    },
-    {
-      q: "Which websites does it work on?",
-      a: "Any website where you can paste a small piece of HTML: WordPress, Shopify, Wix, Webflow, Squarespace, Framer or a site you coded yourself.",
-    },
+    FAQ.access,
+    FAQ.websites,
     {
       q: "How often do new reviews show up?",
       a: `Automatically, on a schedule set by your plan: every ${cadence}.`,
     },
-    {
-      q: "Why only 5-star reviews?",
-      a: "Your widget highlights your happiest customers. It still shows your overall Google rating, your total number of reviews and a button to read every review on Google.",
-    },
-    {
-      q: "Will it slow down my website?",
-      a: "No. The widget is one small script that loads in the background, after your page, and only draws where you place it.",
-    },
+    FAQ.fiveStar,
+    FAQ.speed,
     ...(free && free.views !== null
       ? [
           {
@@ -641,10 +634,7 @@ function Faq({ plans }: { plans: PublicPlan[] }) {
           },
         ]
       : []),
-    {
-      q: "Can I cancel any time?",
-      a: "Yes, from the Billing page. You keep your paid plan until the end of the month or year you paid for. Your first payment can be refunded within 7 days.",
-    },
+    FAQ.cancel,
   ];
 
   return (

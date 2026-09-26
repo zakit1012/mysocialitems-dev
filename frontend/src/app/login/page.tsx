@@ -2,15 +2,22 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { AuthShell } from "@/components/AuthShell";
+import { HOSTS } from "@/lib/site";
 import { Button } from "@/components/Button";
 import { PasswordField } from "@/components/PasswordField";
 import { TextField } from "@/components/TextField";
 
+/** Where signing in leads: the admin panel on its own host, else the dashboard. */
+function homePath() {
+  const onAdminHost = HOSTS.admin !== HOSTS.app && window.location.host === HOSTS.admin;
+  return onAdminHost ? "/admin" : "/dashboard";
+}
+
 function LoginForm() {
-  const { login, requestLoginCode, loginWithCode } = useAuth();
+  const { user, login, requestLoginCode, loginWithCode } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<"password" | "code">("password");
@@ -23,8 +30,14 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
 
   function nextPath() {
-    return searchParams.get("next") || "/dashboard";
+    return searchParams.get("next") || homePath();
   }
+
+  // The marketing site cannot see a session on the app's host, so its
+  // "Log in" also brings people who are signed in already: send them on.
+  useEffect(() => {
+    if (user) router.replace(searchParams.get("next") || homePath());
+  }, [user, router, searchParams]);
 
   async function onPasswordLogin(event: FormEvent) {
     event.preventDefault();

@@ -219,7 +219,7 @@ model Subscription {
 }
 
 /// Every payment collected, one row per charge. `number` is our reference
-/// (MSI-00042), given in order of payment.
+/// (WPOP-00042), given in order of payment.
 model Payment {
   id                   String    @id @default(cuid())
   number               Int       @unique @default(autoincrement())

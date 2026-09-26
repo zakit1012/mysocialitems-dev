@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { fmtCents, fmtDay, PAYMENT_STATUS, type PaymentRow } from "@/lib/payments";
+import { siteHref } from "@/lib/site";
 
 type PlanCard = {
   // Admins can add plans, so any key is possible.
@@ -558,7 +559,7 @@ function Billing() {
         <span aria-hidden>·</span>
         <span>Cancel any time</span>
         <span aria-hidden>·</span>
-        <Link href="/refund-policy" className="underline hover:text-ink">
+        <Link href={siteHref("/refund-policy")} className="underline hover:text-ink">
           Refund within 7 days of your first payment
         </Link>
       </p>

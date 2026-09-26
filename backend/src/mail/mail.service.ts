@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { Transporter } from 'nodemailer';
+import { DEFAULT_FROM, PRODUCT_NAME } from '../common/product';
+import { appUrl, siteUrl } from '../common/urls';
 
 // Brand colours, the same as the website.
 const BRAND = '#E8446D';
@@ -18,19 +20,16 @@ export class MailService {
   private readonly transporter: Transporter | null;
   private readonly from: string;
   private readonly site: string;
+  private readonly app: string;
 
   constructor(config: ConfigService) {
     const host = config.get<string>('SMTP_HOST');
     const port = Number(config.get<string>('SMTP_PORT') ?? 587);
     const user = config.get<string>('SMTP_USER');
     const pass = config.get<string>('SMTP_PASS');
-    this.from =
-      config.get<string>('SMTP_FROM') ??
-      'My Social Items <noreply@mysocialitems.local>';
-    this.site = (config.get<string>('FRONTEND_URL') ?? 'http://localhost:3002')
-      .split(',')[0]
-      .trim()
-      .replace(/\/+$/, '');
+    this.from = config.get<string>('SMTP_FROM') ?? DEFAULT_FROM;
+    this.site = siteUrl(config);
+    this.app = appUrl(config);
 
     if (host && user && pass) {
       this.transporter = nodemailer.createTransport({
@@ -63,12 +62,12 @@ export class MailService {
     const signup = purpose === 'signup';
     const subject =
       purpose === 'email'
-        ? 'Confirm your new email for My Social Items'
+        ? `Confirm your new email for ${PRODUCT_NAME}`
         : signup
-          ? 'Verify your My Social Items account'
-          : 'Your My Social Items login code';
+          ? `Verify your ${PRODUCT_NAME} account`
+          : `Your ${PRODUCT_NAME} login code`;
     const text =
-      `Your My Social Items code is ${code}. It expires in 10 minutes.\n\n` +
+      `Your ${PRODUCT_NAME} code is ${code}. It expires in 10 minutes.\n\n` +
       'If you did not ask for it, you can ignore this email - nobody can sign in without the code.';
 
     if (!this.transporter) {
@@ -180,10 +179,12 @@ export class MailService {
       // Wordmark
       `<tr><td style="padding:0 4px 18px">` +
       `<a href="${escapeHtml(this.site)}" style="text-decoration:none">` +
-      `<span style="display:inline-block;width:32px;height:32px;border-radius:9px;background:${BRAND};` +
-      `background-image:linear-gradient(135deg,${BRAND_FROM},${BRAND});color:#FFFFFF;text-align:center;` +
-      `font:800 16px/32px ${FONT};vertical-align:middle">M</span>` +
-      `<span style="margin-left:10px;font:800 17px/32px ${FONT};color:${INK};vertical-align:middle">My Social Items</span>` +
+      // The mark as an image; with images off it is still a brand square.
+      `<img src="${escapeHtml(this.site)}/brand/mark-128.png" width="32" height="32" alt="" ` +
+      `style="display:inline-block;width:32px;height:32px;border:0;border-radius:9px;background:${BRAND};` +
+      `background-image:linear-gradient(135deg,${BRAND_FROM},${BRAND});vertical-align:middle">` +
+      `<span style="margin-left:10px;font:800 17px/32px ${FONT};color:${INK};vertical-align:middle;letter-spacing:-0.3px">` +
+      `Widget<span style="color:${BRAND}">Pop</span></span>` +
       `</a></td></tr>` +
       // Card
       `<tr><td style="background:#FFFFFF;border:1px solid #E9EBF0;border-top:5px solid ${BRAND};border-radius:18px">` +
@@ -193,13 +194,13 @@ export class MailService {
       `</div></td></tr>` +
       // Footer
       `<tr><td style="padding:22px 12px 8px;text-align:center;font:12px/1.7 ${FONT};color:${MUTED}">` +
-      `You are getting this email because you have an account at My Social Items.<br>` +
-      `<a href="${escapeHtml(this.site)}/dashboard" style="color:${MUTED};text-decoration:underline">Dashboard</a>` +
+      `You are getting this email because you have an account at ${PRODUCT_NAME}.<br>` +
+      `<a href="${escapeHtml(this.app)}/dashboard" style="color:${MUTED};text-decoration:underline">Dashboard</a>` +
       ` &nbsp;&middot;&nbsp; ` +
-      `<a href="${escapeHtml(this.site)}/dashboard/billing" style="color:${MUTED};text-decoration:underline">Billing</a>` +
+      `<a href="${escapeHtml(this.app)}/dashboard/billing" style="color:${MUTED};text-decoration:underline">Billing</a>` +
       ` &nbsp;&middot;&nbsp; ` +
       `<a href="${escapeHtml(this.site)}/privacy" style="color:${MUTED};text-decoration:underline">Privacy</a>` +
-      `<br>&copy; ${year} My Social Items` +
+      `<br>&copy; ${year} ${PRODUCT_NAME}` +
       `</td></tr></table></td></tr></table></body></html>`
     );
   }
