@@ -27,7 +27,7 @@ import {
   PlanInput,
   UNLIMITED,
 } from './plans';
-import { PRODUCT_NAME } from '../common/product';
+import { PRODUCT_NAME, SUPPORT_EMAIL } from '../common/product';
 import { appUrl } from '../common/urls';
 
 type Resource = 'widgets' | 'sources';
@@ -1281,7 +1281,7 @@ export class BillingService {
     return {
       name: out.SELLER_NAME || PRODUCT_NAME,
       address: out.SELLER_ADDRESS,
-      email: out.SELLER_EMAIL,
+      email: out.SELLER_EMAIL || SUPPORT_EMAIL,
       taxId: out.SELLER_TAX_ID,
       note: out.NOTE,
     };

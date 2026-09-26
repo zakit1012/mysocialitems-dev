@@ -17,7 +17,7 @@ import { BillingService } from '../billing/billing.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { PRODUCT_NAME } from '../common/product';
+import { PRODUCT_NAME, SUPPORT_EMAIL } from '../common/product';
 
 const publicUser = {
   id: true,
@@ -319,7 +319,7 @@ export class AuthService {
     void this.mail.send(updated.email, 'Your password was changed', [
       `Hi ${updated.name},`,
       `The password for your ${PRODUCT_NAME} account was just changed, and every other device was signed out.`,
-      'If this was not you, sign in with "Email code" on the login page, set a new password, and contact us.',
+      `If this was not you, sign in with "Email code" on the login page, set a new password, and write to ${SUPPORT_EMAIL}.`,
     ]);
     return this.issue(updated);
   }
@@ -377,7 +377,7 @@ export class AuthService {
     // The old address hears about it, in case this was not its owner.
     void this.mail.send(before.email, 'Your email was changed', [
       `Hi ${updated.name},`,
-      `The email for your ${PRODUCT_NAME} account is now ${updated.email}. If this was not you, contact us straight away.`,
+      `The email for your ${PRODUCT_NAME} account is now ${updated.email}. If this was not you, write to ${SUPPORT_EMAIL} straight away.`,
     ]);
     return this.issue(updated);
   }

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { AuthShell } from "@/components/AuthShell";
-import { HOSTS } from "@/lib/site";
+import { HOSTS, SITE } from "@/lib/site";
 import { Button } from "@/components/Button";
 import { PasswordField } from "@/components/PasswordField";
 import { TextField } from "@/components/TextField";
@@ -90,6 +90,12 @@ function LoginForm() {
           <Link href="/register" className="font-semibold text-brand">
             Create a free account
           </Link>
+          <span className="mt-2 block text-xs">
+            Trouble signing in?{" "}
+            <a href={`mailto:${SITE.supportEmail}`} className="underline hover:text-brand">
+              {SITE.supportEmail}
+            </a>
+          </span>
         </>
       }
     >
