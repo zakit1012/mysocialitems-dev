@@ -55,11 +55,18 @@ export class MailService {
     }
   }
 
-  async sendCode(email: string, code: string, purpose: 'login' | 'signup') {
+  async sendCode(
+    email: string,
+    code: string,
+    purpose: 'login' | 'signup' | 'email',
+  ) {
     const signup = purpose === 'signup';
-    const subject = signup
-      ? 'Verify your My Social Items account'
-      : 'Your My Social Items login code';
+    const subject =
+      purpose === 'email'
+        ? 'Confirm your new email for My Social Items'
+        : signup
+          ? 'Verify your My Social Items account'
+          : 'Your My Social Items login code';
     const text =
       `Your My Social Items code is ${code}. It expires in 10 minutes.\n\n` +
       'If you did not ask for it, you can ignore this email - nobody can sign in without the code.';
@@ -71,9 +78,11 @@ export class MailService {
 
     const body =
       paragraph(
-        signup
-          ? 'Welcome! Enter this code to verify your email and finish creating your account.'
-          : 'Enter this code to sign in to your account.',
+        purpose === 'email'
+          ? 'Enter this code in your account settings to confirm this as your new email address.'
+          : signup
+            ? 'Welcome! Enter this code to verify your email and finish creating your account.'
+            : 'Enter this code to sign in to your account.',
       ) +
       `<div style="margin:24px 0;padding:20px 12px;border-radius:14px;background:${WASH};border:1px dashed #FDA4AF;text-align:center">` +
       `<div style="font:800 34px/1 'SFMono-Regular',Menlo,Consolas,monospace;letter-spacing:10px;color:${INK}">${escapeHtml(code)}</div>` +
@@ -91,7 +100,12 @@ export class MailService {
       text,
       html: this.layout({
         preheader: `Your code is ${code}. It expires in 10 minutes.`,
-        heading: signup ? 'Verify your email' : 'Your login code',
+        heading:
+          purpose === 'email'
+            ? 'Confirm your new email'
+            : signup
+              ? 'Verify your email'
+              : 'Your login code',
         body,
       }),
     });

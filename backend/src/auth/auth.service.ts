@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -183,7 +184,7 @@ export class AuthService {
   private sendInBackground(
     email: string,
     code: string,
-    purpose: 'signup' | 'login',
+    purpose: 'signup' | 'login' | 'email',
   ) {
     void this.mail
       .sendCode(email, code, purpose)
@@ -250,6 +251,7 @@ export class AuthService {
     role: string;
     city: string | null;
     createdAt: Date;
+    tokenVersion?: number;
   }) {
     const safe = {
       id: user.id,
@@ -259,15 +261,154 @@ export class AuthService {
       city: user.city,
       createdAt: user.createdAt,
     };
-    return { user: safe, token: this.sign(safe) };
+    return {
+      user: safe,
+      token: this.sign({ ...safe, tokenVersion: user.tokenVersion }),
+    };
   }
 
-  private sign(user: { id: string; email: string; role: string }) {
+  private sign(user: {
+    id: string;
+    email: string;
+    role: string;
+    tokenVersion?: number;
+  }) {
     return this.jwt.sign({
       sub: user.id,
       email: user.email,
       role: user.role,
+      // A password or email change bumps this, signing out older tokens.
+      v: user.tokenVersion ?? 0,
     });
+  }
+
+  // ------------------------------------------------------------ account
+
+  async updateProfile(userId: string, nameRaw: string) {
+    const name = nameRaw.trim();
+    if (name.length < 2) {
+      throw new BadRequestException('Your name needs at least 2 characters.');
+    }
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { name },
+      select: publicUser,
+    });
+  }
+
+  /** New password; every other device is signed out, this one gets a new token. */
+  async changePassword(userId: string, current: string, next: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    if (!(await bcrypt.compare(current, user.password))) {
+      throw new BadRequestException('Your current password is not right.');
+    }
+    if (current === next) {
+      throw new BadRequestException(
+        'Choose a new password, different from the current one.',
+      );
+    }
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        password: await bcrypt.hash(next, 10),
+        tokenVersion: { increment: 1 },
+      },
+    });
+    void this.mail.send(updated.email, 'Your password was changed', [
+      `Hi ${updated.name},`,
+      'The password for your My Social Items account was just changed, and every other device was signed out.',
+      'If this was not you, sign in with "Email code" on the login page, set a new password, and contact us.',
+    ]);
+    return this.issue(updated);
+  }
+
+  /** Step 1 of an email change: a code goes to the new address. */
+  async requestEmailChange(userId: string, emailRaw: string, password: string) {
+    const email = emailRaw.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    if (!(await bcrypt.compare(password, user.password))) {
+      throw new BadRequestException('Your password is not right.');
+    }
+    if (email === user.email) {
+      throw new BadRequestException('That is already your email.');
+    }
+    if (await this.prisma.user.findUnique({ where: { email } })) {
+      throw new ConflictException('An account with this email already exists');
+    }
+    await this.guardSends(email);
+    const code = this.makeCode();
+    await this.redis.setJson(
+      this.emailChangeKey(userId),
+      { email, code },
+      SIGNUP_TTL,
+    );
+    await this.redis.del(`${this.emailChangeKey(userId)}:tries`);
+    this.sendInBackground(email, code, 'email');
+    return { pending: true, email };
+  }
+
+  /** Step 2: the code proves the new address is theirs. */
+  async verifyEmailChange(userId: string, code: string) {
+    const key = this.emailChangeKey(userId);
+    await this.guardAttempts(key, SIGNUP_TTL);
+    const pending = await this.redis.getJson<{ email: string; code: string }>(
+      key,
+    );
+    if (!pending || pending.code !== code) {
+      throw new BadRequestException('Invalid or expired code');
+    }
+    if (
+      await this.prisma.user.findUnique({ where: { email: pending.email } })
+    ) {
+      await this.redis.del(key);
+      throw new ConflictException('An account with this email already exists');
+    }
+    const before = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!before) throw new UnauthorizedException();
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { email: pending.email, tokenVersion: { increment: 1 } },
+    });
+    await this.redis.del(key);
+    await this.redis.del(`${key}:tries`);
+    // The old address hears about it, in case this was not its owner.
+    void this.mail.send(before.email, 'Your email was changed', [
+      `Hi ${updated.name},`,
+      `The email for your My Social Items account is now ${updated.email}. If this was not you, contact us straight away.`,
+    ]);
+    return this.issue(updated);
+  }
+
+  /**
+   * Deletes the account and everything in it (widgets, domains, settings).
+   * A running subscription is cancelled first, so nothing is charged again;
+   * payment records stay, without the account, for the books.
+   */
+  async deleteAccount(userId: string, password: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    if (user.role === 'ADMIN') {
+      throw new ForbiddenException(
+        'Admin accounts cannot be deleted here. Make another account admin first, then remove the role.',
+      );
+    }
+    if (!(await bcrypt.compare(password, user.password))) {
+      throw new BadRequestException('Your password is not right.');
+    }
+    await this.billing.closeForDeletion(userId);
+    await this.prisma.user.delete({ where: { id: userId } });
+    void this.mail.send(user.email, 'Your account is deleted', [
+      `Hi ${user.name},`,
+      'Your My Social Items account, widgets and settings are deleted, and any subscription is cancelled - you will not be charged again. Your widgets no longer show on your website.',
+      'Thank you for trying My Social Items.',
+    ]);
+    return { ok: true };
+  }
+
+  private emailChangeKey(userId: string) {
+    return `email-change:${userId}`;
   }
 
   private makeCode() {

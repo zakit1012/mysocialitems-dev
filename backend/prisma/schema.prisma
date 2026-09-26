@@ -8,14 +8,16 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  role      String   @default("USER")
-  city      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  email        String   @unique
+  password     String
+  name         String
+  role         String   @default("USER")
+  city         String?
+  /// Bumped when the password or email changes: older sign-ins stop working.
+  tokenVersion Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   deals        Deal[]
   favorites    Favorite[]
@@ -307,6 +309,10 @@ model BillingPlan {
   sortOrder             Int      @default(0)
   /// Yearly billing. null price = 10x the monthly price (two months free).
   priceYearlyUsd        Float?
+  /// Prices for customers in India, in rupees (a Dodo localized price).
+  /// null = no rupee price set; yearly null = 10x the monthly rupee price.
+  priceInr              Float?
+  priceYearlyInr        Float?
   /// Dodo Payments keeps each paid plan as a product: one per mode and period.
   dodoMonthlyIdTest     String?
   dodoMonthlyIdLive     String?

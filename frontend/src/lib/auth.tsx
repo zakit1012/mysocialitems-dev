@@ -25,6 +25,10 @@ type AuthContextValue = {
     role?: "USER";
   }) => Promise<void>;
   verifySignup: (email: string, code: string) => Promise<User>;
+  /** A fresh sign-in from the server (after a password or email change). */
+  setSession: (user: User, token: string) => void;
+  /** The same sign-in, with new profile details. */
+  updateUser: (user: User) => void;
   logout: () => void;
 };
 
@@ -131,6 +135,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [persist],
   );
 
+  const updateUser = useCallback((next: User) => {
+    setUser((current) => (current ? { ...current, ...next } : next));
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem("sd_token");
     setUser(null);
@@ -147,6 +155,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loginWithCode,
       requestSignup,
       verifySignup,
+      setSession: persist,
+      updateUser,
       logout,
     }),
     [
@@ -158,6 +168,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loginWithCode,
       requestSignup,
       verifySignup,
+      persist,
+      updateUser,
       logout,
     ],
   );

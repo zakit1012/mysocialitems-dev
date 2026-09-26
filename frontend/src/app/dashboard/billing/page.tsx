@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Check, CreditCard, FileText, Globe, RefreshCw, ShieldCheck, Smartphone, TriangleAlert } from "lucide-react";
+import { Check, CreditCard, FileText, RefreshCw, ShieldCheck, Smartphone, TriangleAlert } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
@@ -91,7 +91,10 @@ function Billing() {
   const [period, setPeriod] = useState<Interval | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
-  const [region, setRegion] = useState<Region>(guessRegion);
+  // Only someone whose browser is in India sees the UPI choice at all; to
+  // everyone else the page is a plain dollar checkout, with no mention of India.
+  const [inIndia] = useState(() => guessRegion() === "IN");
+  const [region, setRegion] = useState<Region>(inIndia ? "IN" : "INTL");
   // A plan change on a running subscription waits for the customer's yes.
   const [change, setChange] = useState<{ plan: PlanCard; every: Interval; upgrade: boolean } | null>(null);
   // One confirm per return from checkout, even if the page re-renders with a
@@ -309,7 +312,13 @@ function Billing() {
       {data.billingEnabled && data.testMode && (
         <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
           <b>Test mode</b> - nothing here charges real money. Pay with card <code>4242 4242 4242 4242</code> (any future
-          date, CVV 123), an Indian test card <code>4576 2389 1277 1450</code>, or UPI <code>success@upi</code>.
+          date, CVV 123)
+          {inIndia && (
+            <>
+              , an Indian test card <code>4576 2389 1277 1450</code>, or UPI <code>success@upi</code>
+            </>
+          )}
+          .
         </div>
       )}
 
@@ -415,14 +424,14 @@ function Billing() {
       {/* plans */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-bold">Plans</h2>
-        {!subscription.hasSubscription && (
+        {!subscription.hasSubscription && inIndia && (
           <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
-            <span className="text-muted">Paying from</span>
-            <div className="flex rounded-xl border border-line bg-card p-1" role="group" aria-label="Paying from">
+            <span className="text-muted">Pay with</span>
+            <div className="flex rounded-xl border border-line bg-card p-1" role="group" aria-label="Pay with">
               {(
                 [
-                  ["IN", "India · ₹ UPI", Smartphone],
-                  ["INTL", "Other countries · $", Globe],
+                  ["IN", "UPI · ₹", Smartphone],
+                  ["INTL", "Card · $", CreditCard],
                 ] as const
               ).map(([id, label, Icon]) => (
                 <button

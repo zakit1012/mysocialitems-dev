@@ -18,6 +18,9 @@ export type Plan = {
   sortOrder: number;
   /** Price for a year paid up front. */
   priceYearlyUsd: number;
+  /** What customers in India pay, in rupees; null when not set. */
+  priceInr: number | null;
+  priceYearlyInr: number | null;
   /** Dodo Payments product per mode and billing period. */
   dodoMonthlyIdTest: string | null;
   dodoMonthlyIdLive: string | null;
@@ -32,6 +35,9 @@ export type PlanInput = Partial<Omit<Plan, 'priceYearlyUsd'>> & {
   key: string;
   priceYearlyUsd?: number | null;
 };
+
+/** Dodo takes at least ₹5 for anything billed in rupees. */
+export const MIN_INR = 5;
 
 /** Everything except Free: no "Powered by" link, and the review tools. */
 export function isPaidPlan(plan: Plan): boolean {
@@ -50,6 +56,8 @@ export const FREE_KEY = 'FREE';
 export const DEFAULT_PLANS: Omit<
   Plan,
   | 'priceYearlyUsd'
+  | 'priceInr'
+  | 'priceYearlyInr'
   | 'dodoMonthlyIdTest'
   | 'dodoMonthlyIdLive'
   | 'dodoYearlyIdTest'
@@ -106,6 +114,8 @@ export const ADMIN_LIMITS: Plan = {
   active: true,
   sortOrder: 99,
   priceYearlyUsd: 0,
+  priceInr: null,
+  priceYearlyInr: null,
   dodoMonthlyIdTest: null,
   dodoMonthlyIdLive: null,
   dodoYearlyIdTest: null,

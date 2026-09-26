@@ -13,6 +13,7 @@ import {
   UNLIMITED,
   defaultRefreshHours,
   defaultYearlyPrice,
+  MIN_INR,
 } from './plans';
 
 @Injectable()
@@ -35,6 +36,10 @@ export class PlansService {
       active: row.active,
       sortOrder: row.sortOrder,
       priceYearlyUsd: row.priceYearlyUsd ?? defaultYearlyPrice(row.priceUsd),
+      priceInr: row.priceInr ?? null,
+      priceYearlyInr:
+        row.priceYearlyInr ??
+        (row.priceInr != null ? defaultYearlyPrice(row.priceInr) : null),
       dodoMonthlyIdTest: row.dodoMonthlyIdTest,
       dodoMonthlyIdLive: row.dodoMonthlyIdLive,
       dodoYearlyIdTest: row.dodoYearlyIdTest,
@@ -132,6 +137,20 @@ export class PlansService {
     whole(input.widgets, 'Widgets', 10_000);
     // The review engine serves at most 50 reviews per call.
     whole(input.reviews, 'Reviews per widget', 50);
+    for (const [label, value] of [
+      ['Rupee price', input.priceInr],
+      ['Yearly rupee price', input.priceYearlyInr],
+    ] as const) {
+      if (
+        value !== undefined &&
+        value !== null &&
+        !(Number.isFinite(value) && value >= MIN_INR)
+      ) {
+        throw new BadRequestException(
+          `${label} must be at least ₹${MIN_INR}, or blank.`,
+        );
+      }
+    }
     // The review engine refreshes at most every 2 hours and keeps a cache 7 days.
     const hours = input.refreshHours;
     if (
@@ -177,6 +196,15 @@ export class PlansService {
         input.priceYearlyUsd === undefined || input.priceYearlyUsd === null
           ? input.priceYearlyUsd
           : Math.round(input.priceYearlyUsd * 100) / 100,
+      // null clears the rupee price
+      priceInr:
+        input.priceInr === undefined || input.priceInr === null
+          ? input.priceInr
+          : Math.round(input.priceInr * 100) / 100,
+      priceYearlyInr:
+        input.priceYearlyInr === undefined || input.priceYearlyInr === null
+          ? input.priceYearlyInr
+          : Math.round(input.priceYearlyInr * 100) / 100,
       dodoMonthlyIdTest: input.dodoMonthlyIdTest,
       dodoMonthlyIdLive: input.dodoMonthlyIdLive,
       dodoYearlyIdTest: input.dodoYearlyIdTest,

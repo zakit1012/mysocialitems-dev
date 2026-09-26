@@ -114,18 +114,22 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
         {/* Account, pinned to the bottom of the rail */}
         <div className="mt-auto border-t border-line px-[12px] py-3 max-md:mt-4">
-          <div className="flex items-center gap-3 px-[6px]">
-            <span
-              title={user.email}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-white"
-            >
+          <Link
+            href="/dashboard/account"
+            title="Account"
+            aria-current={pathname === "/dashboard/account" ? "page" : undefined}
+            className={`flex items-center gap-3 rounded-xl px-[6px] py-1.5 transition ${
+              pathname === "/dashboard/account" ? "bg-brand-wash" : "hover:bg-brand-wash"
+            }`}
+          >
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-white">
               {user.name.trim().charAt(0).toUpperCase()}
             </span>
             <div className={`min-w-0 flex-1 ${label}`}>
               <p className="truncate text-[13px] font-medium text-ink">{user.name}</p>
               <p className="truncate text-[11px] text-muted">{user.email}</p>
             </div>
-          </div>
+          </Link>
           {/* The super admin panel lives apart from the customer dashboard. */}
           {user.role === "ADMIN" && (
             <Link

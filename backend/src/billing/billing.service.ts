@@ -388,6 +388,8 @@ export class BillingService {
         views: p.views,
         refreshHours: p.refreshHours,
         priceYearlyUsd: p.priceYearlyUsd,
+        priceInr: p.priceInr,
+        priceYearlyInr: p.priceYearlyInr,
         available:
           p.key === FREE_KEY ||
           (enabled && Boolean(BillingService.productFor(p, mode, 'month'))),
@@ -620,6 +622,8 @@ export class BillingService {
         views: p.views >= UNLIMITED ? null : p.views,
         refreshHours: p.refreshHours,
         priceYearlyUsd: p.priceYearlyUsd,
+        priceInr: p.priceInr,
+        priceYearlyInr: p.priceYearlyInr,
       }));
   }
 
@@ -1463,6 +1467,17 @@ export class BillingService {
     };
   }
 
+  /**
+   * Before an account is deleted: stop any running subscription at once, so
+   * nobody is billed for an account that no longer exists.
+   */
+  async closeForDeletion(userId: string) {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { userId },
+    });
+    if (sub) await this.cancelNow(sub);
+  }
+
   /** Stops a Dodo subscription at once (support actions). */
   private async cancelNow(sub: Subscription) {
     if (!sub.dodoSubscriptionId || BillingService.ended(sub)) return;
@@ -1708,6 +1723,39 @@ export class BillingService {
     const warnings: string[] = [];
     if (!before) return { plan: saved, warnings };
 
+    // Rupee prices follow too (a localized price on each product).
+    const rupees: [boolean, number | null, DodoMode, string | null][] = [];
+    for (const mode of ['test', 'live'] as const) {
+      rupees.push(
+        [
+          before.priceInr !== saved.priceInr,
+          saved.priceInr,
+          mode,
+          mode === 'live' ? saved.dodoMonthlyIdLive : saved.dodoMonthlyIdTest,
+        ],
+        [
+          before.priceYearlyInr !== saved.priceYearlyInr,
+          saved.priceYearlyInr,
+          mode,
+          mode === 'live' ? saved.dodoYearlyIdLive : saved.dodoYearlyIdTest,
+        ],
+      );
+    }
+    for (const [changed, rupee, mode, id] of rupees) {
+      if (!changed || !id || !(await this.dodo.configured(mode))) continue;
+      try {
+        await this.dodo.setRupeePrice(
+          mode,
+          id,
+          rupee === null ? null : Math.round(rupee * 100),
+        );
+      } catch (err) {
+        warnings.push(
+          `${mode} (rupee price): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     const changes: [
       boolean,
       number,
@@ -1782,7 +1830,17 @@ export class BillingService {
       : m === 'live'
         ? 'dodoMonthlyIdLive'
         : 'dodoMonthlyIdTest';
-    return this.plans.upsert({ key: plan.key, [field]: id });
+    const saved = await this.plans.upsert({ key: plan.key, [field]: id });
+    const rupee = yearly ? plan.priceYearlyInr : plan.priceInr;
+    if (rupee !== null) {
+      // Best effort: the product exists either way; a save retries the price.
+      await this.dodo
+        .setRupeePrice(m, id, Math.round(rupee * 100))
+        .catch((err: unknown) =>
+          this.log.warn(`Rupee price for ${id} not set: ${String(err)}`),
+        );
+    }
+    return saved;
   }
 
   // ---- Dodo keys

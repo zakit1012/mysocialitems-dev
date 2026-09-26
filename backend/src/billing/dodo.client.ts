@@ -163,10 +163,60 @@ export class DodoClient {
         name: input.name,
         tax_category: 'saas',
         price: this.recurringPrice(input.priceCents, input.interval),
+        // Lets a rupee price (a localized price) apply at checkout.
+        pricing_mode: 'by_currency',
       },
       mode,
     );
     return product.product_id;
+  }
+
+  /**
+   * The exact rupee price of a product for customers billed in INR (a Dodo
+   * localized price), or none (null) - then Dodo converts the dollar price.
+   * With a rule, the customer pays exactly this; no conversion fee on top.
+   */
+  async setRupeePrice(mode: DodoMode, productId: string, paise: number | null) {
+    const path = `/products/${encodeURIComponent(productId)}/localized-prices`;
+    const { items = [] } = await this.request<{
+      items?: {
+        id: string;
+        currency: string;
+        amount: number;
+        country_code?: string | null;
+      }[];
+    }>('GET', path, undefined, mode);
+    const rule = items.find((r) => r.currency === 'INR' && !r.country_code);
+    if (paise === null) {
+      if (rule) {
+        await this.request(
+          'DELETE',
+          `${path}/${encodeURIComponent(rule.id)}`,
+          undefined,
+          mode,
+        );
+      }
+      return;
+    }
+    if (rule) {
+      if (rule.amount !== paise) {
+        await this.request(
+          'PATCH',
+          `${path}/${encodeURIComponent(rule.id)}`,
+          { amount: paise },
+          mode,
+        );
+      }
+      return;
+    }
+    // Products made before rupee prices existed have localized pricing off.
+    await this.request(
+      'PATCH',
+      `/products/${encodeURIComponent(productId)}`,
+      { pricing_mode: 'by_currency' },
+      mode,
+    );
+    await this.request('POST', path, { currency: 'INR', amount: paise }, mode);
   }
 
   /** New price for new subscribers. Dodo never reprices existing subscriptions. */
