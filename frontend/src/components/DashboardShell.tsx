@@ -16,10 +16,10 @@ import {
   Shield,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { Spinner } from "./Spinner";
 import { LogoutButton } from "./LogoutButton";
 import { SITE, adminHref, siteHref } from "@/lib/site";
 import { LogoMark, Wordmark } from "./Logo";
+import { Loader } from "./Loader";
 
 const LINKS = [
   { href: "/dashboard", label: "Widgets", icon: LayoutGrid },
@@ -43,10 +43,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-dvh items-center justify-center gap-2 text-muted">
-        <Spinner className="h-5 w-5" />
-        Loading dashboard...
-      </div>
+      <Loader full label="Loading your dashboard" />
     );
   }
 

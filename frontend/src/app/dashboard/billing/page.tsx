@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Loader, LoaderMark } from "@/components/Loader";
 import { fmtCents, fmtDay, PAYMENT_STATUS, type PaymentRow } from "@/lib/payments";
 import { rupees } from "@/lib/region";
 import { siteHref } from "@/lib/site";
@@ -80,7 +81,7 @@ type Details = { name: string; address: string; taxId: string };
 
 export default function BillingPage() {
   return (
-    <Suspense fallback={<BillingSkeleton />}>
+    <Suspense fallback={<Loader label="Loading billing" />}>
       <Billing />
     </Suspense>
   );
@@ -253,7 +254,7 @@ function Billing() {
   if (busy === "confirm") {
     return (
       <StatusCard
-        icon={<Spinner className="h-6 w-6" />}
+        icon={<LoaderMark />}
         title="Confirming your payment"
         text="We are checking your payment with our payment provider. This usually takes a few seconds - please keep this page open."
         slowText="Still working; your payment is safe. If this takes more than a minute, refresh the page - your plan switches on as soon as the payment is confirmed, and we email you."
@@ -284,7 +285,7 @@ function Billing() {
         />
       );
     }
-    return <BillingSkeleton />;
+    return <Loader label="Loading billing" />;
   }
 
   const { plan, subscription, usage } = data;
@@ -745,23 +746,6 @@ function StatusCard({
         </p>
       )}
       {action}
-    </div>
-  );
-}
-
-/** Grey blocks in the shape of the page while it loads. */
-function BillingSkeleton() {
-  const block = "animate-pulse rounded-2xl bg-sand-deep/70";
-  return (
-    <div aria-busy="true" aria-label="Loading billing">
-      <div className={`${block} h-8 w-40`} />
-      <div className={`${block} mt-2 h-4 w-72`} />
-      <div className={`${block} mt-6 h-44`} />
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        <div className={`${block} h-72`} />
-        <div className={`${block} h-72`} />
-        <div className={`${block} h-72`} />
-      </div>
     </div>
   );
 }

@@ -27,6 +27,7 @@ import {
   loadImage,
   shrinkLogo,
 } from "@/lib/review-poster";
+import { Loader } from "@/components/Loader";
 
 type Widget = { id: string; placeId: string; placeName: string };
 type WidgetWithLogo = Widget & { logo: string | null };
@@ -67,9 +68,7 @@ export default function GetReviewsPage() {
 
       {!widgets || !planId ? (
         !error && (
-          <p className="mt-8 flex items-center gap-2 text-muted">
-            <Spinner /> Loading...
-          </p>
+          <Loader label="Loading" />
         )
       ) : planId === "FREE" ? (
         <Locked />
@@ -485,9 +484,7 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
               className="block h-auto w-full"
             />
           ) : (
-            <p className="flex items-center justify-center gap-2 py-40 text-muted">
-              <Spinner /> Loading...
-            </p>
+            <Loader label="Drawing your poster" className="py-40" />
           )}
         </div>
       </div>

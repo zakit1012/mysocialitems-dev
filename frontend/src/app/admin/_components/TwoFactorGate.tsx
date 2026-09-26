@@ -9,6 +9,7 @@ import type { User } from "@/lib/types";
 import { LogoMark } from "@/components/Logo";
 import { LogoutButton } from "@/components/LogoutButton";
 import { Spinner } from "@/components/Spinner";
+import { Loader } from "@/components/Loader";
 
 type Status = { enabled: boolean; verified: boolean };
 type Session = { user: User; token: string };
@@ -64,9 +65,7 @@ export function TwoFactorGate({ children }: { children: React.ReactNode }) {
         </div>
 
         {!status && !error && (
-          <p className="mt-6 flex items-center gap-2 text-sm text-muted">
-            <Spinner className="h-4 w-4" /> One moment...
-          </p>
+          <Loader label="One moment" className="py-8" />
         )}
 
         {status && !status.enabled && setup && (

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { EyeOff, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
+import { Loader } from "@/components/Loader";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 type Hidden = {
   id: string;
@@ -58,8 +60,9 @@ export function HiddenReviewsTab({ token }: { token: string | null }) {
     }
   }
 
+  const [unhideId, setUnhideId] = useState<string | null>(null);
+
   async function unhide(id: string) {
-    if (!confirm("Show this review in widgets again?")) return;
     await api(`/admin/hidden-reviews/${id}`, { method: "DELETE", token }).catch(() => undefined);
     await load().catch(() => undefined);
   }
@@ -86,7 +89,7 @@ export function HiddenReviewsTab({ token }: { token: string | null }) {
       )}
       <div className="mt-4 overflow-x-auto">
         {!rows ? (
-          <p className="flex items-center gap-2 text-[13px] text-muted"><Spinner /> Loading...</p>
+          <Loader label="Loading hidden reviews" className="py-10" />
         ) : rows.length === 0 ? (
           <p className="text-[13px] text-muted">No hidden reviews.</p>
         ) : (
@@ -107,7 +110,7 @@ export function HiddenReviewsTab({ token }: { token: string | null }) {
                   <td className="max-w-[14rem] truncate px-2 py-2 text-muted">{r.note ?? ""}</td>
                   <td className="px-2 py-2 text-muted">{new Date(r.createdAt).toLocaleDateString()}</td>
                   <td className="px-2 py-2 text-right">
-                    <button type="button" onClick={() => unhide(r.id)} className="rounded-md p-1.5 text-muted hover:bg-coral/10 hover:text-coral" title="Show again">
+                    <button type="button" onClick={() => setUnhideId(r.id)} className="rounded-md p-1.5 text-muted hover:bg-coral/10 hover:text-coral" title="Show again">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </td>
@@ -117,6 +120,17 @@ export function HiddenReviewsTab({ token }: { token: string | null }) {
           </table>
         )}
       </div>
+      <ConfirmDialog
+        open={Boolean(unhideId)}
+        title="Show this review in widgets again?"
+        confirmLabel="Show again"
+        onCancel={() => setUnhideId(null)}
+        onConfirm={() => {
+          const id = unhideId;
+          setUnhideId(null);
+          if (id) void unhide(id);
+        }}
+      />
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Spinner } from "@/components/Spinner";
+import { Loader } from "@/components/Loader";
 
 // The API sends a huge number for "no limit"; same cut-off as the billing page.
 const UNLIMITED = 1_000_000;
@@ -88,9 +88,7 @@ export default function AnalyticsPage() {
 
       {!data ? (
         !error && (
-          <p className="mt-8 flex items-center gap-2 text-muted">
-            <Spinner /> Loading analytics...
-          </p>
+          <Loader label="Loading analytics" />
         )
       ) : (
         <Report data={data} />

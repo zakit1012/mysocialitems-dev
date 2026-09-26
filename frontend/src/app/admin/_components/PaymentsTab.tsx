@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { fmtCents, fmtDay, PAYMENT_STATUS } from "@/lib/payments";
+import { Loader } from "@/components/Loader";
 
 type Mode = "test" | "live";
 
@@ -172,7 +173,7 @@ export function PaymentsTab({ token }: { token: string | null }) {
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={9} className="px-4 py-10 text-center text-muted">
-                  {mode ? `No ${mode} payments yet.` : "Loading..."}
+                  {mode ? `No ${mode} payments yet.` : <Loader label="Loading payments" className="py-4" />}
                 </td>
               </tr>
             ) : (
@@ -315,13 +316,7 @@ function SellerSettings({ token }: { token: string | null }) {
         Shown at the top of every invoice, old and new. Use your legal business name and address.
       </p>
       {!form ? (
-        <p className="flex items-center gap-2 text-muted">
-          {state || (
-            <>
-              <Spinner /> Loading...
-            </>
-          )}
-        </p>
+        state ? <p className="text-muted">{state}</p> : <Loader label="Loading invoice details" className="py-10" />
       ) : (
         <form onSubmit={save} className="grid gap-3 sm:grid-cols-2">
           {(

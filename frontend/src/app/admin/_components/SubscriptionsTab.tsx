@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 type Sub = {
   userId: string;
@@ -35,6 +36,8 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
   const [plans, setPlans] = useState<string[]>([]);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // A change waiting for the admin's yes, asked in the app's own dialog.
+  const [ask, setAsk] = useState<{ title: string; confirmLabel: string; danger?: boolean; run: () => void } | null>(null);
 
   const load = useCallback(async () => {
     const [s, p] = await Promise.all([
@@ -100,10 +103,14 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
                     disabled={Boolean(busy)}
                     onChange={(e) => {
                       const plan = e.target.value;
-                      if (!confirm(`Move ${s.user.email} to ${plan}?`)) return;
-                      act(`plan:${s.userId}`, () =>
-                        api(`/admin/billing/subscriptions/${s.userId}`, { method: "PATCH", token, body: JSON.stringify({ plan }) }),
-                        `${s.user.email} is now on ${plan}.`);
+                      setAsk({
+                        title: `Move ${s.user.email} to ${plan}?`,
+                        confirmLabel: `Move to ${plan}`,
+                        run: () =>
+                          act(`plan:${s.userId}`, () =>
+                            api(`/admin/billing/subscriptions/${s.userId}`, { method: "PATCH", token, body: JSON.stringify({ plan }) }),
+                            `${s.user.email} is now on ${plan}.`),
+                      });
                     }}
                     className="rounded-lg border border-line bg-white px-2 py-1 text-[12.5px] outline-none focus:border-brand"
                   >
@@ -142,9 +149,14 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
                   {s.plan !== "FREE" && (
                     <button type="button" disabled={Boolean(busy)}
                       onClick={() => {
-                        if (!confirm(`Cancel ${s.user.email}'s subscription now and move them to Free?`)) return;
-                        act(`can:${s.userId}`, () =>
-                          api(`/admin/billing/subscriptions/${s.userId}/cancel`, { method: "POST", token }), "Cancelled.");
+                        setAsk({
+                          title: `Cancel ${s.user.email}'s subscription now and move them to Free?`,
+                          confirmLabel: "Cancel subscription",
+                          danger: true,
+                          run: () =>
+                            act(`can:${s.userId}`, () =>
+                              api(`/admin/billing/subscriptions/${s.userId}/cancel`, { method: "POST", token }), "Cancelled."),
+                        });
                       }}
                       className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[12px] text-coral hover:bg-coral/5 disabled:opacity-50">
                       <XCircle className="h-3 w-3" /> Cancel
@@ -170,6 +182,19 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
           ))}
         </ul>
       )}
+      <ConfirmDialog
+        open={Boolean(ask)}
+        title={ask?.title ?? ""}
+        confirmLabel={ask?.confirmLabel ?? "Yes"}
+        cancelLabel="Keep as is"
+        danger={ask?.danger}
+        onCancel={() => setAsk(null)}
+        onConfirm={() => {
+          const next = ask;
+          setAsk(null);
+          next?.run();
+        }}
+      />
     </div>
   );
 }

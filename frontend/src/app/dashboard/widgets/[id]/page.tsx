@@ -26,6 +26,7 @@ import { isProLayout, layoutName, toPayload, type WidgetSettings } from "@/lib/w
 import { useLeaveGuard } from "@/lib/use-leave-guard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { timeAgo } from "@/lib/time";
+import { Loader } from "@/components/Loader";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -54,7 +55,7 @@ type Tab = "customize" | "install";
 
 export default function WidgetStudioPage() {
   return (
-    <Suspense fallback={<p className="flex items-center justify-center gap-2 py-24 text-muted"><Spinner /> Loading widget...</p>}>
+    <Suspense fallback={<Loader label="Loading widget" />}>
       <WidgetStudio />
     </Suspense>
   );
@@ -199,9 +200,7 @@ function WidgetStudio() {
 
   if (!widget) {
     return (
-      <p className="flex items-center justify-center gap-2 py-24 text-muted">
-        <Spinner /> Loading widget...
-      </p>
+      <Loader label="Loading widget" />
     );
   }
 

@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import type { User } from "@/lib/types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Spinner } from "@/components/Spinner";
+import { Loader } from "@/components/Loader";
 
 type Session = { user: User; token: string };
 type Flash = { ok: boolean; text: string } | null;
@@ -23,9 +24,7 @@ export default function AccountPage() {
   const { user } = useAuth();
   if (!user) {
     return (
-      <p className="flex items-center gap-2 text-muted">
-        <Spinner /> Loading...
-      </p>
+      <Loader label="Loading your account" />
     );
   }
   return (

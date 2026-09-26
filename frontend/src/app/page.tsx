@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 import HomePage from "./home-client";
 import { FAQ } from "@/lib/faq";
 import { pageMetadata } from "@/lib/seo";
@@ -55,9 +54,9 @@ export default function Page() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }}
       />
-      <Suspense fallback={<div className="px-4 py-20 text-center">Loading...</div>}>
-        <HomePage />
-      </Suspense>
+      {/* No Suspense here: a fallback streamed first let the footer paint
+          high up and then jump down (layout shift). */}
+      <HomePage />
     </>
   );
 }

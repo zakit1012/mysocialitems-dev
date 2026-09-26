@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, CloudUpload, Plus } from "lucide-react";
 import { api } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const UNLIMITED = 1_000_000_000;
 
@@ -115,8 +116,11 @@ export function PlansTab({ token }: { token: string | null }) {
     }
   }
 
-  async function addPlan() {
-    const key = prompt("Key for the new plan (e.g. AGENCY):");
+  // The new plan's key while its dialog is open; null when closed.
+  const [newKey, setNewKey] = useState<string | null>(null);
+
+  async function addPlan(raw: string) {
+    const key = raw.trim();
     if (!key) return;
     setBusy("add");
     try {
@@ -146,7 +150,7 @@ export function PlansTab({ token }: { token: string | null }) {
           their price. Price ₹ is what customers in India see and pay; blank = they are shown dollars. Blank views = unlimited. Refresh = hours between review updates (2-168). Yearly $ blank =
           10x monthly (two months free). The Free plan never goes to Dodo.
         </p>
-        <button type="button" onClick={addPlan} disabled={busy === "add"}
+        <button type="button" onClick={() => setNewKey("")} disabled={busy === "add"}
           className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-semibold hover:border-brand/40 hover:text-brand">
           <Plus className="h-3.5 w-3.5" /> New plan
         </button>
@@ -222,6 +226,36 @@ export function PlansTab({ token }: { token: string | null }) {
           </tbody>
         </table>
       </div>
+      <ConfirmDialog
+        open={newKey !== null}
+        title="New plan"
+        icon={<Plus className="h-5 w-5" />}
+        message={
+          <label className="mt-2 block">
+            <span className="text-[12.5px]">A short key for it, e.g. AGENCY</span>
+            <input
+              autoFocus
+              value={newKey ?? ""}
+              onChange={(e) => setNewKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newKey?.trim()) {
+                  const key = newKey;
+                  setNewKey(null);
+                  void addPlan(key);
+                }
+              }}
+              className="mt-1 w-full rounded-lg border border-line bg-white px-3 py-2 font-mono text-[13px] text-ink outline-none focus:border-brand"
+            />
+          </label>
+        }
+        confirmLabel="Add plan"
+        onCancel={() => setNewKey(null)}
+        onConfirm={() => {
+          const key = newKey ?? "";
+          setNewKey(null);
+          void addPlan(key);
+        }}
+      />
     </div>
   );
 }

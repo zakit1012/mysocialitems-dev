@@ -5,8 +5,8 @@ import { Globe, Info, Plus, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/Button";
-import { Spinner } from "@/components/Spinner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Loader } from "@/components/Loader";
 
 type Source = {
   id: string;
@@ -148,9 +148,7 @@ export default function SourcesPage() {
       </form>
 
       {loading ? (
-        <p className="flex items-center gap-2 text-muted">
-          <Spinner /> Loading...
-        </p>
+        <Loader label="Loading your domains" />
       ) : sources.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line bg-card p-10 text-center">
           <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-brand-wash text-brand">

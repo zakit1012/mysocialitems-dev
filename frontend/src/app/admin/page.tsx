@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import { ArrowRight, CreditCard, Eye, Globe, LayoutGrid, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Spinner } from "@/components/Spinner";
 import { timeAgo } from "@/lib/time";
+import { Loader } from "@/components/Loader";
 
 type Overview = { users: number; widgets: number; sources: number; newUsers: number; paying: number };
 type AdminUser = { id: string; name: string; email: string; createdAt: string; subscription: { plan: string } | null };
@@ -48,9 +48,7 @@ export default function AdminOverviewPage() {
   if (error) return <p className="rounded-2xl bg-coral/10 px-4 py-3 text-coral">{error}</p>;
   if (!data) {
     return (
-      <p className="flex items-center gap-2 text-muted">
-        <Spinner /> Loading...
-      </p>
+      <Loader label="Loading overview" />
     );
   }
 

@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Spinner } from "@/components/Spinner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { AdminTable, SearchBox } from "../_components/AdminTable";
+import { Loader } from "@/components/Loader";
 
 type AdminUser = {
   id: string;
@@ -61,9 +61,7 @@ export default function AdminUsersPage() {
       <SearchBox value={query} onChange={setQuery} placeholder="Search name or email" />
       {error && <p className="mb-4 rounded-xl bg-coral/10 px-4 py-2.5 text-coral">{error}</p>}
       {!users ? (
-        <p className="flex items-center gap-2 text-muted">
-          <Spinner /> Loading...
-        </p>
+        <Loader label="Loading users" />
       ) : (
         <AdminTable head={["User", "Role", "Plan", "Widgets", "Websites", "Joined"]} empty={shown.length === 0}>
           {shown.map((u) => (
