@@ -181,7 +181,7 @@ export function WidgetEditor({
             </Section>
 
             {layout === "carousel" && (
-              <Section title="Carousel" hint="Slides every 5 seconds and pauses while someone hovers.">
+              <Section title="Carousel" hint="Moves one review every few seconds; waits while someone hovers or touches it.">
                 <ToggleRow label="Autoplay" k="autoplay" value={value} set={set} />
               </Section>
             )}

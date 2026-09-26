@@ -337,6 +337,7 @@ function LiveDemo() {
     headerAlign: "center",
     showAllReviewsBtn: true,
     cardShadow: true,
+    autoplay: true,
     reviewCount: DEMO_REVIEW_COUNT,
   };
   // The demo photos need this page's origin (the widget draws http(s) images

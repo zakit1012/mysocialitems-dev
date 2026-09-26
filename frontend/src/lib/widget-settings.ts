@@ -83,7 +83,7 @@ export const DEFAULT_SETTINGS: WidgetSettings = {
   showHeaderGoogle: true,
   showOwnerResponse: true,
   readMore: true,
-  autoplay: false,
+  autoplay: true,
   cardBorder: true,
   cardShadow: false,
   reviewItalic: false,

@@ -84,6 +84,8 @@ export function widgetScript(key: string, preview = false): string {
     '.wpop-carousel .wpop-items{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:2px 0 6px;align-items:stretch}' +
     '.wpop-carousel .wpop-items::-webkit-scrollbar{display:none}' +
     '.wpop-carousel .wpop-card{flex:0 0 var(--slide,min(280px,85%));scroll-snap-align:start}' +
+    // Off while the arrows or autoplay glide, so an unseen jump lands exactly.
+    '.wpop-carousel .wpop-items.wpop-glide{scroll-snap-type:none}' +
     // The arrows sit in their own gutter, beside the cards, centred on them.
     // Sites style every <button> (colours, hover fills, padding, transforms),
     // so each look-defining property is pinned with !important, in every state.
@@ -273,9 +275,10 @@ export function widgetScript(key: string, preview = false): string {
   /**
    * Cards are sized so a view holds only whole cards - never half of one at
    * the edge. "Columns" caps how many a view shows; a phone gets one. Arrows
-   * move one view and wrap around at either end. Autoplay moves every 5s and
-   * pauses while the visitor hovers. When every card fits, the arrows hide
-   * and the cards sit centred.
+   * move one card and wrap around at either end. Autoplay moves one card
+   * every few seconds and waits while the visitor hovers, touches or tabs
+   * through it, and while it is off screen. When every card fits, the arrows
+   * hide and the cards sit centred.
    */
   /**
    * A carousel that never runs out: a copy of every card sits before and
@@ -330,10 +333,13 @@ export function widgetScript(key: string, preview = false): string {
     }
     /** Back among the real cards if the track came to rest on a copy. */
     function settle() {
-      if (fits()) return;
-      var w = set();
-      if (track.scrollLeft < w - 2) jump(track.scrollLeft + w);
-      else if (track.scrollLeft >= 2 * w - 2) jump(track.scrollLeft - w);
+      aim = null;
+      if (!fits()) {
+        var w = set();
+        if (track.scrollLeft < w - 2) jump(track.scrollLeft + w);
+        else if (track.scrollLeft >= 2 * w - 2) jump(track.scrollLeft - w);
+      }
+      track.classList.remove('wpop-glide');
     }
     var resting;
     track.addEventListener('scroll', function () {
@@ -341,11 +347,20 @@ export function widgetScript(key: string, preview = false): string {
       resting = setTimeout(settle, 140);
     }, { passive: true });
 
+    /** Where the running glide is heading; null at rest. */
+    var aim = null;
+    var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    /** One card on. Quick clicks add up: each goes on from the last one's aim. */
     function step(dir) {
       if (fits()) return;
-      settle();
-      var page = perView(track.clientWidth) * unit();
-      track.scrollTo({ left: track.scrollLeft + dir * page, behavior: 'smooth' });
+      var u = unit(), w = set();
+      var at = aim === null ? Math.round(track.scrollLeft / u) * u : aim;
+      track.classList.add('wpop-glide');
+      // Stay among the real cards, jumping unseen by one whole set.
+      if (at < w) { jump(track.scrollLeft + w); at += w; }
+      else if (at >= 2 * w) { jump(track.scrollLeft - w); at -= w; }
+      aim = at + dir * u;
+      track.scrollTo({ left: aim, behavior: still ? 'auto' : 'smooth' });
     }
     wrap.querySelector('.wpop-prev').onclick = function () { step(-1); };
     wrap.querySelector('.wpop-next').onclick = function () { step(1); };
@@ -357,6 +372,8 @@ export function widgetScript(key: string, preview = false): string {
       // Measured after the arrows' gutters are on or off.
       var width = track.clientWidth, per = perView(width);
       wrap.style.setProperty('--slide', (width - (per - 1) * GAP) / per + 'px');
+      aim = null;
+      track.classList.remove('wpop-glide');
       if (nowFits) { jump(0); looping = false; return; }
       // Keep the card in view when the width changes; start on the first.
       var at = looping ? current() : 0;
@@ -367,12 +384,32 @@ export function widgetScript(key: string, preview = false): string {
     setTimeout(fit, 400);
     host.__wpopResize = fit;
     window.addEventListener('resize', fit);
-    if (s.autoplay) {
-      host.__wpopTimer = setInterval(function () {
-        if (wrap.matches(':hover') || fits()) return;
-        step(1);
-      }, 5000);
+    if (s.autoplay && !still) autoplay(host, wrap, fits, step);
+  }
+
+  /**
+   * One card on every few seconds. It waits while a mouse is over it, for a
+   * few seconds after a tap, swipe, click or key, while a key has focus in
+   * it, and while it is off screen or in a hidden tab.
+   */
+  function autoplay(host, wrap, fits, step) {
+    var over = false, touched = 0, seen = true;
+    wrap.addEventListener('pointerenter', function (e) { if (e.pointerType === 'mouse') over = true; });
+    wrap.addEventListener('pointerleave', function () { over = false; });
+    var wake = function () { touched = Date.now(); };
+    var events = ['pointerdown', 'wheel', 'keydown', 'focusin'];
+    for (var i = 0; i < events.length; i++) wrap.addEventListener(events[i], wake, { passive: true });
+    function tabbing() {
+      try { return !!wrap.querySelector(':focus-visible'); } catch (e) { return false; }
     }
+    if (window.IntersectionObserver) {
+      host.__wpopSeen = new IntersectionObserver(function (e) { seen = e[e.length - 1].isIntersecting; });
+      host.__wpopSeen.observe(wrap);
+    }
+    host.__wpopTimer = setInterval(function () {
+      if (over || !seen || document.hidden || fits() || tabbing() || Date.now() - touched < 6000) return;
+      step(1);
+    }, 3500);
   }
 
   /**
@@ -542,9 +579,9 @@ export function widgetScript(key: string, preview = false): string {
         html += '<div class="wpop-empty">No reviews to show yet.</div>';
       } else if (layout === 'carousel') {
         html += '<div class="wpop-car">' +
-          '<button type="button" class="wpop-nav wpop-prev" aria-label="Previous reviews">' + PREV + '</button>' +
+          '<button type="button" class="wpop-nav wpop-prev" aria-label="Previous review">' + PREV + '</button>' +
           '<div class="wpop-items">' + items + '</div>' +
-          '<button type="button" class="wpop-nav wpop-next" aria-label="Next reviews">' + NEXT + '</button></div>';
+          '<button type="button" class="wpop-nav wpop-next" aria-label="Next review">' + NEXT + '</button></div>';
       } else {
         var style = '';
         if (cols && (layout === 'grid' || layout === 'quotes' || layout === 'showcase')) {
@@ -573,10 +610,11 @@ export function widgetScript(key: string, preview = false): string {
     }
 
     // The preview re-renders on every settings change; drop the last
-    // carousel's timer and resize listener first.
+    // carousel's timer, watcher and resize listener first.
     if (host.__wpopTimer) clearInterval(host.__wpopTimer);
     if (host.__wpopResize) window.removeEventListener('resize', host.__wpopResize);
-    host.__wpopTimer = host.__wpopResize = null;
+    if (host.__wpopSeen) host.__wpopSeen.disconnect();
+    host.__wpopTimer = host.__wpopResize = host.__wpopSeen = null;
 
     host.innerHTML = html + '</div>';
     // Columns here means the most cards one view shows.
