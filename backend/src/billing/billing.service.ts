@@ -27,7 +27,7 @@ import {
   PlanInput,
   UNLIMITED,
 } from './plans';
-import { PRODUCT_NAME } from '../common/product';
+import { PRODUCT_NAME, SUPPORT_EMAIL } from '../common/product';
 import { appUrl } from '../common/urls';
 
 type Resource = 'widgets' | 'sources';
@@ -1230,12 +1230,21 @@ export class BillingService {
     };
   }
 
-  /** Everything a receipt shows. Its owner or an admin may open it. */
-  async invoice(viewer: { id: string; role: string }, paymentId: string) {
+  /**
+   * Everything a receipt shows. Its owner may open it, and an admin who has
+   * passed the authenticator-app check.
+   */
+  async invoice(
+    viewer: { id: string; role: string; mfaUntil?: number },
+    paymentId: string,
+  ) {
     const p = await this.prisma.payment.findUnique({
       where: { id: String(paymentId ?? '') },
     });
-    if (!p || (p.userId !== viewer.id && viewer.role !== 'ADMIN')) {
+    const admin =
+      viewer.role === 'ADMIN' &&
+      Boolean(viewer.mfaUntil && viewer.mfaUntil * 1000 > Date.now());
+    if (!p || (p.userId !== viewer.id && !admin)) {
       throw new NotFoundException('Invoice not found.');
     }
     const [sub, user, seller] = await Promise.all([
@@ -1281,7 +1290,7 @@ export class BillingService {
     return {
       name: out.SELLER_NAME || PRODUCT_NAME,
       address: out.SELLER_ADDRESS,
-      email: out.SELLER_EMAIL,
+      email: out.SELLER_EMAIL || SUPPORT_EMAIL,
       taxId: out.SELLER_TAX_ID,
       note: out.NOTE,
     };

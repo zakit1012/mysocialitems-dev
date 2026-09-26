@@ -12,7 +12,7 @@ export const LEGAL = {
   /** Registered or business postal address. */
   address: "",
   /** Where customers, reviewers and privacy requests write to. */
-  email: "",
+  email: SITE.supportEmail,
   /** India (IT Rules 2011, DPDP Act 2023): the person who handles complaints. */
   grievanceOfficer: "",
   /** Courts of this city, India, hear disputes. */

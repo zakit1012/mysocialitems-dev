@@ -46,7 +46,7 @@ export function Footer() {
         </div>
 
         <div className="mt-12 flex flex-col gap-3 border-t border-line pt-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} {SITE.name} — Google Review Widgets</p>
+          <p>© {new Date().getFullYear()} {SITE.name}. All rights reserved.</p>
           <nav className="flex flex-wrap gap-x-4 gap-y-1" aria-label="Legal">
             <Link href="/terms" className="hover:text-brand">Terms</Link>
             <Link href="/privacy" className="hover:text-brand">Privacy</Link>
@@ -59,7 +59,8 @@ export function Footer() {
           </nav>
         </div>
         <p className="mt-3 text-xs text-hint">
-          Not affiliated with or endorsed by Google. Google is a trademark of Google LLC.
+          {SITE.name} is not affiliated with or endorsed by Google or any other platform whose content it shows.
+          Google is a trademark of Google LLC; other names and logos belong to their owners.
         </p>
       </div>
     </footer>

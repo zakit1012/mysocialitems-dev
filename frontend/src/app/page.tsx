@@ -24,6 +24,7 @@ const structuredData = {
       name: SITE.name,
       url: SITE.url,
       logo: `${SITE.url}/brand/icon-512.png`,
+      contactPoint: { "@type": "ContactPoint", contactType: "customer support", email: SITE.supportEmail },
     },
     {
       "@type": "SoftwareApplication",

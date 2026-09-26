@@ -9,6 +9,7 @@ import {
   CreditCard,
   Globe,
   LayoutGrid,
+  LifeBuoy,
   LogOut,
   Plus,
   QrCode,
@@ -111,6 +112,15 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <ArrowLeft className="h-[18px] w-[18px] shrink-0" />
           <span className={label}>Back to site</span>
         </Link>
+
+        <a
+          href={`mailto:${SITE.supportEmail}`}
+          title={`Help: ${SITE.supportEmail}`}
+          className="mx-[12px] mt-1 flex items-center gap-3 rounded-xl px-[12px] py-2.5 text-[13px] text-muted transition hover:bg-brand-wash hover:text-ink"
+        >
+          <LifeBuoy className="h-[18px] w-[18px] shrink-0" />
+          <span className={label}>Help</span>
+        </a>
 
         {/* Account, pinned to the bottom of the rail */}
         <div className="mt-auto border-t border-line px-[12px] py-3 max-md:mt-4">

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { Transporter } from 'nodemailer';
-import { DEFAULT_FROM, PRODUCT_NAME } from '../common/product';
+import { DEFAULT_FROM, PRODUCT_NAME, SUPPORT_EMAIL } from '../common/product';
 import { appUrl, siteUrl } from '../common/urls';
 
 // Brand colours, the same as the website.
@@ -94,6 +94,8 @@ export class MailService {
 
     await this.transporter.sendMail({
       from: this.from,
+      // The sender is noreply; a customer's reply reaches support.
+      replyTo: SUPPORT_EMAIL,
       to: email,
       subject,
       text,
@@ -145,6 +147,7 @@ export class MailService {
     try {
       await this.transporter.sendMail({
         from: this.from,
+        replyTo: SUPPORT_EMAIL,
         to,
         subject,
         text,
@@ -195,6 +198,7 @@ export class MailService {
       // Footer
       `<tr><td style="padding:22px 12px 8px;text-align:center;font:12px/1.7 ${FONT};color:${MUTED}">` +
       `You are getting this email because you have an account at ${PRODUCT_NAME}.<br>` +
+      `Questions? Write to <a href="mailto:${SUPPORT_EMAIL}" style="color:${MUTED};text-decoration:underline">${SUPPORT_EMAIL}</a>.<br>` +
       `<a href="${escapeHtml(this.app)}/dashboard" style="color:${MUTED};text-decoration:underline">Dashboard</a>` +
       ` &nbsp;&middot;&nbsp; ` +
       `<a href="${escapeHtml(this.app)}/dashboard/billing" style="color:${MUTED};text-decoration:underline">Billing</a>` +

@@ -1,8 +1,10 @@
 /**
  * Makes an existing account a super admin, or lists who is one.
  *
- *   node make-admin.js you@example.com   promote that account
- *   node make-admin.js --list            show every admin
+ *   node make-admin.js you@example.com              promote that account
+ *   node make-admin.js --list                       show every admin
+ *   node make-admin.js --reset-2fa you@example.com  lost phone: set up the
+ *                                                   authenticator app again
  *
  * Sign up on the site first, then run this on the server from the backend
  * folder. No new login is needed: the next page load shows the Admin panel.
@@ -14,8 +16,23 @@ const prisma = new PrismaClient();
 
 async function main() {
   const arg = (process.argv[2] || '').trim().toLowerCase();
+  if (arg === '--reset-2fa') {
+    const email = (process.argv[3] || '').trim().toLowerCase();
+    const user = email && (await prisma.user.findUnique({ where: { email } }));
+    if (!user) {
+      console.log('Usage: node make-admin.js --reset-2fa you@example.com');
+      process.exitCode = 1;
+      return;
+    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { totpSecret: null, totpEnabledAt: null, totpLastStep: null },
+    });
+    console.log(`2-step sign-in reset for ${email}. The next visit to the admin panel sets it up again.`);
+    return;
+  }
   if (!arg) {
-    console.log('Usage: node make-admin.js you@example.com | --list');
+    console.log('Usage: node make-admin.js you@example.com | --list | --reset-2fa you@example.com');
     process.exitCode = 1;
     return;
   }

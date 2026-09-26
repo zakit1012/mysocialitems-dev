@@ -35,6 +35,16 @@ export class SettingsService {
     return createHash('sha256').update(source).digest();
   }
 
+  /** Encrypts a secret for the database (AES-256-GCM, SETTINGS_SECRET). */
+  seal(plain: string): string {
+    return this.encrypt(plain);
+  }
+
+  /** A secret from seal(), or null if it cannot be read. */
+  unseal(stored: string): string | null {
+    return this.decrypt(stored);
+  }
+
   private encrypt(plain: string): string {
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', this.key(), iv);

@@ -16,6 +16,12 @@ model User {
   city         String?
   /// Bumped when the password or email changes: older sign-ins stop working.
   tokenVersion Int      @default(0)
+  /// Admin 2-step sign-in (authenticator app): the secret, encrypted with
+  /// SETTINGS_SECRET. Pending until totpEnabledAt is set.
+  totpSecret    String?
+  totpEnabledAt DateTime?
+  /// The last 30-second step used, so each code works only once.
+  totpLastStep  Int?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

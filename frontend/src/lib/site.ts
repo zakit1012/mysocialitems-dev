@@ -23,6 +23,8 @@ export const SITE = {
   appUrl: APP_URL,
   /** Where the admin panel lives, or "" when it shares the site's host. */
   adminUrl: ADMIN_URL,
+  /** Where customers write for help: footer, legal pages, dashboard. */
+  supportEmail: "support@widgetpop.com",
   /** The short line after the name in the home page title. */
   tagline: "Google Reviews Widget for Your Website",
   description:
