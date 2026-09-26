@@ -14,14 +14,14 @@ export default function RefundPolicyPage() {
     <LegalPage title="Refund & Cancellation Policy" current="/refund-policy">
       <p>
         {LEGAL.product} has a Free plan, so you can try it before you pay. Paid plans are monthly or yearly
-        subscriptions billed in advance through PayPal.
+        subscriptions billed in advance. Payments are processed by our merchant of record, Dodo Payments.
       </p>
 
       <h2>Cancelling</h2>
       <ul>
         <li>
-          Cancel any time from <Link href="/dashboard/billing">Billing</Link> in your dashboard, or from your
-          PayPal account.
+          Cancel any time from <Link href="/dashboard/billing">Billing</Link> in your dashboard. Changed your mind
+          before the period ends? Resume it from the same page.
         </li>
         <li>
           You keep your paid plan until the end of the period you have already paid for. After that you move
@@ -49,9 +49,9 @@ export default function RefundPolicyPage() {
 
       <h2>How to ask for a refund</h2>
       <p>
-        Email {email} from your account&apos;s email address with your PayPal transaction ID. We reply within 3
-        business days. Approved refunds go back to the original PayPal payment method, usually within 5-10
-        business days depending on PayPal and your bank.
+        Email {email} from your account&apos;s email address with the payment reference from your receipt. We
+        reply within 3 business days. Approved refunds go back to the card, UPI or account you paid with,
+        usually within 5-10 business days depending on your bank.
       </p>
 
       <h2>Contact</h2>

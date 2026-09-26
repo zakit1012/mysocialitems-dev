@@ -37,8 +37,8 @@ export default function PrivacyPage() {
           logo for your review poster, and the website domains you allow the widget on.
         </li>
         <li>
-          Billing details: your plan, subscription status and PayPal subscription ID. Payments are handled by
-          PayPal; we never see or store your card or bank details.
+          Billing details: your plan, subscription status and payment references. Payments are handled by Dodo
+          Payments; we never see or store your card, UPI or bank details.
         </li>
         <li>Messages you send us, such as support emails.</li>
       </ul>
@@ -100,7 +100,7 @@ export default function PrivacyPage() {
       <ul>
         <li>hosting and database providers;</li>
         <li>our email delivery provider;</li>
-        <li>PayPal, for payments;</li>
+        <li>Dodo Payments, our merchant of record, for payments, tax and invoices;</li>
         <li>
           Google, whose Maps service powers the place search in your dashboard (Google&apos;s own{" "}
           <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">

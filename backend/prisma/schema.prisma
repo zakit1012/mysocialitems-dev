@@ -190,11 +190,17 @@ model Subscription {
   plan                 String    @default("FREE")
   /// ACTIVE | PAST_DUE | CANCELLED | SUSPENDED | EXPIRED
   status               String    @default("ACTIVE")
+  /// Dodo Payments subscription (sub_...) and customer (cus_...).
+  dodoSubscriptionId   String?
+  dodoCustomerId       String?
+  /// USD or INR - the currency the customer is billed in.
+  currency             String?
+  /// Legacy (PayPal, no longer used).
   paypalSubscriptionId String?   @unique
-  /// Plan the user is checking out for, until PayPal confirms it.
+  /// Plan the user is checking out for, until the payment confirms it.
   pendingPlan          String?
   currentPeriodEnd     DateTime?
-  /// Cancelled on PayPal, but paid up until currentPeriodEnd.
+  /// Cancelled, but paid up until currentPeriodEnd.
   cancelAtPeriodEnd    Boolean   @default(false)
   /// month | year
   interval             String    @default("month")
@@ -206,19 +212,30 @@ model Subscription {
   updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([dodoSubscriptionId])
 }
 
-/// Every payment PayPal collected, one row per charge. `number` is the
-/// invoice number the customer sees (MSI-00042), given in order of payment.
+/// Every payment collected, one row per charge. `number` is our reference
+/// (MSI-00042), given in order of payment.
 model Payment {
   id                   String    @id @default(cuid())
   number               Int       @unique @default(autoincrement())
   /// Kept (as null) if the account is deleted: the books still need it.
   userId               String?
-  /// PayPal's transaction id. Unique, so a repeated webhook adds nothing.
-  paypalSaleId         String    @unique
+  /// Dodo's payment id. Unique, so a repeated webhook adds nothing.
+  dodoPaymentId        String?
+  dodoSubscriptionId   String?
+  /// Dodo's invoice PDF: Dodo sells as merchant of record, so this is the
+  /// customer's legal invoice.
+  invoiceUrl           String?
+  /// What reaches our Dodo balance, in its currency (USD), after fees.
+  settlementCents      Int?
+  settlementCurrency   String?
+  /// Legacy (PayPal, no longer used).
+  paypalSaleId         String?   @unique
   paypalSubscriptionId String?
-  /// sandbox | live - sandbox rows are test payments, not revenue.
+  /// test | live (sandbox = legacy PayPal tests) - only live rows are revenue.
   mode                 String    @default("live")
   plan                 String
   planName             String
@@ -226,7 +243,7 @@ model Payment {
   interval             String    @default("month")
   amountCents          Int
   currency             String    @default("USD")
-  /// PayPal's fee. Admin only.
+  /// Processing fee, where known. Admin only.
   feeCents             Int?
   refundedCents        Int       @default(0)
   /// PAID | PARTIALLY_REFUNDED | REFUNDED | REVERSED
@@ -243,6 +260,7 @@ model Payment {
 
   @@index([userId, paidAt])
   @@index([paidAt])
+  @@index([dodoPaymentId])
 }
 
 /// Widget views per user per calendar month ("2026-09").
@@ -287,18 +305,23 @@ model BillingPlan {
   refreshHours          Int?
   active                Boolean  @default(true)
   sortOrder             Int      @default(0)
-  /// PayPal keeps its own copy of each paid plan, one per environment.
-  paypalPlanIdSandbox   String?
-  paypalPlanIdLive      String?
   /// Yearly billing. null price = 10x the monthly price (two months free).
   priceYearlyUsd        Float?
+  /// Dodo Payments keeps each paid plan as a product: one per mode and period.
+  dodoMonthlyIdTest     String?
+  dodoMonthlyIdLive     String?
+  dodoYearlyIdTest      String?
+  dodoYearlyIdLive      String?
+  /// Legacy (PayPal, no longer used). Kept so existing rows are not dropped.
+  paypalPlanIdSandbox   String?
+  paypalPlanIdLive      String?
   paypalYearlyIdSandbox String?
   paypalYearlyIdLive    String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }
 
-/// Runtime settings edited from the admin panel (PayPal keys, mode, ...).
+/// Runtime settings edited from the admin panel (payment keys, mode, ...).
 /// Secret values are stored encrypted - see SettingsService.
 model AppSetting {
   key       String   @id

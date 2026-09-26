@@ -2,7 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { MailModule } from '../mail/mail.module';
 import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
-import { PaypalClient } from './paypal.client';
+import { DodoClient } from './dodo.client';
 import { PlansService } from './plans.service';
 import { AdminBillingController } from './admin-billing.controller';
 import { BillingReconcileService } from './billing-reconcile.service';
@@ -14,7 +14,7 @@ import { BillingReconcileService } from './billing-reconcile.service';
   controllers: [BillingController, AdminBillingController],
   providers: [
     BillingService,
-    PaypalClient,
+    DodoClient,
     PlansService,
     BillingReconcileService,
   ],

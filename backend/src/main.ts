@@ -35,7 +35,10 @@ function assertProductionConfig() {
 async function bootstrap() {
   assertProductionConfig();
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // rawBody: payment webhooks are signed over the exact bytes sent.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
   // A business logo for the review poster travels as a data URL (~300 KB max).
   app.useBodyParser('json', { limit: '600kb' });
 

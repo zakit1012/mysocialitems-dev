@@ -7,8 +7,11 @@ import {
   Param,
   Post,
   Put,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
+import type { Request } from 'express';
 import { SkipThrottle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -35,9 +38,15 @@ export class BillingController {
   @UseGuards(JwtAuthGuard)
   checkout(
     @CurrentUser() user: AuthUser,
-    @Body() body: { plan: string; interval?: string },
+    @Body() body: { plan: string; interval?: string; region?: string },
   ) {
-    return this.billing.startCheckout(user.id, body?.plan, body?.interval);
+    // region "IN": billed in rupees with UPI AutoPay and Indian cards.
+    return this.billing.startCheckout(
+      user.id,
+      body?.plan,
+      body?.interval,
+      body?.region,
+    );
   }
 
   @Post('confirm')
@@ -53,6 +62,20 @@ export class BillingController {
   @UseGuards(JwtAuthGuard)
   cancel(@CurrentUser() user: AuthUser) {
     return this.billing.cancel(user.id);
+  }
+
+  /** Takes back a cancellation before the paid period ends. */
+  @Post('resume')
+  @UseGuards(JwtAuthGuard)
+  resume(@CurrentUser() user: AuthUser) {
+    return this.billing.resume(user.id);
+  }
+
+  /** A link to Dodo's customer portal: update the card or UPI, see invoices. */
+  @Post('portal')
+  @UseGuards(JwtAuthGuard)
+  portal(@CurrentUser() user: AuthUser) {
+    return this.billing.portal(user.id);
   }
 
   /** Every payment the customer has made, each with its invoice. */
@@ -79,11 +102,17 @@ export class BillingController {
     return this.billing.saveDetails(user.id, body ?? {});
   }
 
-  /** PayPal calls this. Authenticated by PayPal's signature, not a JWT. */
+  /**
+   * Dodo Payments calls this. Authenticated by its signature over the exact
+   * bytes sent (see main.ts, rawBody), not a JWT.
+   */
   @Post('webhook')
   @HttpCode(200)
   @SkipThrottle()
-  webhook(@Headers() headers: Record<string, string>, @Body() event: unknown) {
-    return this.billing.handleWebhook(headers, event);
+  webhook(
+    @Headers() headers: Record<string, string>,
+    @Req() req: RawBodyRequest<Request>,
+  ) {
+    return this.billing.handleWebhook(headers, req.rawBody);
   }
 }

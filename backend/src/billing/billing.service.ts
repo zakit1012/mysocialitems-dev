@@ -6,12 +6,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
 import type { Payment, Subscription } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { SettingsService } from '../settings/settings.service';
-import { PaypalClient, PaypalMode, PaypalSubscription } from './paypal.client';
+import {
+  DodoClient,
+  DodoMode,
+  DodoPayment,
+  DodoRefund,
+  DodoSubscription,
+} from './dodo.client';
 import { PlansService } from './plans.service';
 import {
   ADMIN_LIMITS,
@@ -25,23 +30,6 @@ import {
 
 type Resource = 'widgets' | 'sources';
 
-/** The parts of a PayPal webhook we read. Everything is optional: it is untrusted input. */
-type WebhookResource = {
-  id?: string;
-  plan_id?: string;
-  custom_id?: string;
-  billing_agreement_id?: string;
-  billing_info?: { next_billing_time?: string };
-  amount?: { total?: string; currency?: string };
-  /** Sales: PayPal's cut. */
-  transaction_fee?: { value?: string; currency?: string };
-  create_time?: string;
-  /** Refunds and reversals: the payment they undo. */
-  sale_id?: string;
-};
-
-const REFUND_EVENTS = ['PAYMENT.SALE.REFUNDED', 'PAYMENT.SALE.REVERSED'];
-
 /** Invoice settings the super admin fills in (who the seller is). */
 const INVOICE_KEYS = [
   'SELLER_NAME',
@@ -51,20 +39,41 @@ const INVOICE_KEYS = [
   'NOTE',
 ] as const;
 
+/** Dodo keys the admin panel edits. Every one is a secret. */
+const DODO_KEYS = [
+  'TEST_API_KEY',
+  'TEST_WEBHOOK_SECRET',
+  'LIVE_API_KEY',
+  'LIVE_WEBHOOK_SECRET',
+] as const;
+
+/** Events the Dodo webhook must send. */
+const WEBHOOK_EVENTS = [
+  'subscription.active',
+  'subscription.updated',
+  'subscription.renewed',
+  'subscription.plan_changed',
+  'subscription.past_due',
+  'subscription.on_hold',
+  'subscription.paused',
+  'subscription.unpaused',
+  'subscription.cancelled',
+  'subscription.expired',
+  'subscription.failed',
+  'payment.succeeded',
+  'refund.succeeded',
+  'dispute.lost',
+];
+
 export const invoiceNumber = (n: number) => `MSI-${String(n).padStart(5, '0')}`;
-const toCents = (v?: string) => Math.round(Math.abs(Number(v ?? 0)) * 100);
 const fmtMoney = (cents: number, currency: string) =>
-  `${currency === 'USD' ? '$' : `${currency} `}${(cents / 100).toFixed(2)}`;
-type WebhookEvent = {
-  id?: string;
-  event_type?: string;
-  resource?: WebhookResource;
-};
+  `${currency === 'USD' ? '$' : currency === 'INR' ? '₹' : `${currency} `}${(cents / 100).toFixed(2)}`;
 
 const DAY_MS = 86_400_000;
-// PayPal retries a failed renewal for a few days; after five without the
-// money, the account drops to Free limits until it is paid.
-const OVERDUE_AFTER_MS = 5 * DAY_MS;
+// Dodo's grace period (set to 5 days in its dashboard) handles a failed
+// renewal; Indian mandates settle up to 48h late. A subscription still
+// unpaid a day after that is checked with Dodo in case a webhook was lost.
+const CHECK_AFTER_MS = 6 * DAY_MS;
 // Yearly customers are told a week before the next charge.
 const REMIND_BEFORE_MS = 7 * DAY_MS;
 
@@ -77,22 +86,49 @@ const fmtDate = (d: Date) =>
     timeZone: 'UTC',
   });
 const fmtUsd = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
-
-/** The emails for states PayPal puts a subscription in. */
-const STATUS_MAIL: Record<'SUSPENDED' | 'EXPIRED', [string, string]> = {
-  SUSPENDED: [
-    'Your subscription is paused',
-    'PayPal has paused your subscription, usually after payments did not go through. Your widgets are on Free limits until it is sorted out: ' +
-      'update your payment method or reactivate the subscription in PayPal, or choose a plan again from Billing.',
-  ],
-  EXPIRED: [
-    'Your subscription has ended',
-    'Your paid plan has ended and your account is on the Free plan now. You can subscribe again any time from Billing.',
-  ],
-};
-
 const fmtViews = (views: number) =>
   views >= UNLIMITED ? 'unlimited' : views.toLocaleString();
+
+/** A string field from an untrusted webhook payload, or ''. */
+const text = (v: unknown) => (typeof v === 'string' ? v : '');
+
+/** What a plan costs over a year on a period, to tell an upgrade from a downgrade. */
+const yearlyValue = (plan: Plan, interval: string) =>
+  interval === 'year' ? plan.priceYearlyUsd : plan.priceUsd * 12;
+
+/**
+ * Our state for a Dodo subscription. A failed renewal first opens Dodo's
+ * grace period (past_due: access continues), then puts the subscription
+ * on hold (PAST_DUE here: Free limits until it is paid). null = a
+ * subscription that never started (pending, failed): leave the account alone.
+ */
+function stateFor(
+  remote: DodoSubscription,
+): { status: string; cancelAtPeriodEnd: boolean } | null {
+  const end = remote.next_billing_date
+    ? new Date(remote.next_billing_date)
+    : null;
+  switch (remote.status) {
+    case 'active':
+    case 'past_due':
+      return remote.cancel_at_next_billing_date
+        ? { status: 'CANCELLED', cancelAtPeriodEnd: true }
+        : { status: 'ACTIVE', cancelAtPeriodEnd: false };
+    case 'on_hold':
+      return { status: 'PAST_DUE', cancelAtPeriodEnd: false };
+    case 'paused':
+      return { status: 'SUSPENDED', cancelAtPeriodEnd: false };
+    case 'cancelled':
+      // Paid time left: it runs to the end of what was paid for.
+      return end && end > new Date()
+        ? { status: 'CANCELLED', cancelAtPeriodEnd: true }
+        : { status: 'EXPIRED', cancelAtPeriodEnd: false };
+    case 'expired':
+      return { status: 'EXPIRED', cancelAtPeriodEnd: false };
+    default:
+      return null;
+  }
+}
 
 @Injectable()
 export class BillingService {
@@ -101,7 +137,7 @@ export class BillingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
-    private readonly paypal: PaypalClient,
+    private readonly dodo: DodoClient,
     private readonly plans: PlansService,
     private readonly settings: SettingsService,
     private readonly config: ConfigService,
@@ -140,8 +176,8 @@ export class BillingService {
   /**
    * The plan whose limits apply right now. A cancelled subscription keeps its
    * paid plan until the end of the period it was paid for; so does a plan
-   * support gave until a date. A PayPal renewal gets its grace from the
-   * overdue check instead, since the payment lands after the date.
+   * support gave until a date. A Dodo renewal gets its grace from Dodo
+   * itself, since the payment lands after the date.
    */
   async planFor(userId: string): Promise<Plan> {
     const user = await this.prisma.user.findUnique({
@@ -155,7 +191,7 @@ export class BillingService {
       sub.currentPeriodEnd && sub.currentPeriodEnd > new Date();
     const live =
       (sub.status === 'ACTIVE' &&
-        (Boolean(sub.paypalSubscriptionId) ||
+        (Boolean(sub.dodoSubscriptionId) ||
           !sub.currentPeriodEnd ||
           paidThrough)) ||
       (sub.status === 'CANCELLED' && paidThrough);
@@ -303,39 +339,30 @@ export class BillingService {
 
   // --------------------------------------------------------------- overview
 
-  private async paypalPlanId(
+  /** The Dodo product for a plan, in a mode and billing period. */
+  private static productFor(
     plan: Plan,
-    mode?: PaypalMode,
-    interval: BillingInterval = 'month',
-  ): Promise<string | undefined> {
-    const m = mode ?? (await this.paypal.mode());
+    mode: DodoMode,
+    interval: BillingInterval,
+  ): string | undefined {
     const id =
       interval === 'year'
-        ? m === 'live'
-          ? plan.paypalYearlyIdLive
-          : plan.paypalYearlyIdSandbox
-        : m === 'live'
-          ? plan.paypalPlanIdLive
-          : plan.paypalPlanIdSandbox;
+        ? mode === 'live'
+          ? plan.dodoYearlyIdLive
+          : plan.dodoYearlyIdTest
+        : mode === 'live'
+          ? plan.dodoMonthlyIdLive
+          : plan.dodoMonthlyIdTest;
     return id ?? undefined;
   }
 
-  /** A subscription PayPal no longer bills: nothing there to cancel. */
+  /** A subscription Dodo no longer bills: nothing there to cancel. */
   private static ended(sub: Subscription) {
     return sub.status === 'CANCELLED' || sub.status === 'EXPIRED';
   }
 
-  /** Whether a PayPal plan id is one of this plan's yearly ones. */
-  private static isYearlyId(plan: Plan, paypalPlanId?: string) {
-    return (
-      Boolean(paypalPlanId) &&
-      (plan.paypalYearlyIdSandbox === paypalPlanId ||
-        plan.paypalYearlyIdLive === paypalPlanId)
-    );
-  }
-
   async overview(userId: string) {
-    const [sub, plan, widgets, sources, usage, all, enabled] =
+    const [sub, plan, widgets, sources, usage, all, enabled, mode] =
       await Promise.all([
         this.subscriptionFor(userId),
         this.planFor(userId),
@@ -345,12 +372,13 @@ export class BillingService {
           where: { userId_period: { userId, period: currentPeriod() } },
         }),
         this.plans.all(),
-        this.paypal.configured(),
+        this.dodo.configured(),
+        this.dodo.mode(),
       ]);
 
-    const plans = [];
-    for (const p of all.filter((x) => x.active)) {
-      plans.push({
+    const plans = all
+      .filter((p) => p.active)
+      .map((p) => ({
         id: p.key,
         name: p.name,
         priceUsd: p.priceUsd,
@@ -362,13 +390,12 @@ export class BillingService {
         priceYearlyUsd: p.priceYearlyUsd,
         available:
           p.key === FREE_KEY ||
-          (enabled && Boolean(await this.paypalPlanId(p))),
+          (enabled && Boolean(BillingService.productFor(p, mode, 'month'))),
         availableYearly:
           p.key !== FREE_KEY &&
           enabled &&
-          Boolean(await this.paypalPlanId(p, undefined, 'year')),
-      });
-    }
+          Boolean(BillingService.productFor(p, mode, 'year')),
+      }));
 
     return {
       plan: { ...plan, id: plan.key },
@@ -379,7 +406,11 @@ export class BillingService {
         cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
         pendingPlan: sub.pendingPlan,
         interval: sub.interval,
-        hasPaypal: Boolean(sub.paypalSubscriptionId),
+        currency: sub.currency,
+        /** Billed through Dodo: can be cancelled, resumed or changed here. */
+        hasSubscription: Boolean(sub.dodoSubscriptionId),
+        /** Card or UPI can be updated in Dodo's customer portal. */
+        canManagePayment: Boolean(sub.dodoCustomerId),
       },
       details: {
         name: sub.billingName ?? '',
@@ -394,20 +425,38 @@ export class BillingService {
       },
       plans,
       billingEnabled: enabled,
+      testMode: mode === 'test',
     };
   }
 
   // --------------------------------------------------------------- checkout
 
-  /** Creates a PayPal subscription and returns the page the user approves it on. */
-  async startCheckout(userId: string, planKey: string, intervalRaw?: string) {
+  /**
+   * Starts paying for a plan. A new subscriber gets a Dodo checkout: in
+   * rupees with UPI AutoPay and Indian cards for customers in India, in US
+   * dollars otherwise. Someone already paying switches plan on their
+   * existing subscription instead (an upgrade is charged the difference now,
+   * a downgrade applies at the next billing date), and taking back a
+   * cancelled plan simply undoes the cancellation.
+   */
+  async startCheckout(
+    userId: string,
+    planKey: string,
+    intervalRaw?: string,
+    regionRaw?: string,
+  ): Promise<
+    | { checkoutUrl: string }
+    | { done: 'resumed' | 'upgraded' }
+    | { done: 'scheduled'; effectiveAt: Date | null }
+  > {
     const plan = await this.plans.get(String(planKey ?? ''));
     if (!plan || plan.key === FREE_KEY || !plan.active) {
       throw new BadRequestException('Pick a paid plan.');
     }
     const interval: BillingInterval = intervalRaw === 'year' ? 'year' : 'month';
-    const paypalPlan = await this.paypalPlanId(plan, undefined, interval);
-    if (!paypalPlan || !(await this.paypal.configured())) {
+    const mode = await this.dodo.mode();
+    const productId = BillingService.productFor(plan, mode, interval);
+    if (!productId || !(await this.dodo.configured())) {
       throw new BadRequestException(
         `${plan.name}${interval === 'year' ? ' yearly' : ''} is not available yet.`,
       );
@@ -416,98 +465,144 @@ export class BillingService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException();
     const sub = await this.subscriptionFor(userId);
-    if (
-      sub.status === 'ACTIVE' &&
-      sub.plan === plan.key &&
-      sub.interval === interval &&
-      !sub.cancelAtPeriodEnd
-    ) {
-      throw new BadRequestException(
-        `You are already on ${plan.name}${interval === 'year' ? ' yearly' : ''}.`,
-      );
+    const paidAhead = Boolean(
+      sub.currentPeriodEnd && sub.currentPeriodEnd > new Date(),
+    );
+    const running =
+      Boolean(sub.dodoSubscriptionId) &&
+      (sub.status === 'ACTIVE' || (sub.status === 'CANCELLED' && paidAhead));
+
+    if (running && sub.dodoSubscriptionId) {
+      const id = sub.dodoSubscriptionId;
+      const samePlan = sub.plan === plan.key && sub.interval === interval;
+      if (samePlan && sub.status === 'CANCELLED') {
+        await this.resume(userId);
+        return { done: 'resumed' };
+      }
+      if (samePlan) {
+        throw new BadRequestException(
+          `You are already on ${plan.name}${interval === 'year' ? ' yearly' : ''}.`,
+        );
+      }
+      const current = (await this.plans.get(sub.plan)) ?? plan;
+      if (sub.status === 'CANCELLED') {
+        // Choosing another plan takes back the cancellation too.
+        await this.dodo.updateSubscription(id, {
+          cancel_at_next_billing_date: false,
+        });
+      }
+      const upgrade =
+        yearlyValue(plan, interval) > yearlyValue(current, sub.interval);
+      await this.dodo.changePlan(id, productId, upgrade);
+      await this.sync(userId, await this.dodo.getSubscription(id));
+      return upgrade
+        ? { done: 'upgraded' }
+        : { done: 'scheduled', effectiveAt: sub.currentPeriodEnd };
     }
 
-    // Taking back a cancelled plan that is still paid up: the new
-    // subscription's first charge waits for the end of that period, so no
-    // day is paid for twice.
-    const resumeAt =
-      sub.status === 'CANCELLED' &&
-      sub.plan === plan.key &&
-      sub.interval === interval &&
-      sub.currentPeriodEnd &&
-      sub.currentPeriodEnd.getTime() > Date.now() + 60 * 60 * 1000
-        ? sub.currentPeriodEnd
-        : null;
-
-    const created = await this.paypal.createSubscription({
-      planId: paypalPlan,
-      customId: userId,
+    const india = regionRaw === 'IN';
+    const session = await this.dodo.createCheckout({
+      productId,
       email: user.email,
-      returnUrl: `${this.appUrl()}/dashboard/billing?paypal=return`,
-      cancelUrl: `${this.appUrl()}/dashboard/billing?paypal=cancel`,
-      startTime: resumeAt?.toISOString(),
+      name: user.name,
+      india,
+      returnUrl: `${this.appUrl()}/dashboard/billing?checkout=return`,
+      cancelUrl: `${this.appUrl()}/dashboard/billing?checkout=cancel`,
+      metadata: { user_id: userId, plan: plan.key, interval },
     });
-
-    const approve = created.links.find((l) => l.rel === 'approve')?.href;
-    if (!approve)
-      throw new BadRequestException('PayPal did not return an approval link.');
-
     await this.prisma.subscription.update({
       where: { userId },
       data: { pendingPlan: plan.key },
     });
-    return { approveUrl: approve, subscriptionId: created.id };
+    return { checkoutUrl: session.checkout_url };
   }
 
   /**
-   * Called when PayPal sends the user back. The webhook will say the same thing
-   * a few seconds later, but confirming here means the page is right on arrival.
+   * Called when Dodo sends the customer back. The webhook says the same a
+   * moment later; confirming here means the page is right on arrival.
    */
   async confirm(userId: string, subscriptionId: string) {
     if (!subscriptionId) {
       throw new BadRequestException('Missing subscription id.');
     }
-    const remote = await this.paypal.getSubscription(subscriptionId);
+    const [remote, user] = await Promise.all([
+      this.dodo.getSubscription(subscriptionId),
+      this.prisma.user.findUnique({ where: { id: userId } }),
+    ]);
     // The id comes from a query string; make sure it is this user's.
-    if (remote.custom_id !== userId) {
+    const owner =
+      remote.metadata?.user_id === userId ||
+      (Boolean(user?.email) &&
+        remote.customer?.email?.toLowerCase() === user?.email.toLowerCase());
+    if (!owner) {
       throw new ForbiddenException(
         'That subscription belongs to someone else.',
       );
     }
-    if (remote.status !== 'ACTIVE' && remote.status !== 'APPROVED') {
-      return { status: remote.status };
-    }
-    await this.activate(
-      userId,
-      remote.id,
-      remote.plan_id,
-      remote.billing_info?.next_billing_time,
-    );
-    return { status: 'ACTIVE' };
+    if (remote.status === 'pending') return { status: 'PENDING' };
+    if (remote.status === 'failed') return { status: 'FAILED' };
+    const after = await this.sync(userId, remote);
+    return { status: after.status };
   }
 
+  /**
+   * Stops the renewal. A running plan stays until the end of the paid
+   * period; an overdue or paused one ends now (nothing is paid ahead).
+   */
   async cancel(userId: string) {
     const sub = await this.subscriptionFor(userId);
-    if (!sub.paypalSubscriptionId || sub.plan === FREE_KEY) {
+    if (!sub.dodoSubscriptionId || sub.plan === FREE_KEY) {
       throw new BadRequestException('There is no paid subscription to cancel.');
     }
-    if (sub.status === 'CANCELLED' || sub.status === 'EXPIRED') {
+    if (BillingService.ended(sub)) {
       throw new BadRequestException('This subscription is already cancelled.');
     }
-    const paypalId = sub.paypalSubscriptionId;
-    await this.paypal
-      .cancelSubscription(paypalId, 'Cancelled by the customer')
-      .catch(async (err: unknown) => {
-        // Already ended on PayPal (a webhook we missed): nothing to stop.
-        const remote = await this.paypal
-          .getSubscription(paypalId)
-          .catch(() => null);
-        if (remote?.status === 'CANCELLED' || remote?.status === 'EXPIRED')
-          return;
-        throw err;
-      });
-    await this.markCancelled(userId, sub);
+    const id = sub.dodoSubscriptionId;
+    const remote = await this.dodo.updateSubscription(
+      id,
+      sub.status === 'ACTIVE'
+        ? {
+            cancel_at_next_billing_date: true,
+            cancel_reason: 'cancelled_by_customer',
+          }
+        : { status: 'cancelled', cancel_reason: 'cancelled_by_customer' },
+    );
+    await this.sync(
+      userId,
+      remote?.subscription_id ? remote : await this.dodo.getSubscription(id),
+    );
     return { ok: true };
+  }
+
+  /** Takes back a cancellation before the paid period ends. */
+  async resume(userId: string) {
+    const sub = await this.subscriptionFor(userId);
+    if (
+      !sub.dodoSubscriptionId ||
+      sub.status !== 'CANCELLED' ||
+      !sub.currentPeriodEnd ||
+      sub.currentPeriodEnd <= new Date()
+    ) {
+      throw new BadRequestException('There is no cancelled plan to resume.');
+    }
+    const id = sub.dodoSubscriptionId;
+    const remote = await this.dodo.updateSubscription(id, {
+      cancel_at_next_billing_date: false,
+    });
+    await this.sync(
+      userId,
+      remote?.subscription_id ? remote : await this.dodo.getSubscription(id),
+    );
+    return { ok: true };
+  }
+
+  /** A link to Dodo's portal, where the customer updates their card or UPI. */
+  async portal(userId: string) {
+    const sub = await this.subscriptionFor(userId);
+    if (!sub.dodoCustomerId) {
+      throw new BadRequestException('There is no payment method to manage.');
+    }
+    return { url: await this.dodo.portalLink(sub.dodoCustomerId) };
   }
 
   /** The public pricing section: active plans and their limits, nothing internal. */
@@ -528,77 +623,232 @@ export class BillingService {
       }));
   }
 
+  // ------------------------------------------------------ subscription sync
+
+  /**
+   * Brings the account in line with a Dodo subscription and emails the
+   * customer about whatever changed. Every path goes through here - the
+   * return from checkout, webhooks, the hourly check, cancel and resume - and
+   * emails follow the change of state, so the same news twice (a webhook and
+   * a confirm) sends one email.
+   */
+  private async sync(
+    userId: string,
+    remote: DodoSubscription,
+    opts: { quiet?: boolean } = {},
+  ): Promise<Subscription> {
+    const before = await this.subscriptionFor(userId);
+    const next = stateFor(remote);
+    if (!next) return before;
+    const isNew = before.dodoSubscriptionId !== remote.subscription_id;
+    // News about an older subscription (replaced by a newer one) must not
+    // change the account; only a live new one takes over.
+    if (isNew && next.status !== 'ACTIVE') return before;
+
+    const matched = await this.plans.byDodoProduct(remote.product_id);
+    const plan =
+      matched?.plan ??
+      (isNew
+        ? before.pendingPlan
+          ? await this.plans.get(before.pendingPlan)
+          : undefined
+        : await this.plans.get(before.plan));
+    if (!plan) {
+      this.log.error(
+        `Subscription ${remote.subscription_id} for ${userId} is for an unknown product ${remote.product_id}`,
+      );
+      return before;
+    }
+
+    // A second subscription replaces the first: stop billing the old one.
+    if (isNew && before.dodoSubscriptionId && !BillingService.ended(before)) {
+      await this.dodo
+        .updateSubscription(before.dodoSubscriptionId, {
+          status: 'cancelled',
+          cancel_reason: 'cancelled_by_merchant',
+        })
+        .catch((err: unknown) =>
+          this.log.warn(
+            `Could not cancel the old subscription: ${String(err)}`,
+          ),
+        );
+    }
+
+    const interval: BillingInterval = matched
+      ? matched.yearly
+        ? 'year'
+        : 'month'
+      : remote.payment_frequency_interval === 'Year'
+        ? 'year'
+        : remote.payment_frequency_interval === 'Month'
+          ? 'month'
+          : (before.interval as BillingInterval);
+    const after = await this.prisma.subscription.update({
+      where: { userId },
+      data: {
+        plan: plan.key,
+        status: next.status,
+        cancelAtPeriodEnd: next.cancelAtPeriodEnd,
+        dodoSubscriptionId: remote.subscription_id,
+        dodoCustomerId: remote.customer?.customer_id ?? before.dodoCustomerId,
+        currency: remote.currency ?? before.currency,
+        interval,
+        currentPeriodEnd: remote.next_billing_date
+          ? new Date(remote.next_billing_date)
+          : before.currentPeriodEnd,
+        pendingPlan: null,
+      },
+    });
+    await this.announce(before, after, plan, isNew, opts.quiet);
+    return after;
+  }
+
+  /** The email for a change of subscription state, if it deserves one. */
+  private async announce(
+    before: Subscription,
+    after: Subscription,
+    plan: Plan,
+    isNew: boolean,
+    quiet = false,
+  ) {
+    const userId = after.userId;
+    const period = after.interval === 'year' ? 'yearly' : 'monthly';
+    const nextDate = after.currentPeriodEnd
+      ? fmtDate(after.currentPeriodEnd)
+      : null;
+
+    if (isNew) {
+      await this.notify(
+        userId,
+        `Welcome to ${plan.name}`,
+        `Your ${plan.name} plan is active: ${plan.widgets} widgets, ${plan.sources} domains, ` +
+          `${plan.reviews} reviews per widget, ${fmtViews(plan.views)} views a month and reviews updated every ${plan.refreshHours} hours. ` +
+          `It renews ${period}` +
+          (nextDate ? `; the next payment is on ${nextDate}.` : '.') +
+          ' You can cancel any time from Billing.',
+      );
+      return;
+    }
+
+    const was = before.status;
+    const now = after.status;
+    if (now === 'ACTIVE') {
+      if ((was === 'PAST_DUE' || was === 'SUSPENDED') && !quiet) {
+        await this.notify(
+          userId,
+          `Your ${plan.name} plan is active again`,
+          `Thanks - your payment went through and your ${plan.name} plan is back, with all its limits.` +
+            (nextDate ? ` Next payment: ${nextDate}.` : ''),
+        );
+      } else if (was === 'CANCELLED') {
+        await this.notify(
+          userId,
+          `Your ${plan.name} plan continues`,
+          `Your ${plan.name} plan will not end after all: it keeps renewing ${period}` +
+            (nextDate ? `, next on ${nextDate}` : '') +
+            '. You can cancel any time from Billing.',
+        );
+      } else if (
+        was === 'ACTIVE' &&
+        (before.plan !== after.plan || before.interval !== after.interval)
+      ) {
+        await this.notify(
+          userId,
+          `Your plan is now ${plan.name}`,
+          `Your subscription has moved to ${plan.name}, billed ${period}` +
+            (nextDate ? `; the next payment is on ${nextDate}` : '') +
+            '. The new limits apply straight away.',
+        );
+      }
+      return;
+    }
+    if (now === was) return;
+
+    if (now === 'CANCELLED') {
+      await this.notify(
+        userId,
+        'Your subscription is cancelled',
+        `Your ${plan.name} subscription is cancelled and you will not be charged again. ` +
+          (nextDate
+            ? `You keep ${plan.name} until ${nextDate}; after that your account moves to the Free plan. `
+            : '') +
+          'Changed your mind? You can resume it from Billing before then.',
+      );
+    } else if (now === 'PAST_DUE') {
+      await this.notify(
+        userId,
+        'Your payment is overdue',
+        `We could not collect the renewal for your ${plan.name} plan, so your account is on Free limits for now. ` +
+          'Update your card or UPI from Billing ("Update payment method") and your plan comes back as soon as the payment goes through.',
+      );
+    } else if (now === 'SUSPENDED') {
+      await this.notify(
+        userId,
+        'Your subscription is paused',
+        `Your ${plan.name} subscription is paused, so your widgets are on Free limits until it resumes. You can manage it from Billing.`,
+      );
+    } else if (now === 'EXPIRED') {
+      const free = await this.plans.free();
+      await this.notify(
+        userId,
+        `Your ${plan.name} plan has ended`,
+        `Your ${plan.name} plan has ended, so your account is on the Free plan now. ` +
+          `Your widgets keep working within Free limits (${fmtViews(free.views)} views a month, ${free.reviews} reviews each). ` +
+          'You can subscribe again any time from Billing.',
+      );
+    }
+  }
+
   // --------------------------------------------------------------- webhooks
 
+  /**
+   * Dodo calls this. Signed with Standard Webhooks (see DodoClient), and each
+   * event is processed once: retries of the same delivery are recognised by
+   * their webhook id.
+   */
   async handleWebhook(
     headers: Record<string, string | undefined>,
-    body: unknown,
+    rawBody: Buffer | undefined,
   ) {
-    const event = (body ?? {}) as WebhookEvent;
-    if (typeof event.id !== 'string' || typeof event.event_type !== 'string') {
-      throw new BadRequestException('Not a PayPal event.');
-    }
-    const eventId = event.id;
-    const eventType = event.event_type;
-    if (!(await this.paypal.verifyWebhook(headers, event))) {
-      this.log.warn(`Rejected unverified webhook ${eventId}`);
+    if (!rawBody) throw new BadRequestException('Empty webhook.');
+    const mode = await this.dodo.verifyWebhook(headers, rawBody);
+    if (!mode) {
+      this.log.warn('Rejected an unsigned or wrongly signed webhook');
       throw new ForbiddenException('Signature check failed.');
     }
+    let event: { type?: string; data?: Record<string, unknown> };
+    try {
+      event = JSON.parse(rawBody.toString()) as typeof event;
+    } catch {
+      throw new BadRequestException('Not JSON.');
+    }
+    const type = String(event.type ?? '');
+    const data = event.data ?? {};
+    const eventId = `dodo:${headers['webhook-id']}`;
 
-    // PayPal retries deliveries; process each event exactly once.
     const seen = await this.prisma.billingEvent.findUnique({
       where: { id: eventId },
     });
     if (seen) return { ok: true, duplicate: true };
 
-    const resource: WebhookResource = event.resource ?? {};
-    const subscriptionId = eventType.startsWith('PAYMENT.SALE')
-      ? resource.billing_agreement_id
-      : resource.id;
-    let userId = await this.userForSubscription(
-      subscriptionId,
-      resource.custom_id,
-    );
-    if (!userId && REFUND_EVENTS.includes(eventType)) {
-      const paid = await this.prisma.payment.findUnique({
-        where: { paypalSaleId: resource.sale_id ?? resource.id ?? '' },
-      });
-      userId = paid?.userId ?? null;
-    }
-    if (!userId && eventType === 'PAYMENT.SALE.COMPLETED' && subscriptionId) {
-      // The first payment of a new subscription can land before we have
-      // activated it; PayPal knows whose it is. A failed lookup throws, and
-      // PayPal delivers the event again later.
-      const remote = await this.paypal
-        .getSubscription(subscriptionId)
-        .catch((err: unknown) => {
-          // Not a subscription PayPal knows here: not ours, nothing to retry.
-          if (err instanceof Error && err.message.includes('PayPal 404'))
-            return null;
-          throw err;
-        });
-      userId = await this.userForSubscription(undefined, remote?.custom_id);
-    }
-
+    const userId = await this.userForEvent(type, data);
     await this.prisma.billingEvent.create({
       data: {
         id: eventId,
-        type: eventType,
+        type,
         userId,
-        payload: event,
+        payload: JSON.parse(rawBody.toString()) as object,
       },
     });
     if (!userId) {
-      this.log.warn(
-        `Webhook ${eventType} for unknown subscription ${subscriptionId}`,
-      );
+      this.log.warn(`Webhook ${type} for nobody we know`);
       return { ok: true };
     }
 
     try {
-      await this.applyWebhook(eventType, userId, resource, subscriptionId);
+      await this.applyEvent(type, userId, data, mode);
     } catch (err) {
-      // Forget the event, so PayPal's retry is processed instead of skipped.
+      // Forget the event, so Dodo's retry is processed instead of skipped.
       await this.prisma.billingEvent
         .delete({ where: { id: eventId } })
         .catch(() => undefined);
@@ -607,421 +857,255 @@ export class BillingService {
     return { ok: true };
   }
 
-  private async applyWebhook(
-    eventType: string,
-    userId: string,
-    resource: WebhookResource,
-    subscriptionId?: string,
-  ) {
-    // Switching plans, or support changing one by hand, cancels the old PayPal
-    // subscription - and PayPal then reports on that old one. Only news about
-    // the subscription the account is on now may change it.
-    const current = (await this.subscriptionFor(userId)).paypalSubscriptionId;
-    const aboutAnother = Boolean(subscriptionId) && subscriptionId !== current;
-
-    switch (eventType) {
-      case 'BILLING.SUBSCRIPTION.ACTIVATED': {
-        if (!resource.id) break;
-        // A late ACTIVATED for a subscription already replaced or cancelled
-        // must not take over (and cancel) the one the account has now.
-        const remote = await this.paypal
-          .getSubscription(resource.id)
-          .catch(() => null);
-        if (
-          remote &&
-          remote.status !== 'ACTIVE' &&
-          remote.status !== 'APPROVED'
-        )
-          break;
-        await this.activate(
-          userId,
-          resource.id,
-          resource.plan_id,
-          resource.billing_info?.next_billing_time,
-        );
-        break;
-      }
-      case 'BILLING.SUBSCRIPTION.RE-ACTIVATED':
-        // Back after a suspension, usually once a failed payment went through.
-        if (!resource.id || aboutAnother) break;
-        await this.activate(
-          userId,
-          resource.id,
-          resource.plan_id,
-          resource.billing_info?.next_billing_time,
-        );
-        break;
-      case 'BILLING.SUBSCRIPTION.CANCELLED':
-        if (aboutAnother) break;
-        await this.markCancelled(userId, await this.subscriptionFor(userId));
-        break;
-      case 'BILLING.SUBSCRIPTION.SUSPENDED':
-        if (aboutAnother) break;
-        await this.setStatus(userId, 'SUSPENDED');
-        break;
-      case 'BILLING.SUBSCRIPTION.EXPIRED':
-        if (aboutAnother) break;
-        await this.setStatus(userId, 'EXPIRED');
-        break;
-      case 'BILLING.SUBSCRIPTION.PAYMENT.FAILED':
-        if (aboutAnother) break;
-        await this.notify(
-          userId,
-          'A payment did not go through',
-          'PayPal could not collect your latest payment and will try again. Please check your payment method in PayPal. ' +
-            'If the payment is still missing five days after your renewal date, your widgets move to Free limits until it goes through.',
-        );
-        break;
-      case 'PAYMENT.SALE.COMPLETED':
-        // Every charge is recorded (and gets an invoice), even one on an old
-        // or not-yet-activated subscription; only the current one moves dates.
-        await this.paymentReceived(
-          userId,
-          resource,
-          subscriptionId,
-          aboutAnother,
-        );
-        break;
-      case 'PAYMENT.SALE.REFUNDED':
-      case 'PAYMENT.SALE.REVERSED': {
-        const paid = await this.prisma.payment.findUnique({
-          where: { paypalSaleId: resource.sale_id ?? resource.id ?? '' },
-        });
-        if (!paid || !resource.id) break;
-        await this.applyRefund(
-          paid,
-          resource.id,
-          toCents(resource.amount?.total),
-          eventType === 'PAYMENT.SALE.REVERSED',
-        );
-        break;
-      }
-      default:
-        break;
+  /** Whose account an event is about: our metadata first, then what we stored. */
+  private async userForEvent(
+    type: string,
+    data: Record<string, unknown>,
+  ): Promise<string | null> {
+    const metadata = (data.metadata ?? {}) as Record<string, string>;
+    if (metadata.user_id) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: metadata.user_id },
+        select: { id: true },
+      });
+      if (user) return user.id;
     }
-  }
-
-  private async userForSubscription(
-    subscriptionId?: string,
-    customId?: string,
-  ) {
+    const subscriptionId =
+      typeof data.subscription_id === 'string' ? data.subscription_id : null;
     if (subscriptionId) {
-      const sub = await this.prisma.subscription.findUnique({
-        where: { paypalSubscriptionId: subscriptionId },
+      const sub = await this.prisma.subscription.findFirst({
+        where: { dodoSubscriptionId: subscriptionId },
+        select: { userId: true },
       });
       if (sub) return sub.userId;
     }
-    if (customId) {
+    if (type.startsWith('refund.') || type.startsWith('dispute.')) {
+      const paid = await this.prisma.payment.findFirst({
+        where: { dodoPaymentId: text(data.payment_id) },
+        select: { userId: true },
+      });
+      if (paid?.userId) return paid.userId;
+    }
+    // Checkout locks the email to the account's, so it identifies them too.
+    const email = (data.customer as { email?: string } | undefined)?.email;
+    if (email) {
       const user = await this.prisma.user.findUnique({
-        where: { id: customId },
+        where: { email: email.toLowerCase() },
+        select: { id: true },
       });
       if (user) return user.id;
     }
     return null;
   }
 
-  private async activate(
+  private async applyEvent(
+    type: string,
     userId: string,
-    paypalId: string,
-    paypalPlan?: string,
-    nextBilling?: string,
+    data: Record<string, unknown>,
+    mode: DodoMode,
   ) {
-    const before = await this.subscriptionFor(userId);
-    const matched = paypalPlan
-      ? await this.plans.byPaypalId(paypalPlan)
-      : undefined;
-    const plan =
-      matched ??
-      (before.pendingPlan
-        ? await this.plans.get(before.pendingPlan)
-        : undefined) ??
-      // The same subscription coming back (after a suspension) keeps its plan.
-      (before.paypalSubscriptionId === paypalId
-        ? await this.plans.get(before.plan)
-        : undefined);
-    if (!plan) {
-      this.log.error(
-        `Activation for ${userId} with unknown PayPal plan ${paypalPlan}`,
-      );
+    if (type === 'subscription.failed') {
+      // The checkout never went through: nothing to change but the pending plan.
+      await this.prisma.subscription.updateMany({
+        where: { userId, dodoSubscriptionId: null },
+        data: { pendingPlan: null },
+      });
       return;
     }
-
-    // Switching plans creates a new PayPal subscription; stop billing the old
-    // one (unless it has already ended).
-    if (
-      before.paypalSubscriptionId &&
-      before.paypalSubscriptionId !== paypalId &&
-      !BillingService.ended(before)
-    ) {
-      await this.paypal
-        .cancelSubscription(
-          before.paypalSubscriptionId,
-          'Replaced by a new plan',
-        )
-        .catch((err) =>
-          this.log.warn(`Could not cancel old subscription: ${err}`),
+    if (type.startsWith('subscription.')) {
+      const remote = data as unknown as DodoSubscription;
+      const before = await this.subscriptionFor(userId);
+      await this.sync(userId, remote);
+      // The grace period opened: access continues, but the customer should act.
+      if (
+        type === 'subscription.past_due' &&
+        before.dodoSubscriptionId === remote.subscription_id
+      ) {
+        const plan = await this.plans.get(before.plan);
+        const until = remote.past_due_ends_at
+          ? fmtDate(new Date(remote.past_due_ends_at))
+          : null;
+        await this.notify(
+          userId,
+          'A payment did not go through',
+          `We could not collect the renewal for your ${plan?.name ?? 'paid'} plan. We will try again` +
+            (until
+              ? `; if it is still unpaid by ${until}`
+              : '; if it stays unpaid') +
+            ', your widgets move to Free limits until it goes through. Please check or update your card or UPI from Billing.',
         );
-    }
-
-    await this.prisma.subscription.update({
-      where: { userId },
-      data: {
-        plan: plan.key,
-        status: 'ACTIVE',
-        paypalSubscriptionId: paypalId,
-        pendingPlan: null,
-        cancelAtPeriodEnd: false,
-        currentPeriodEnd: nextBilling
-          ? new Date(nextBilling)
-          : before.paypalSubscriptionId === paypalId
-            ? before.currentPeriodEnd
-            : null,
-        // Only a matched PayPal id says which one it is; otherwise keep it.
-        interval: matched
-          ? BillingService.isYearlyId(matched, paypalPlan)
-            ? 'year'
-            : 'month'
-          : before.interval,
-      },
-    });
-
-    const samePlan =
-      before.plan === plan.key && before.paypalSubscriptionId === paypalId;
-    if (samePlan && before.status === 'ACTIVE') return;
-    if (samePlan) {
-      // The same subscription back after a pause or an overdue payment.
-      await this.notify(
-        userId,
-        `Your ${plan.name} plan is active again`,
-        `Your ${plan.name} subscription is running again, with all its limits.` +
-          (nextBilling
-            ? ` Next payment: ${fmtDate(new Date(nextBilling))}.`
-            : ''),
-      );
+      }
       return;
     }
-    const yearly = matched
-      ? BillingService.isYearlyId(matched, paypalPlan)
-      : before.interval === 'year';
-    // A cancelled plan taken back before it ran out: billing picks up where
-    // the paid period ends.
-    if (
-      before.status === 'CANCELLED' &&
-      before.plan === plan.key &&
-      before.currentPeriodEnd &&
-      before.currentPeriodEnd > new Date()
-    ) {
-      await this.notify(
-        userId,
-        `Your ${plan.name} plan continues`,
-        `You have subscribed to ${plan.name} again, so it will not end on ${fmtDate(before.currentPeriodEnd)}. ` +
-          `Nothing more is charged until then; after that it renews ${yearly ? 'yearly' : 'monthly'} through PayPal. ` +
-          'You can cancel any time from Billing.',
-      );
+    if (type === 'payment.succeeded') {
+      await this.paymentReceived(userId, data as unknown as DodoPayment, mode);
       return;
     }
-    await this.notify(
-      userId,
-      `Welcome to ${plan.name}`,
-      `Your ${plan.name} plan is active: ${plan.widgets} widgets, ${plan.sources} domains, ` +
-        `${plan.reviews} reviews per widget, ${fmtViews(plan.views)} views a month and reviews updated every ${plan.refreshHours} hours. ` +
-        `It is billed ${yearly ? 'yearly' : 'monthly'} through PayPal` +
-        (nextBilling
-          ? `; the next payment is on ${fmtDate(new Date(nextBilling))}.`
-          : '.') +
-        ' You can cancel any time from Billing.',
-    );
+    if (type === 'refund.succeeded') {
+      const refund = data as unknown as DodoRefund;
+      const paid = await this.prisma.payment.findFirst({
+        where: { dodoPaymentId: refund.payment_id },
+      });
+      if (paid)
+        await this.applyRefund(paid, refund.refund_id, refund.amount ?? 0);
+      return;
+    }
+    if (type === 'dispute.lost') {
+      const paid = await this.prisma.payment.findFirst({
+        where: { dodoPaymentId: text(data.payment_id) },
+      });
+      if (paid) {
+        await this.applyRefund(paid, text(data.dispute_id) || paid.id, 0, true);
+      }
+    }
   }
 
-  private async markCancelled(userId: string, sub: Subscription) {
-    if (sub.status === 'CANCELLED' || sub.status === 'EXPIRED') return;
-    const name = (await this.plans.get(sub.plan))?.name ?? sub.plan;
-    const paidAhead =
-      sub.currentPeriodEnd && sub.currentPeriodEnd > new Date()
-        ? sub.currentPeriodEnd
-        : null;
-    await this.prisma.subscription.update({
-      where: { userId },
-      // Nothing paid ahead: it ends now rather than waiting for a date.
-      data: paidAhead
-        ? { status: 'CANCELLED', cancelAtPeriodEnd: true }
-        : { status: 'EXPIRED', cancelAtPeriodEnd: false },
-    });
-    await this.notify(
-      userId,
-      'Your subscription is cancelled',
-      paidAhead
-        ? `Your ${name} subscription is cancelled and you will not be charged again. ` +
-            `You keep ${name} until ${fmtDate(paidAhead)}; after that your account moves to the Free plan. ` +
-            'Changed your mind? You can subscribe again from Billing.'
-        : `Your ${name} subscription is cancelled and you will not be charged again. ` +
-            'Your account is on the Free plan now.',
-    );
-  }
+  // --------------------------------------------------------------- payments
 
-  private async setStatus(userId: string, status: keyof typeof STATUS_MAIL) {
-    // PayPal can report the same state twice; one email is enough.
-    if ((await this.subscriptionFor(userId)).status === status) return;
-    await this.prisma.subscription.update({
-      where: { userId },
-      data: { status },
-    });
-    const [subject, line] = STATUS_MAIL[status];
-    await this.notify(userId, subject, line);
-  }
-
+  /** A charge went through: record it, bring the dates up to date, send a receipt. */
   private async paymentReceived(
     userId: string,
-    sale: WebhookResource,
-    subscriptionId?: string,
-    aboutAnother = false,
+    payment: DodoPayment,
+    mode: DodoMode,
   ) {
-    // A successful charge also tells us the new end of the paid period.
-    const remote = subscriptionId
-      ? await this.paypal.getSubscription(subscriptionId).catch(() => null)
-      : null;
-    const next = remote?.billing_info?.next_billing_time;
-    const payment = await this.recordPayment(
-      userId,
-      sale,
-      subscriptionId,
-      remote?.plan_id,
-      next,
-    );
-    // Seen before (PayPal sent the same payment again): the dates below are
-    // safe to set twice, but the customer gets one receipt.
-    const repeat = payment === 'duplicate';
+    if (payment.status && payment.status !== 'succeeded') return;
+    if (!payment.subscription_id) return;
+    const remote = await this.dodo
+      .getSubscription(payment.subscription_id, mode)
+      .catch(() => null);
+    const row = await this.recordPayment(userId, payment, remote, mode);
+    // Seen before (Dodo sent the same payment again): nothing more to do.
+    if (row === 'duplicate' || !row) return;
 
-    let wasOverdue = false;
-    if (subscriptionId && !aboutAnother) {
-      const sub = await this.subscriptionFor(userId);
-      wasOverdue = sub.status === 'PAST_DUE';
-      await this.prisma.subscription.update({
-        where: { userId },
-        data: {
-          ...(next ? { currentPeriodEnd: new Date(next) } : {}),
-          // An overdue renewal that went through after all.
-          ...(wasOverdue ? { status: 'ACTIVE' } : {}),
-        },
-      });
-    }
-    if (repeat) return;
+    const before = await this.subscriptionFor(userId);
+    // Quiet: the receipt below says "active again" itself.
+    if (remote) await this.sync(userId, remote, { quiet: true });
+    const after = await this.subscriptionFor(userId);
+    const back =
+      (before.status === 'PAST_DUE' || before.status === 'SUSPENDED') &&
+      after.status === 'ACTIVE';
     // The first charge of a subscription comes with the welcome email; it
     // needs no "continues as before".
     const first =
-      Boolean(payment && subscriptionId) &&
       (await this.prisma.payment.count({
-        where: { paypalSubscriptionId: subscriptionId },
+        where: { dodoSubscriptionId: payment.subscription_id },
       })) === 1;
     const parts = [
-      payment
-        ? `Thanks - we received ${fmtMoney(payment.amountCents, payment.currency)} for ${payment.planName} (${payment.interval === 'year' ? 'yearly' : 'monthly'}).`
-        : 'Thanks - we received your payment.',
-      wasOverdue
+      `Thanks - we received ${fmtMoney(row.amountCents, row.currency)} for ${row.planName} (${row.interval === 'year' ? 'yearly' : 'monthly'}).`,
+      back
         ? 'Your plan is active again, with all its limits.'
         : first
           ? ''
           : 'Your plan continues as before.',
-      next ? `Next payment: ${fmtDate(new Date(next))}.` : '',
+      after.currentPeriodEnd && after.status === 'ACTIVE'
+        ? `Next payment: ${fmtDate(after.currentPeriodEnd)}.`
+        : '',
     ];
     await this.notify(
       userId,
-      payment
-        ? `Payment received - invoice ${invoiceNumber(payment.number)}`
-        : 'Payment received',
+      `Payment received - ${invoiceNumber(row.number)}`,
       parts.filter(Boolean).join(' '),
-      payment
-        ? {
-            label: 'View invoice',
-            url: `${this.appUrl()}/invoice/${payment.id}`,
-          }
-        : undefined,
+      {
+        label: row.invoiceUrl ? 'Download invoice' : 'View receipt',
+        url: row.invoiceUrl ?? `${this.appUrl()}/invoice/${row.id}`,
+      },
     );
   }
 
   /**
-   * One row per PayPal charge: what it was for, the period it pays, and who
+   * One row per Dodo charge: what it was for, the period it pays, and who
    * paid. Returns 'duplicate' when this charge is already recorded, and null
    * when the event does not describe a usable payment.
    */
   private async recordPayment(
     userId: string,
-    sale: WebhookResource,
-    subscriptionId: string | undefined,
-    paypalPlanId: string | undefined,
-    next: string | undefined,
+    payment: DodoPayment,
+    remote: DodoSubscription | null,
+    mode: DodoMode,
   ): Promise<Payment | 'duplicate' | null> {
-    const amountCents = toCents(sale.amount?.total);
-    if (!sale.id || amountCents <= 0) return null;
-    // Checked first so a repeat does not use up an invoice number (a failed
-    // insert still advances the sequence); the unique index covers races.
-    if (
-      await this.prisma.payment.findUnique({
-        where: { paypalSaleId: sale.id },
-        select: { id: true },
+    if (!payment.payment_id || !(payment.total_amount > 0)) return null;
+    // A row per payment id, guarded by a billing event: two deliveries of the
+    // same payment race for this insert and only one wins.
+    const lock = `payment:${payment.payment_id}`;
+    const fresh = await this.prisma.billingEvent
+      .create({
+        data: { id: lock, type: 'PAYMENT.RECORDED', userId, payload: {} },
       })
-    ) {
-      return 'duplicate';
-    }
-    const [user, sub] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: userId } }),
-      this.subscriptionFor(userId),
-    ]);
-    if (!user) return null;
-    const matched = paypalPlanId
-      ? await this.plans.byPaypalId(paypalPlanId)
-      : undefined;
-    const plan =
-      matched ??
-      (await this.plans.get(
-        sub.paypalSubscriptionId === subscriptionId
-          ? sub.plan
-          : (sub.pendingPlan ?? sub.plan),
-      ));
-    const stamped = sale.create_time ? new Date(sale.create_time) : null;
-    const paidAt =
-      stamped && !Number.isNaN(stamped.getTime()) ? stamped : new Date();
+      .then(() => true)
+      .catch(() => false);
+    if (!fresh) return 'duplicate';
+
     try {
+      const [user, sub] = await Promise.all([
+        this.prisma.user.findUnique({ where: { id: userId } }),
+        this.subscriptionFor(userId),
+      ]);
+      if (!user) return null;
+      const matched = await this.plans.byDodoProduct(
+        remote?.product_id ?? payment.product_cart?.[0]?.product_id,
+      );
+      const plan = matched?.plan ?? (await this.plans.get(sub.plan));
+      const stamped = payment.created_at ? new Date(payment.created_at) : null;
+      const paidAt =
+        stamped && !Number.isNaN(stamped.getTime()) ? stamped : new Date();
       return await this.prisma.payment.create({
         data: {
           userId,
-          paypalSaleId: sale.id,
-          paypalSubscriptionId: subscriptionId ?? null,
-          mode: await this.paypal.mode(),
+          dodoPaymentId: payment.payment_id,
+          dodoSubscriptionId: payment.subscription_id ?? null,
+          mode,
           plan: plan?.key ?? sub.plan,
           planName: plan?.name ?? sub.plan,
           interval: matched
-            ? BillingService.isYearlyId(matched, paypalPlanId)
+            ? matched.yearly
               ? 'year'
               : 'month'
             : sub.interval,
-          amountCents,
-          currency: sale.amount?.currency ?? 'USD',
-          feeCents: sale.transaction_fee?.value
-            ? toCents(sale.transaction_fee.value)
-            : null,
+          amountCents: payment.total_amount,
+          currency: payment.currency || 'USD',
+          settlementCents: payment.settlement_amount ?? null,
+          settlementCurrency: payment.settlement_currency ?? null,
+          invoiceUrl: payment.invoice_url ?? null,
           periodStart: paidAt,
-          periodEnd: next ? new Date(next) : null,
+          periodEnd: remote?.next_billing_date
+            ? new Date(remote.next_billing_date)
+            : null,
           customerName: user.name,
           customerEmail: user.email,
           paidAt,
         },
       });
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        return 'duplicate';
-      }
+      await this.prisma.billingEvent
+        .delete({ where: { id: lock } })
+        .catch(() => undefined);
       throw err;
     }
   }
 
   /**
-   * Books a refund (or a reversal - a chargeback) against a payment, once per
-   * PayPal refund id: a refund made from the admin panel and the webhook
-   * PayPal then sends about it are the same refund.
+   * Charges Dodo made on a subscription that no webhook told us about. No
+   * receipt goes out for these; they show in the payment list.
+   */
+  private async syncPayments(userId: string, subscriptionId: string) {
+    const mode = await this.dodo.mode();
+    const [list, remote] = await Promise.all([
+      this.dodo.subscriptionPayments(subscriptionId, mode),
+      this.dodo.getSubscription(subscriptionId, mode).catch(() => null),
+    ]);
+    let added = 0;
+    for (const p of list) {
+      if (p.status !== 'succeeded') continue;
+      const row = await this.recordPayment(userId, p, remote, mode);
+      if (row && row !== 'duplicate') added++;
+    }
+    return added;
+  }
+
+  /**
+   * Books a refund (or a lost dispute) against a payment, once per refund
+   * id: a refund made from the admin panel and the webhook Dodo then sends
+   * about it are the same refund. Amounts are in the payment's currency.
    */
   private async applyRefund(
     payment: Payment,
@@ -1061,17 +1145,17 @@ export class BillingService {
             : 'PARTIALLY_REFUNDED',
       },
     });
-    // A chargeback is between the customer and their bank; no email for it.
+    // A lost dispute is between the customer and their bank; no email for it.
     if (now.userId && !reversed && refunded > now.refundedCents) {
       await this.notify(
         now.userId,
-        `Refund for invoice ${invoiceNumber(now.number)}`,
+        `Refund for ${invoiceNumber(now.number)}`,
         `We have refunded ${fmtMoney(refunded - now.refundedCents, now.currency)} of your ` +
           `${fmtMoney(now.amountCents, now.currency)} payment for ${now.planName}. ` +
-          'PayPal returns it to the account or card you paid with; it can take a few days to show.',
+          'It goes back to the card or account you paid with; it can take 5-10 business days to show.',
         {
-          label: 'View invoice',
-          url: `${this.appUrl()}/invoice/${now.id}`,
+          label: now.invoiceUrl ? 'Download invoice' : 'View receipt',
+          url: now.invoiceUrl ?? `${this.appUrl()}/invoice/${now.id}`,
         },
       );
     }
@@ -1086,8 +1170,8 @@ export class BillingService {
   ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return;
-    // Not awaited: a customer coming back from PayPal, or a webhook, must not
-    // wait on the mail server. send() never throws.
+    // Not awaited: a customer coming back from checkout, or a webhook, must
+    // not wait on the mail server. send() never throws.
     void this.mail.send(
       user.email,
       subject,
@@ -1117,11 +1201,12 @@ export class BillingService {
       refundedCents: p.refundedCents,
       currency: p.currency,
       status: p.status,
-      test: p.mode === 'sandbox',
+      invoiceUrl: p.invoiceUrl,
+      test: p.mode !== 'live',
     }));
   }
 
-  /** Name, address and tax id printed on the customer's invoices. */
+  /** Name, address and tax id printed on the customer's receipts. */
   async saveDetails(userId: string, input: Record<string, unknown>) {
     const clean = (v: unknown, max: number) =>
       typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null;
@@ -1141,7 +1226,7 @@ export class BillingService {
     };
   }
 
-  /** Everything an invoice shows. Its owner or an admin may open it. */
+  /** Everything a receipt shows. Its owner or an admin may open it. */
   async invoice(viewer: { id: string; role: string }, paymentId: string) {
     const p = await this.prisma.payment.findUnique({
       where: { id: String(paymentId ?? '') },
@@ -1163,7 +1248,7 @@ export class BillingService {
       number: invoiceNumber(p.number),
       issuedAt: p.paidAt,
       status: p.status,
-      test: p.mode === 'sandbox',
+      test: p.mode !== 'live',
       seller,
       customer: {
         name: sub?.billingName || user?.name || p.customerName,
@@ -1179,7 +1264,8 @@ export class BillingService {
       amountCents: p.amountCents,
       refundedCents: p.refundedCents,
       currency: p.currency,
-      paypal: { transactionId: p.paypalSaleId },
+      reference: p.dodoPaymentId ?? p.paypalSaleId ?? p.id,
+      invoiceUrl: p.invoiceUrl,
     };
   }
 
@@ -1197,30 +1283,27 @@ export class BillingService {
     };
   }
 
-  // ------------------------------------------------------ overdue renewals
+  // ------------------------------------------------------ hourly checks
 
   /**
-   * Safety net for renewals, run on a timer. A paid subscription whose
-   * renewal date passed a few days ago with no payment reaching us is checked
-   * with PayPal: paid after all (a webhook went missing) - the new period is
-   * recorded; money still owed - the account drops to Free limits (PAST_DUE)
-   * until the payment goes through; ended by PayPal - that status is taken
-   * over. Without this, a renewal that fails but is not yet suspended would
-   * keep a paid plan running for free.
+   * Safety net, run on a timer: a subscription that should have renewed a
+   * while ago, or is overdue or paused, is read back from Dodo in case a
+   * webhook went missing. Charges nobody told us about are recorded too.
    */
   async reconcileOverdue(): Promise<{ checked: number }> {
-    if (!(await this.paypal.configured())) return { checked: 0 };
-    const cutoff = new Date(Date.now() - OVERDUE_AFTER_MS);
+    if (!(await this.dodo.configured())) return { checked: 0 };
+    const cutoff = new Date(Date.now() - CHECK_AFTER_MS);
     let checked = 0;
     let after: string | undefined;
     // Page by id, so a long list of overdue accounts cannot hide newer ones.
     for (;;) {
       const due = await this.prisma.subscription.findMany({
         where: {
-          paypalSubscriptionId: { not: null },
+          dodoSubscriptionId: { not: null },
           OR: [
             { status: 'ACTIVE', currentPeriodEnd: { lt: cutoff } },
             { status: 'PAST_DUE' },
+            { status: 'SUSPENDED' },
           ],
           ...(after ? { id: { gt: after } } : {}),
         },
@@ -1229,7 +1312,7 @@ export class BillingService {
       });
       for (const sub of due) {
         checked++;
-        await this.checkOverdue(sub).catch((err: unknown) =>
+        await this.refreshFromDodo(sub).catch((err: unknown) =>
           this.log.warn(
             `Overdue check failed for ${sub.userId}: ${err instanceof Error ? err.message : String(err)}`,
           ),
@@ -1241,104 +1324,12 @@ export class BillingService {
     return { checked };
   }
 
-  private async checkOverdue(sub: Subscription) {
-    const paypalId = sub.paypalSubscriptionId as string;
-    const remote = await this.paypal.getSubscription(paypalId);
-    // Charges PayPal made while no webhook reached us still get invoices.
-    await this.syncPayments(sub.userId, remote, sub.interval).catch(
-      (err: unknown) =>
-        this.log.warn(`Payment sync failed for ${sub.userId}: ${String(err)}`),
+  private async refreshFromDodo(sub: Subscription) {
+    const id = sub.dodoSubscriptionId as string;
+    await this.syncPayments(sub.userId, id).catch((err: unknown) =>
+      this.log.warn(`Payment sync failed for ${sub.userId}: ${String(err)}`),
     );
-    const info = remote.billing_info;
-    const next = info?.next_billing_time;
-    const owed = Number(info?.outstanding_balance?.value ?? 0);
-    const failedAt = Date.parse(info?.last_failed_payment?.time ?? '') || 0;
-    const paidAt = Date.parse(info?.last_payment?.time ?? '') || 0;
-    const unpaid = owed > 0 || failedAt > paidAt;
-
-    if (remote.status === 'ACTIVE' && unpaid) {
-      if (sub.status === 'PAST_DUE') return;
-      await this.prisma.subscription.update({
-        where: { userId: sub.userId },
-        data: { status: 'PAST_DUE' },
-      });
-      await this.notify(
-        sub.userId,
-        'Your payment is overdue',
-        'PayPal has not been able to collect your renewal for five days, so your account is on Free limits for now. ' +
-          'Update your payment method in PayPal and your plan comes back as soon as the payment goes through.',
-      );
-    } else if (remote.status === 'ACTIVE' || remote.status === 'APPROVED') {
-      await this.prisma.subscription.update({
-        where: { userId: sub.userId },
-        data: {
-          status: 'ACTIVE',
-          ...(next ? { currentPeriodEnd: new Date(next) } : {}),
-        },
-      });
-      // Paid after all, and no webhook said so: the customer hears it here.
-      if (sub.status === 'PAST_DUE') {
-        const name = (await this.plans.get(sub.plan))?.name ?? sub.plan;
-        await this.notify(
-          sub.userId,
-          `Your ${name} plan is active again`,
-          `Thanks - your payment went through and your ${name} plan is back, with all its limits.` +
-            (next ? ` Next payment: ${fmtDate(new Date(next))}.` : ''),
-        );
-      }
-    } else if (remote.status === 'CANCELLED') {
-      await this.markCancelled(sub.userId, sub);
-    } else if (remote.status === 'SUSPENDED' || remote.status === 'EXPIRED') {
-      await this.setStatus(sub.userId, remote.status);
-    }
-  }
-
-  /**
-   * Records charges PayPal made on a subscription that no webhook told us
-   * about (PayPal gives up on a webhook after a few days). No receipt goes
-   * out for these; they show in the payment list with their invoices.
-   */
-  private async syncPayments(
-    userId: string,
-    remote: PaypalSubscription,
-    interval: string,
-  ): Promise<number> {
-    const end = new Date();
-    const start = new Date(end.getTime() - 400 * DAY_MS);
-    const list = await this.paypal.listTransactions(remote.id, start, end);
-    let added = 0;
-    for (const t of list) {
-      // Partly refunded ones are left out: the refunded part is unknown here.
-      if (t.status !== 'COMPLETED' && t.status !== 'REFUNDED') continue;
-      const gross = t.amount_with_breakdown?.gross_amount;
-      const at = t.time ? new Date(t.time) : new Date();
-      const until = new Date(at);
-      if (interval === 'year') until.setUTCFullYear(until.getUTCFullYear() + 1);
-      else until.setUTCMonth(until.getUTCMonth() + 1);
-      const row = await this.recordPayment(
-        userId,
-        {
-          id: t.id,
-          amount: { total: gross?.value, currency: gross?.currency_code },
-          transaction_fee: {
-            value: t.amount_with_breakdown?.fee_amount?.value,
-          },
-          create_time: t.time,
-        },
-        remote.id,
-        remote.plan_id,
-        until.toISOString(),
-      );
-      if (!row || row === 'duplicate') continue;
-      added++;
-      if (t.status === 'REFUNDED') {
-        await this.prisma.payment.update({
-          where: { id: row.id },
-          data: { status: 'REFUNDED', refundedCents: row.amountCents },
-        });
-      }
-    }
-    return added;
+    return this.sync(sub.userId, await this.dodo.getSubscription(id));
   }
 
   /**
@@ -1354,7 +1345,7 @@ export class BillingService {
         plan: { not: FREE_KEY },
         OR: [
           { status: 'CANCELLED' },
-          { status: 'ACTIVE', paypalSubscriptionId: null },
+          { status: 'ACTIVE', dodoSubscriptionId: null },
         ],
       },
       take: 100,
@@ -1389,7 +1380,7 @@ export class BillingService {
         status: 'ACTIVE',
         interval: 'year',
         cancelAtPeriodEnd: false,
-        paypalSubscriptionId: { not: null },
+        dodoSubscriptionId: { not: null },
         currentPeriodEnd: {
           gt: new Date(now),
           lt: new Date(now + REMIND_BEFORE_MS),
@@ -1414,14 +1405,16 @@ export class BillingService {
         .catch(() => false);
       if (!fresh) continue;
       const plan = await this.plans.get(sub.plan);
+      // A rupee subscription's amount is set at checkout; only dollars are known here.
+      const amount =
+        plan && (sub.currency ?? 'USD') === 'USD'
+          ? ` for ${fmtUsd(plan.priceYearlyUsd)}`
+          : '';
       await this.notify(
         sub.userId,
         'Your yearly plan renews soon',
-        `Your ${plan?.name ?? sub.plan} plan renews on ${fmtDate(when)}` +
-          (plan
-            ? ` for ${fmtUsd(plan.priceYearlyUsd)} through PayPal`
-            : ' through PayPal') +
-          '. Nothing to do if you want to keep it. To stop the renewal, cancel before that date from Billing.',
+        `Your ${plan?.name ?? sub.plan} plan renews on ${fmtDate(when)}${amount}, charged to your saved payment method. ` +
+          'Nothing to do if you want to keep it. To stop the renewal, cancel before that date from Billing.',
       );
       sent++;
     }
@@ -1461,7 +1454,7 @@ export class BillingService {
       select: { id: true, type: true, userId: true, createdAt: true },
     });
     return {
-      mode: await this.paypal.mode(),
+      mode: await this.dodo.mode(),
       subscriptions: rows.map((r) => ({
         ...r,
         viewsThisMonth: views.get(r.userId) ?? 0,
@@ -1470,10 +1463,19 @@ export class BillingService {
     };
   }
 
+  /** Stops a Dodo subscription at once (support actions). */
+  private async cancelNow(sub: Subscription) {
+    if (!sub.dodoSubscriptionId || BillingService.ended(sub)) return;
+    await this.dodo.updateSubscription(sub.dodoSubscriptionId, {
+      status: 'cancelled',
+      cancel_reason: 'cancelled_by_merchant',
+    });
+  }
+
   /**
    * Put a user on a plan by hand - a comped account, a refund, a support fix.
-   * If they had an active PayPal subscription for a different plan it is
-   * cancelled first, so they are not billed for a plan they no longer have.
+   * If they had a running subscription for a different plan it is cancelled
+   * first, so they are not billed for a plan they no longer have.
    */
   async adminSetPlan(userId: string, planKey: unknown, periodEnd?: unknown) {
     const plan =
@@ -1492,16 +1494,11 @@ export class BillingService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found.');
     const sub = await this.subscriptionFor(userId);
-    if (
-      sub.paypalSubscriptionId &&
-      !BillingService.ended(sub) &&
-      plan.key !== sub.plan
-    ) {
-      await this.paypal
-        .cancelSubscription(sub.paypalSubscriptionId, 'Plan changed by support')
-        .catch((err) =>
-          this.log.warn(`Could not cancel PayPal subscription: ${err}`),
-        );
+    const switching = plan.key !== sub.plan;
+    if (switching) {
+      await this.cancelNow(sub).catch((err: unknown) =>
+        this.log.warn(`Could not cancel the subscription: ${String(err)}`),
+      );
     }
     const updated = await this.prisma.subscription.update({
       where: { userId },
@@ -1510,19 +1507,18 @@ export class BillingService {
         status: 'ACTIVE',
         cancelAtPeriodEnd: false,
         pendingPlan: null,
-        paypalSubscriptionId:
-          plan.key === sub.plan ? sub.paypalSubscriptionId : null,
+        dodoSubscriptionId: switching ? null : sub.dodoSubscriptionId,
         currentPeriodEnd: endsAt,
       },
     });
-    if (plan.key !== sub.plan || sub.status !== 'ACTIVE') {
+    if (switching || sub.status !== 'ACTIVE') {
       await this.notify(
         userId,
         `Your plan is now ${plan.name}`,
         `Our team has moved your account to the ${plan.name} plan` +
           (endsAt ? `, until ${fmtDate(endsAt)}` : '') +
-          (sub.paypalSubscriptionId && plan.key !== sub.plan
-            ? '. Your previous PayPal subscription is cancelled, so you will not be charged for it again.'
+          (sub.dodoSubscriptionId && switching
+            ? '. Your previous subscription is cancelled, so you will not be charged for it again.'
             : '.'),
       );
     }
@@ -1531,18 +1527,13 @@ export class BillingService {
 
   async adminCancel(userId: string) {
     const sub = await this.subscriptionFor(userId);
-    if (sub.paypalSubscriptionId && !BillingService.ended(sub)) {
-      await this.paypal.cancelSubscription(
-        sub.paypalSubscriptionId,
-        'Cancelled by support',
-      );
-    }
+    await this.cancelNow(sub);
     const updated = await this.prisma.subscription.update({
       where: { userId },
       data: {
         plan: FREE_KEY,
         status: 'ACTIVE',
-        paypalSubscriptionId: null,
+        dodoSubscriptionId: null,
         cancelAtPeriodEnd: false,
         currentPeriodEnd: null,
       },
@@ -1557,93 +1548,87 @@ export class BillingService {
     return updated;
   }
 
-  /** Pull the truth from PayPal when a webhook was missed. */
+  /** Read the truth back from Dodo when a webhook was missed. */
   async adminRefresh(userId: string) {
     const sub = await this.subscriptionFor(userId);
-    if (!sub.paypalSubscriptionId)
-      throw new BadRequestException('No PayPal subscription on this account.');
-    const remote = await this.paypal.getSubscription(sub.paypalSubscriptionId);
-    const owed = Number(remote.billing_info?.outstanding_balance?.value ?? 0);
-    const status =
-      remote.status === 'ACTIVE' || remote.status === 'APPROVED'
-        ? // Still owing: an overdue account stays overdue.
-          owed > 0 && sub.status === 'PAST_DUE'
-          ? 'PAST_DUE'
-          : 'ACTIVE'
-        : remote.status;
-    const matched = await this.plans.byPaypalId(remote.plan_id);
-    await this.syncPayments(userId, remote, sub.interval).catch(
-      (err: unknown) =>
-        this.log.warn(`Payment sync failed for ${userId}: ${String(err)}`),
-    );
-    return this.prisma.subscription.update({
-      where: { userId },
-      data: {
-        status,
-        plan: matched?.key ?? sub.plan,
-        currentPeriodEnd: remote.billing_info?.next_billing_time
-          ? new Date(remote.billing_info.next_billing_time)
-          : sub.currentPeriodEnd,
-      },
-    });
+    if (!sub.dodoSubscriptionId) {
+      throw new BadRequestException('No Dodo subscription on this account.');
+    }
+    return this.refreshFromDodo(sub);
   }
 
   // ---- payments
 
-  /** Every payment in one PayPal mode, with totals for the top of the page. */
+  /**
+   * Every payment in one mode, with totals for the top of the page. Totals
+   * are what reaches the Dodo balance (US dollars, after fees), less refunds.
+   */
   async adminPayments(modeRaw?: string) {
-    const mode: PaypalMode =
-      modeRaw === 'live' || modeRaw === 'sandbox'
+    const mode: DodoMode =
+      modeRaw === 'live' || modeRaw === 'test'
         ? modeRaw
-        : await this.paypal.mode();
+        : await this.dodo.mode();
     const now = new Date();
     const monthStart = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
     );
-    const sums = {
-      amountCents: true,
-      refundedCents: true,
-      feeCents: true,
-    } as const;
-    const [rows, all, month] = await Promise.all([
+    const [rows, all] = await Promise.all([
       this.prisma.payment.findMany({
         where: { mode },
         orderBy: { paidAt: 'desc' },
         take: 500,
       }),
-      this.prisma.payment.aggregate({
+      this.prisma.payment.findMany({
         where: { mode },
-        _sum: sums,
-        _count: true,
-      }),
-      this.prisma.payment.aggregate({
-        where: { mode, paidAt: { gte: monthStart } },
-        _sum: sums,
+        select: {
+          amountCents: true,
+          refundedCents: true,
+          settlementCents: true,
+          paidAt: true,
+        },
       }),
     ]);
-    const net = (s: {
-      amountCents: number | null;
-      refundedCents: number | null;
-    }) => (s.amountCents ?? 0) - (s.refundedCents ?? 0);
+    // Settled dollars, scaled down by whatever share was refunded.
+    const net = (list: typeof all) =>
+      Math.round(
+        list.reduce((sum, p) => {
+          const settled = p.settlementCents ?? p.amountCents;
+          const kept = p.amountCents ? 1 - p.refundedCents / p.amountCents : 1;
+          return sum + settled * kept;
+        }, 0),
+      );
+    const refunded = Math.round(
+      all.reduce(
+        (sum, p) =>
+          sum +
+          (p.settlementCents ?? p.amountCents) *
+            (p.amountCents ? p.refundedCents / p.amountCents : 0),
+        0,
+      ),
+    );
     return {
       mode,
       totals: {
-        thisMonthCents: net(month._sum),
-        allTimeCents: net(all._sum),
-        refundedCents: all._sum.refundedCents ?? 0,
-        feesCents: all._sum.feeCents ?? 0,
-        count: all._count,
+        thisMonthCents: net(all.filter((p) => p.paidAt >= monthStart)),
+        allTimeCents: net(all),
+        refundedCents: refunded,
+        count: all.length,
       },
       payments: rows.map((p) => ({ ...p, number: invoiceNumber(p.number) })),
     };
   }
 
-  /** Refund all that is left of a payment, or `amount` dollars of it. */
+  /** Refund all that is left of a payment, or `amount` (in its currency) of it. */
   async adminRefund(paymentId: string, amountRaw?: unknown) {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
     });
     if (!payment) throw new NotFoundException('Payment not found.');
+    if (!payment.dodoPaymentId) {
+      throw new BadRequestException(
+        'This is an old PayPal payment; refund it in PayPal.',
+      );
+    }
     const left = payment.amountCents - payment.refundedCents;
     if (payment.status === 'REVERSED' || left <= 0) {
       throw new BadRequestException('Nothing left to refund on this payment.');
@@ -1657,16 +1642,33 @@ export class BillingService {
         `Refund between ${fmtMoney(1, payment.currency)} and ${fmtMoney(left, payment.currency)}.`,
       );
     }
-    const refund = await this.paypal.refundSale(
-      payment.mode === 'live' ? 'live' : 'sandbox',
-      payment.paypalSaleId,
-      // The whole payment: PayPal's plain refund, no amount needed.
-      cents === payment.amountCents
-        ? undefined
-        : { total: (cents / 100).toFixed(2), currency: payment.currency },
+    const mode: DodoMode = payment.mode === 'live' ? 'live' : 'test';
+    const whole = cents === payment.amountCents;
+    // A partial refund names the product it is for.
+    const productId = whole
+      ? undefined
+      : (await this.dodo.getPayment(payment.dodoPaymentId, mode))
+          .product_cart?.[0]?.product_id;
+    if (!whole && !productId) {
+      throw new BadRequestException(
+        'Dodo did not say which product this payment was for, so a partial refund cannot be sent. Refund the whole payment, or do it in the Dodo dashboard.',
+      );
+    }
+    const refund = await this.dodo.refund(
+      mode,
+      { paymentId: payment.dodoPaymentId, productId },
+      whole ? undefined : cents,
     );
-    await this.applyRefund(payment, refund.id, cents);
-    return this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (refund.status === 'succeeded') {
+      await this.applyRefund(payment, refund.refund_id, cents);
+    }
+    return {
+      payment: await this.prisma.payment.findUnique({
+        where: { id: paymentId },
+      }),
+      // Dodo may review a refund first; the webhook books it when it clears.
+      pending: refund.status !== 'succeeded',
+    };
   }
 
   adminInvoiceSettings() {
@@ -1692,155 +1694,110 @@ export class BillingService {
   // ---- plans
 
   async adminPlans() {
-    return { mode: await this.paypal.mode(), plans: await this.plans.all() };
+    return { mode: await this.dodo.mode(), plans: await this.plans.all() };
   }
 
   /**
-   * Save a plan. If the price changed and the plan already exists on PayPal,
-   * the new price is pushed there too - otherwise checkout would still charge
-   * the old amount.
+   * Save a plan. A new price is pushed to the plan's Dodo products, so new
+   * subscribers pay it. Dodo never reprices existing subscriptions: people
+   * already paying keep their price.
    */
   async adminSavePlan(input: PlanInput) {
     const before = await this.plans.get(input.key.toUpperCase());
     const saved = await this.plans.upsert(input);
     const warnings: string[] = [];
+    if (!before) return { plan: saved, warnings };
 
-    const monthlyChanged = before && before.priceUsd !== saved.priceUsd;
-    const yearlyChanged =
-      before && before.priceYearlyUsd !== saved.priceYearlyUsd;
-    const activeChanged =
-      before && input.active !== undefined && before.active !== input.active;
-
-    const liveMode = await this.paypal.mode();
-    const repriced: boolean[] = [];
-    for (const mode of ['sandbox', 'live'] as const) {
-      if (!(await this.paypal.configured(mode))) continue;
-      const ids: [string | null, number, boolean | undefined, boolean][] = [
+    const changes: [
+      boolean,
+      number,
+      'Month' | 'Year',
+      DodoMode,
+      string | null,
+    ][] = [];
+    for (const mode of ['test', 'live'] as const) {
+      changes.push(
         [
-          mode === 'live' ? saved.paypalPlanIdLive : saved.paypalPlanIdSandbox,
+          before.priceUsd !== saved.priceUsd,
           saved.priceUsd,
-          monthlyChanged,
-          false,
+          'Month',
+          mode,
+          mode === 'live' ? saved.dodoMonthlyIdLive : saved.dodoMonthlyIdTest,
         ],
         [
-          mode === 'live'
-            ? saved.paypalYearlyIdLive
-            : saved.paypalYearlyIdSandbox,
+          before.priceYearlyUsd !== saved.priceYearlyUsd,
           saved.priceYearlyUsd,
-          yearlyChanged,
-          true,
+          'Year',
+          mode,
+          mode === 'live' ? saved.dodoYearlyIdLive : saved.dodoYearlyIdTest,
         ],
-      ];
-      for (const [id, price, priceChanged, yearly] of ids) {
-        if (!id) continue;
-        try {
-          if (priceChanged) {
-            await this.paypal.updatePlanPrice(mode, id, price);
-            if (mode === liveMode) repriced.push(yearly);
-          }
-          // Yearly plans made before this rule paused only after two missed
-          // years; every save puts them on one.
-          if (yearly) await this.paypal.setFailureThreshold(mode, id, 1);
-          if (activeChanged)
-            await this.paypal.setPlanActive(mode, id, saved.active);
-        } catch (err) {
-          warnings.push(`${mode}: ${err instanceof Error ? err.message : err}`);
-        }
-      }
+      );
     }
-    const notified = before
-      ? await this.announcePrice(before, saved, repriced)
-      : 0;
-    return { plan: saved, warnings, notified };
-  }
-
-  /** Tells each paying subscriber of a plan about its new price, before they pay it. */
-  private async announcePrice(before: Plan, saved: Plan, repriced: boolean[]) {
-    let sent = 0;
-    for (const yearly of repriced) {
-      const from = yearly ? before.priceYearlyUsd : before.priceUsd;
-      const to = yearly ? saved.priceYearlyUsd : saved.priceUsd;
-      const subs = await this.prisma.subscription.findMany({
-        where: {
-          plan: saved.key,
-          interval: yearly ? 'year' : 'month',
-          status: { in: ['ACTIVE', 'PAST_DUE'] },
-          cancelAtPeriodEnd: false,
-          paypalSubscriptionId: { not: null },
-        },
-      });
-      for (const s of subs) {
-        await this.notify(
-          s.userId,
-          `A price change for your ${saved.name} plan`,
-          `The ${yearly ? 'yearly' : 'monthly'} price of ${saved.name} changes from ${fmtUsd(from)} to ${fmtUsd(to)}. ` +
-            `It applies from your next payment${s.currentPeriodEnd && s.currentPeriodEnd > new Date() ? ` on ${fmtDate(s.currentPeriodEnd)}` : ''}. ` +
-            'If you would rather not continue at the new price, you can cancel any time before then from Billing.',
+    for (const [changed, price, interval, mode, id] of changes) {
+      if (!changed || !id || !(await this.dodo.configured(mode))) continue;
+      try {
+        await this.dodo.updateProductPrice(
+          mode,
+          id,
+          Math.round(price * 100),
+          interval,
         );
-        sent++;
+      } catch (err) {
+        warnings.push(
+          `${mode}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
-    return sent;
+    return { plan: saved, warnings };
   }
 
-  /** Create this plan on PayPal (current or given mode, monthly or yearly) and remember its id. */
-  async adminCreateOnPaypal(
+  /** Create this plan on Dodo (current or given mode, monthly or yearly) and remember the product. */
+  async adminCreateOnDodo(
     key: string,
-    mode?: PaypalMode,
+    mode?: DodoMode,
     interval: BillingInterval = 'month',
   ) {
     const plan = await this.plans.get(key);
     if (!plan) throw new NotFoundException('Unknown plan.');
     if (plan.key === FREE_KEY || plan.priceUsd <= 0) {
-      throw new BadRequestException('Free plans do not go to PayPal.');
+      throw new BadRequestException('Free plans do not go to Dodo.');
     }
-    const m = mode ?? (await this.paypal.mode());
-    const existing = await this.paypalPlanId(plan, m, interval);
+    const m = mode ?? (await this.dodo.mode());
+    const existing = BillingService.productFor(plan, m, interval);
     if (existing)
-      throw new BadRequestException(`Already on PayPal ${m}: ${existing}`);
+      throw new BadRequestException(`Already on Dodo ${m}: ${existing}`);
 
     const yearly = interval === 'year';
-    const id = await this.paypal.createPlan(
-      m,
-      `My Social Items ${plan.name}${yearly ? ' (yearly)' : ''}`,
-      yearly ? plan.priceYearlyUsd : plan.priceUsd,
-      yearly ? 'YEAR' : 'MONTH',
-    );
+    const id = await this.dodo.createProduct(m, {
+      name: `My Social Items ${plan.name}${yearly ? ' (yearly)' : ''}`,
+      priceCents: Math.round(
+        (yearly ? plan.priceYearlyUsd : plan.priceUsd) * 100,
+      ),
+      interval: yearly ? 'Year' : 'Month',
+    });
     const field = yearly
       ? m === 'live'
-        ? 'paypalYearlyIdLive'
-        : 'paypalYearlyIdSandbox'
+        ? 'dodoYearlyIdLive'
+        : 'dodoYearlyIdTest'
       : m === 'live'
-        ? 'paypalPlanIdLive'
-        : 'paypalPlanIdSandbox';
+        ? 'dodoMonthlyIdLive'
+        : 'dodoMonthlyIdTest';
     return this.plans.upsert({ key: plan.key, [field]: id });
   }
 
-  // ---- PayPal keys
+  // ---- Dodo keys
 
-  private static readonly PAYPAL_KEYS = [
-    'SANDBOX_CLIENT_ID',
-    'SANDBOX_CLIENT_SECRET',
-    'SANDBOX_WEBHOOK_ID',
-    'SANDBOX_PRODUCT_ID',
-    'LIVE_CLIENT_ID',
-    'LIVE_CLIENT_SECRET',
-    'LIVE_WEBHOOK_ID',
-    'LIVE_PRODUCT_ID',
-  ];
-
-  async adminPaypalSettings() {
+  async adminDodoSettings() {
     const keys: Record<
       string,
       { value: string; set: boolean; secret: boolean }
     > = {};
-    for (const k of BillingService.PAYPAL_KEYS) {
-      const value = await this.settings.get(`PAYPAL_${k}`);
-      const secret = k.endsWith('SECRET');
+    for (const k of DODO_KEYS) {
+      const value = await this.settings.get(`DODO_${k}`);
       keys[k] = {
-        value: secret ? SettingsService.mask(value) : (value ?? ''),
+        value: SettingsService.mask(value),
         set: Boolean(value),
-        secret,
+        secret: true,
       };
     }
     const api = (this.config.get<string>('PUBLIC_API_URL') ?? '').replace(
@@ -1848,59 +1805,43 @@ export class BillingService {
       '',
     );
     return {
-      mode: await this.paypal.mode(),
+      mode: await this.dodo.mode(),
       keys,
       webhookUrl: `${api || '<your-api-url>'}/billing/webhook`,
-      webhookEvents: [
-        'BILLING.SUBSCRIPTION.ACTIVATED',
-        'BILLING.SUBSCRIPTION.RE-ACTIVATED',
-        'BILLING.SUBSCRIPTION.CANCELLED',
-        'BILLING.SUBSCRIPTION.SUSPENDED',
-        'BILLING.SUBSCRIPTION.EXPIRED',
-        'BILLING.SUBSCRIPTION.PAYMENT.FAILED',
-        'PAYMENT.SALE.COMPLETED',
-        'PAYMENT.SALE.REFUNDED',
-        'PAYMENT.SALE.REVERSED',
-      ],
+      webhookEvents: WEBHOOK_EVENTS,
       configured: {
-        sandbox: await this.paypal.configured('sandbox'),
-        live: await this.paypal.configured('live'),
+        test: await this.dodo.configured('test'),
+        live: await this.dodo.configured('live'),
       },
     };
   }
 
-  async adminSavePaypal(input: Record<string, string>) {
+  async adminSaveDodo(input: Record<string, string>) {
     if (input.MODE !== undefined) {
-      if (input.MODE !== 'sandbox' && input.MODE !== 'live') {
-        throw new BadRequestException('Mode must be sandbox or live.');
+      if (input.MODE !== 'test' && input.MODE !== 'live') {
+        throw new BadRequestException('Mode must be test or live.');
       }
       if (
         input.MODE === 'live' &&
-        !(await this.paypal.configured('live')) &&
-        !(input.LIVE_CLIENT_ID && input.LIVE_CLIENT_SECRET)
+        !(await this.dodo.configured('live')) &&
+        !input.LIVE_API_KEY
       ) {
         throw new BadRequestException(
-          'Add the live client id and secret before switching to live.',
+          'Add the live API key before switching to live.',
         );
       }
     }
-    for (const k of BillingService.PAYPAL_KEYS) {
+    for (const k of DODO_KEYS) {
       const value = input[k];
-      // A blank secret field means "unchanged" - the UI never has the real value.
-      if (typeof value !== 'string' || (k.endsWith('SECRET') && value === ''))
-        continue;
-      await this.settings.set(
-        `PAYPAL_${k}`,
-        String(value).trim(),
-        k.endsWith('SECRET'),
-      );
+      // A blank field means "unchanged" - the UI never has the real value.
+      if (typeof value !== 'string' || value === '') continue;
+      await this.settings.set(`DODO_${k}`, value.trim(), true);
     }
-    if (input.MODE) await this.settings.set('PAYPAL_MODE', input.MODE);
-    this.paypal.resetTokens();
-    return this.adminPaypalSettings();
+    if (input.MODE) await this.settings.set('DODO_MODE', input.MODE);
+    return this.adminDodoSettings();
   }
 
-  adminTestPaypal(mode: PaypalMode) {
-    return this.paypal.test(mode);
+  adminTestDodo(mode: DodoMode) {
+    return this.dodo.test(mode);
   }
 }

@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, RefreshCw, XCircle } from "lucide-react";
+import { RefreshCw, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 
 type Sub = {
   userId: string;
   plan: string;
   status: string;
-  paypalSubscriptionId: string | null;
+  dodoSubscriptionId: string | null;
+  currency: string | null;
   pendingPlan: string | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
@@ -28,7 +29,7 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 export function SubscriptionsTab({ token }: { token: string | null }) {
-  const [mode, setMode] = useState("sandbox");
+  const [mode, setMode] = useState("test");
   const [subs, setSubs] = useState<Sub[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [plans, setPlans] = useState<string[]>([]);
@@ -64,14 +65,11 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
     }
   }
 
-  const paypalUrl = (id: string) =>
-    `https://www.${mode === "live" ? "" : "sandbox."}paypal.com/billing/subscriptions/${id}`;
-
   return (
     <div className="p-4">
       <p className="mb-3 text-[12.5px] text-muted">
         Changing a plan here is a manual override (a comp, a refund, a support fix). If the customer
-        has an active PayPal subscription for another plan, it is cancelled so they are not billed twice.
+        has a running Dodo subscription for another plan, it is cancelled so they are not billed twice.
         Mode: <b>{mode}</b>
       </p>
       {msg && (
@@ -84,7 +82,7 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
         <table className="w-full min-w-[900px] text-[12.5px]">
           <thead>
             <tr className="border-b border-line text-left text-[10.5px] uppercase tracking-wide text-muted">
-              {["Customer", "Plan", "Status", "PayPal subscription", "Renews / ends", "Views (month)", ""].map((h) => (
+              {["Customer", "Plan", "Status", "Dodo subscription", "Renews / ends", "Views (month)", ""].map((h) => (
                 <th key={h} className="px-2 py-2 font-bold">{h}</th>
               ))}
             </tr>
@@ -119,11 +117,11 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
                   </span>
                 </td>
                 <td className="px-2 py-2.5">
-                  {s.paypalSubscriptionId ? (
-                    <a href={paypalUrl(s.paypalSubscriptionId)} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 font-mono text-[11.5px] text-brand hover:underline">
-                      {s.paypalSubscriptionId} <ExternalLink className="h-3 w-3" />
-                    </a>
+                  {s.dodoSubscriptionId ? (
+                    <span className="font-mono text-[11.5px]">
+                      {s.dodoSubscriptionId}
+                      {s.currency && <span className="ml-1 text-muted">· {s.currency}</span>}
+                    </span>
                   ) : (
                     <span className="text-muted">manual / none</span>
                   )}
@@ -133,10 +131,10 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
                 </td>
                 <td className="px-2 py-2.5">{s.viewsThisMonth.toLocaleString()}</td>
                 <td className="whitespace-nowrap px-2 py-2.5 text-right">
-                  {s.paypalSubscriptionId && (
-                    <button type="button" title="Pull status from PayPal" disabled={Boolean(busy)}
+                  {s.dodoSubscriptionId && (
+                    <button type="button" title="Read the status back from Dodo" disabled={Boolean(busy)}
                       onClick={() => act(`ref:${s.userId}`, () =>
-                        api(`/admin/billing/subscriptions/${s.userId}/refresh`, { method: "POST", token }), "Synced from PayPal.")}
+                        api(`/admin/billing/subscriptions/${s.userId}/refresh`, { method: "POST", token }), "Synced from Dodo.")}
                       className="mr-1 inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[12px] hover:border-brand/40 hover:text-brand disabled:opacity-50">
                       <RefreshCw className={`h-3 w-3 ${busy === `ref:${s.userId}` ? "animate-spin" : ""}`} /> Sync
                     </button>
@@ -159,7 +157,7 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
         </table>
       </div>
 
-      <h3 className="mb-2 mt-6 text-[11px] font-bold uppercase tracking-wide text-muted">Recent PayPal events</h3>
+      <h3 className="mb-2 mt-6 text-[11px] font-bold uppercase tracking-wide text-muted">Recent payment events</h3>
       {events.length === 0 ? (
         <p className="text-[12.5px] text-muted">No webhooks received yet.</p>
       ) : (

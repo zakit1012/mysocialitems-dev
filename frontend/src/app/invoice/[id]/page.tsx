@@ -21,7 +21,9 @@ type Invoice = {
   amountCents: number;
   refundedCents: number;
   currency: string;
-  paypal: { transactionId: string };
+  reference: string;
+  /** Dodo's own invoice PDF - the legal invoice, since Dodo is the seller. */
+  invoiceUrl: string | null;
 };
 
 /**
@@ -84,6 +86,16 @@ export default function InvoicePage() {
         >
           <ArrowLeft className="h-4 w-4" /> Back
         </Link>
+        {invoice.invoiceUrl && (
+          <a
+            href={invoice.invoiceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto inline-flex items-center gap-2 rounded-xl border border-line bg-card px-4 py-2 text-sm font-semibold text-ink transition hover:bg-sand"
+          >
+            Official invoice (PDF)
+          </a>
+        )}
         <button
           type="button"
           onClick={() => window.print()}
@@ -96,7 +108,7 @@ export default function InvoicePage() {
       <article className="rounded-2xl border border-line bg-white p-6 text-[13.5px] text-ink shadow-card sm:p-10 print:rounded-none print:border-0 print:p-0 print:shadow-none">
         {invoice.test && (
           <p className="mb-6 rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] font-semibold text-amber-700">
-            Test payment (PayPal sandbox) - no real money was charged.
+            Test payment - no real money was charged.
           </p>
         )}
 
@@ -131,8 +143,8 @@ export default function InvoicePage() {
           </div>
           <div className="sm:text-right">
             <p className="text-[11px] font-bold uppercase tracking-wide text-muted">Payment</p>
-            <p className="mt-1">Paid {fmtDay(invoice.issuedAt)} with PayPal</p>
-            <p className="break-all font-mono text-[12px] text-muted">Transaction {invoice.paypal.transactionId}</p>
+            <p className="mt-1">Paid {fmtDay(invoice.issuedAt)}</p>
+            <p className="break-all font-mono text-[12px] text-muted">Payment {invoice.reference}</p>
           </div>
         </section>
 

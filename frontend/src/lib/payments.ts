@@ -1,7 +1,7 @@
 /** Money and dates as payments, receipts and invoices show them. */
 
 export const fmtCents = (cents: number, currency = "USD") =>
-  `${currency === "USD" ? "$" : `${currency} `}${(cents / 100).toFixed(2)}`;
+  `${currency === "USD" ? "$" : currency === "INR" ? "₹" : `${currency} `}${(cents / 100).toFixed(2)}`;
 
 /** "26 Sep 2026" - the same on every screen and in print. */
 export const fmtDay = (d: string | Date) =>
@@ -25,4 +25,6 @@ export type PaymentRow = {
   currency: string;
   status: string;
   test: boolean;
+  /** Dodo's invoice PDF, the customer's legal invoice. */
+  invoiceUrl?: string | null;
 };

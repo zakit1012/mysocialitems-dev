@@ -27,7 +27,7 @@ const NAV = [
   { href: "/admin/subscriptions", label: "Subscriptions", icon: CreditCard },
   { href: "/admin/payments", label: "Payments", icon: Receipt },
   { href: "/admin/plans", label: "Plans", icon: Package },
-  { href: "/admin/paypal", label: "PayPal", icon: Wallet },
+  { href: "/admin/dodo", label: "Dodo Payments", icon: Wallet },
   { href: "/admin/widgets", label: "Widgets", icon: LayoutGrid },
   { href: "/admin/sources", label: "Sources", icon: Globe },
   { href: "/admin/hidden-reviews", label: "Hidden reviews", icon: EyeOff },

@@ -11,7 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 /**
  * Key/value settings the super admin edits at runtime.
  *
- * Secrets (PayPal client secrets) are encrypted with AES-256-GCM before they
+ * Secrets (payment API keys) are encrypted with AES-256-GCM before they
  * touch the database, so a leaked backup does not leak live payment keys.
  * The key comes from SETTINGS_SECRET, falling back to JWT_SECRET. Change it
  * and stored secrets become unreadable - re-enter them in the admin panel.
@@ -70,7 +70,7 @@ export class SettingsService {
   }
 
   private async load(): Promise<Map<string, string>> {
-    // Short cache: read on every PayPal call, changed rarely.
+    // Short cache: read on every payment call, changed rarely.
     if (this.cache && Date.now() - this.cachedAt < 30_000) return this.cache;
     const rows = await this.prisma.appSetting.findMany();
     const map = new Map<string, string>();

@@ -1,26 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ExternalLink, FileText, RotateCcw } from "lucide-react";
+import { FileText, RotateCcw } from "lucide-react";
 import { api } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { fmtCents, fmtDay, PAYMENT_STATUS } from "@/lib/payments";
 
-type Mode = "sandbox" | "live";
+type Mode = "test" | "live";
 
 type Payment = {
   id: string;
   number: string;
   userId: string | null;
-  paypalSaleId: string;
-  paypalSubscriptionId: string | null;
+  dodoPaymentId: string | null;
+  paypalSaleId: string | null;
+  invoiceUrl: string | null;
+  settlementCents: number | null;
+  settlementCurrency: string | null;
   planName: string;
   interval: string;
   amountCents: number;
   refundedCents: number;
-  feeCents: number | null;
   currency: string;
   status: string;
   customerName: string;
@@ -32,13 +33,12 @@ type Totals = {
   thisMonthCents: number;
   allTimeCents: number;
   refundedCents: number;
-  feesCents: number;
   count: number;
 };
 
 type Seller = { name: string; address: string; email: string; taxId: string; note: string };
 
-/** Every PayPal payment, its invoice, refunds, and who the invoices come from. */
+/** Every payment, its invoice, refunds, and who our receipts come from. */
 export function PaymentsTab({ token }: { token: string | null }) {
   const [mode, setMode] = useState<Mode | null>(null);
   const [rows, setRows] = useState<Payment[]>([]);
@@ -91,12 +91,17 @@ export function PaymentsTab({ token }: { token: string | null }) {
     setBusy(payment.id);
     setMsg(null);
     try {
-      await api(`/admin/billing/payments/${payment.id}/refund`, {
+      const r = await api<{ pending: boolean }>(`/admin/billing/payments/${payment.id}/refund`, {
         method: "POST",
         token,
         body: JSON.stringify({ amount }),
       });
-      setMsg({ ok: true, text: `Refunded $${amount} on ${payment.number}. The customer has been emailed.` });
+      setMsg({
+        ok: true,
+        text: r.pending
+          ? `Refund of ${amount} ${payment.currency} on ${payment.number} sent to Dodo. It shows here, and the customer is emailed, once Dodo completes it.`
+          : `Refunded ${amount} ${payment.currency} on ${payment.number}. The customer has been emailed.`,
+      });
       await load(mode);
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : "Refund failed" });
@@ -105,18 +110,16 @@ export function PaymentsTab({ token }: { token: string | null }) {
     }
   }
 
-  const paypalTxn = (id: string) =>
-    `https://www.${mode === "live" ? "" : "sandbox."}paypal.com/activity/payment/${id}`;
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-[12.5px] text-muted">
-          Every payment PayPal collected, with its invoice. Sandbox payments are tests and are kept apart from live
-          revenue. Refunds go back through PayPal and the customer gets an email.
+          Every payment Dodo collected, with its invoice. Test-mode payments are kept apart from live revenue.
+          Totals are what reaches your Dodo balance in US dollars, after Dodo&apos;s fees and tax. Refunds go back
+          through Dodo and the customer gets an email.
         </p>
-        <div className="flex rounded-xl border border-line bg-card p-1" role="group" aria-label="PayPal mode">
-          {(["live", "sandbox"] as const).map((m) => (
+        <div className="flex rounded-xl border border-line bg-card p-1" role="group" aria-label="Payment mode">
+          {(["live", "test"] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -139,12 +142,11 @@ export function PaymentsTab({ token }: { token: string | null }) {
       )}
 
       {totals && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
             ["This month (net)", fmtCents(totals.thisMonthCents)],
             ["All time (net)", fmtCents(totals.allTimeCents)],
             ["Refunded", fmtCents(totals.refundedCents)],
-            ["PayPal fees", fmtCents(totals.feesCents)],
             ["Payments", totals.count.toLocaleString()],
           ].map(([label, value]) => (
             <div key={label} className="rounded-2xl border border-line bg-card p-4 shadow-card">
@@ -159,7 +161,7 @@ export function PaymentsTab({ token }: { token: string | null }) {
         <table className="w-full min-w-[980px] text-[12.5px]">
           <thead>
             <tr className="border-b border-line bg-sand/60 text-left text-[10.5px] uppercase tracking-wide text-muted">
-              {["Date", "Invoice", "Customer", "Plan", "Amount", "Fee", "Status", "PayPal transaction", ""].map((h) => (
+              {["Date", "Ref", "Customer", "Plan", "Paid", "You get", "Status", "Payment id", ""].map((h) => (
                 <th key={h} className="px-3 py-3 font-bold">
                   {h}
                 </th>
@@ -199,29 +201,25 @@ export function PaymentsTab({ token }: { token: string | null }) {
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-muted">{p.feeCents != null ? fmtCents(p.feeCents, p.currency) : "-"}</td>
+                    <td className="px-3 py-2.5 text-muted">
+                      {p.settlementCents != null ? fmtCents(p.settlementCents, p.settlementCurrency ?? "USD") : "-"}
+                    </td>
                     <td className="px-3 py-2.5">
                       <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${status.tone}`}>{status.label}</span>
                     </td>
                     <td className="px-3 py-2.5">
-                      <a
-                        href={paypalTxn(p.paypalSaleId)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 font-mono text-[11.5px] text-brand hover:underline"
-                      >
-                        {p.paypalSaleId} <ExternalLink className="h-3 w-3" />
-                      </a>
+                      <span className="font-mono text-[11.5px]">{p.dodoPaymentId ?? p.paypalSaleId ?? "-"}</span>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right">
-                      <Link
-                        href={`/invoice/${p.id}`}
+                      <a
+                        href={p.invoiceUrl ?? `/invoice/${p.id}`}
                         target="_blank"
+                        rel="noopener noreferrer"
                         className="mr-1 inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[12px] hover:border-brand/40 hover:text-brand"
                       >
                         <FileText className="h-3 w-3" /> Invoice
-                      </Link>
-                      {left > 0 && p.status !== "REVERSED" && (
+                      </a>
+                      {left > 0 && p.status !== "REVERSED" && p.dodoPaymentId && (
                         <button
                           type="button"
                           disabled={Boolean(busy)}
@@ -251,8 +249,8 @@ export function PaymentsTab({ token }: { token: string | null }) {
                 {refund.payment.customerName} paid {fmtCents(refund.payment.amountCents, refund.payment.currency)}
                 {refund.payment.refundedCents > 0 &&
                   ` (${fmtCents(refund.payment.refundedCents, refund.payment.currency)} already refunded)`}
-                . PayPal sends the money back; this cannot be undone. Refunding does not cancel the subscription - use
-                Subscriptions for that.
+                . Dodo sends the money back to their card or UPI; this cannot be undone. Refunding does not cancel
+                the subscription - use Subscriptions for that.
               </p>
               <label className="mt-3 block text-[12.5px] font-semibold text-ink">
                 Amount in {refund.payment.currency}
@@ -269,7 +267,7 @@ export function PaymentsTab({ token }: { token: string | null }) {
             </>
           )
         }
-        confirmLabel="Refund with PayPal"
+        confirmLabel="Refund"
         cancelLabel="Keep payment"
         onCancel={() => setRefund(null)}
         onConfirm={doRefund}

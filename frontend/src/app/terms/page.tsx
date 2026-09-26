@@ -65,9 +65,10 @@ export default function TermsPage() {
       <h2>4. Plans, billing and limits</h2>
       <ul>
         <li>
-          The Free plan is free. Paid plans are billed monthly or yearly in advance through PayPal, as you choose,
-          and renew automatically until you cancel. Prices are shown in US dollars and may exclude taxes that
-          apply to you.
+          The Free plan is free. Paid plans are billed monthly or yearly in advance, as you choose, and renew
+          automatically until you cancel. Payments are processed by our reseller and merchant of record, Dodo
+          Payments, which also handles sales tax and issues your invoices. Prices are shown in US dollars and
+          include tax; customers in India can pay in rupees with UPI or an Indian card.
         </li>
         <li>
           Each plan has limits, such as widgets, websites, reviews shown per widget, monthly views and how often
@@ -75,13 +76,13 @@ export default function TermsPage() {
           plan&apos;s monthly views run out, its widgets stop showing until the next month or until you upgrade.
         </li>
         <li>
-          If a renewal payment fails, PayPal tries it again. If it is still unpaid five days after the renewal
-          date, your account moves to the Free plan&apos;s limits until the payment goes through; nothing is
-          deleted. For yearly plans we email you a week before each renewal.
+          If a renewal payment fails, we try it again. If it is still unpaid five days after the renewal date,
+          your account moves to the Free plan&apos;s limits until the payment goes through; nothing is deleted.
+          For yearly plans we email you a week before each renewal.
         </li>
         <li>
-          We may change prices or plan limits. A price change for an existing subscription takes effect from
-          your next billing cycle, and we will tell you before it does.
+          We may change prices or plan limits. A new price applies to new subscriptions; while your subscription
+          stays active, it keeps renewing at the price you signed up at.
         </li>
         <li>
           Cancellations and refunds are covered by our{" "}

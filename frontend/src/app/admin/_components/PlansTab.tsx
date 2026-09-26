@@ -18,19 +18,27 @@ type Plan = {
   refreshHours: number;
   active: boolean;
   sortOrder: number;
-  paypalPlanIdSandbox: string | null;
-  paypalPlanIdLive: string | null;
   priceYearlyUsd: number;
-  paypalYearlyIdSandbox: string | null;
-  paypalYearlyIdLive: string | null;
+  dodoMonthlyIdTest: string | null;
+  dodoMonthlyIdLive: string | null;
+  dodoYearlyIdTest: string | null;
+  dodoYearlyIdLive: string | null;
 };
+
+/** Product id columns: [field, header]. */
+const PRODUCT_FIELDS: [keyof Plan, string][] = [
+  ["dodoMonthlyIdTest", "Monthly test id"],
+  ["dodoMonthlyIdLive", "Monthly live id"],
+  ["dodoYearlyIdTest", "Yearly test id"],
+  ["dodoYearlyIdLive", "Yearly live id"],
+];
 
 type Draft = Omit<Plan, "views"> & { views: string };
 
 const toDraft = (p: Plan): Draft => ({ ...p, views: p.views >= UNLIMITED ? "" : String(p.views) });
 
 export function PlansTab({ token }: { token: string | null }) {
-  const [mode, setMode] = useState("sandbox");
+  const [mode, setMode] = useState("test");
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -53,7 +61,7 @@ export function PlansTab({ token }: { token: string | null }) {
     setBusy(`save:${d.key}`);
     setMsg(null);
     try {
-      const r = await api<{ warnings: string[]; notified?: number }>(`/admin/billing/plans/${d.key}`, {
+      const r = await api<{ warnings: string[] }>(`/admin/billing/plans/${d.key}`, {
         method: "PUT",
         token,
         body: JSON.stringify({
@@ -66,23 +74,18 @@ export function PlansTab({ token }: { token: string | null }) {
           refreshHours: d.refreshHours,
           active: d.active,
           sortOrder: d.sortOrder,
-          paypalPlanIdSandbox: d.paypalPlanIdSandbox ?? "",
-          paypalPlanIdLive: d.paypalPlanIdLive ?? "",
           // blank = 10x the monthly price
           priceYearlyUsd: String(d.priceYearlyUsd ?? "").trim() === "" ? "" : Number(d.priceYearlyUsd),
-          paypalYearlyIdSandbox: d.paypalYearlyIdSandbox ?? "",
-          paypalYearlyIdLive: d.paypalYearlyIdLive ?? "",
+          dodoMonthlyIdTest: d.dodoMonthlyIdTest ?? "",
+          dodoMonthlyIdLive: d.dodoMonthlyIdLive ?? "",
+          dodoYearlyIdTest: d.dodoYearlyIdTest ?? "",
+          dodoYearlyIdLive: d.dodoYearlyIdLive ?? "",
         }),
       });
       setMsg(
         r.warnings.length
-          ? { ok: false, text: `Saved, but PayPal said: ${r.warnings.join("; ")}` }
-          : {
-              ok: true,
-              text: r.notified
-                ? `${d.name} saved. ${r.notified} subscriber${r.notified === 1 ? " was" : "s were"} emailed about the new price.`
-                : `${d.name} saved.`,
-            },
+          ? { ok: false, text: `Saved, but Dodo said: ${r.warnings.join("; ")}` }
+          : { ok: true, text: `${d.name} saved.` },
       );
       await load();
     } catch (e) {
@@ -92,15 +95,15 @@ export function PlansTab({ token }: { token: string | null }) {
     }
   }
 
-  async function pushToPaypal(d: Draft, interval: "month" | "year") {
-    setBusy(`pp:${interval}:${d.key}`);
+  async function pushToDodo(d: Draft, interval: "month" | "year") {
+    setBusy(`dodo:${interval}:${d.key}`);
     setMsg(null);
     try {
-      await api(`/admin/billing/plans/${d.key}/paypal`, { method: "POST", token, body: JSON.stringify({ mode, interval }) });
-      setMsg({ ok: true, text: `${d.name}${interval === "year" ? " yearly" : ""} created on PayPal ${mode}.` });
+      await api(`/admin/billing/plans/${d.key}/dodo`, { method: "POST", token, body: JSON.stringify({ mode, interval }) });
+      setMsg({ ok: true, text: `${d.name}${interval === "year" ? " yearly" : ""} created on Dodo (${mode}).` });
       await load();
     } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : "PayPal failed" });
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Dodo failed" });
     } finally {
       setBusy("");
     }
@@ -131,11 +134,11 @@ export function PlansTab({ token }: { token: string | null }) {
     <div className="p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12.5px] text-muted">
-          Price changes on a plan that is already on PayPal are pushed there too. PayPal tells existing
-          subscribers and applies the new price from their next cycle. Blank views = unlimited.
-          Refresh = hours between automatic review updates (2-168). Yearly $ blank = 10x monthly (two months free).
-          Monthly and yearly are separate plans on PayPal. The PayPal ids fill in by themselves when you press
-          &quot;Monthly on …&quot; / &quot;Yearly on …&quot; at the end of a row; the Free plan never goes to PayPal.
+          Each paid plan is a product on Dodo Payments, one for monthly and one for yearly, in test and in live
+          mode. Press &quot;Monthly on …&quot; / &quot;Yearly on …&quot; at the end of a row to create them; the ids
+          fill in by themselves. A new price is sent to Dodo for new subscribers - people already paying keep
+          their price. Blank views = unlimited. Refresh = hours between review updates (2-168). Yearly $ blank =
+          10x monthly (two months free). The Free plan never goes to Dodo.
         </p>
         <button type="button" onClick={addPlan} disabled={busy === "add"}
           className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-semibold hover:border-brand/40 hover:text-brand">
@@ -153,15 +156,15 @@ export function PlansTab({ token }: { token: string | null }) {
         <table className="w-full min-w-[1600px] text-[12.5px]">
           <thead>
             <tr className="border-b border-line text-left text-[10.5px] uppercase tracking-wide text-muted">
-              {["Key", "Name", "Price $", "Yearly $", "Sources", "Widgets", "Reviews", "Views/mo", "Refresh h", "On", "PayPal sandbox id", "PayPal live id", "Yearly sandbox id", "Yearly live id", ""].map((h) => (
+              {["Key", "Name", "Price $", "Yearly $", "Sources", "Widgets", "Reviews", "Views/mo", "Refresh h", "On", ...PRODUCT_FIELDS.map(([, h]) => h), ""].map((h) => (
                 <th key={h} className="px-2 py-2 font-bold">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {drafts.map((d) => {
-              const idForMode = mode === "live" ? d.paypalPlanIdLive : d.paypalPlanIdSandbox;
-              const yearlyIdForMode = mode === "live" ? d.paypalYearlyIdLive : d.paypalYearlyIdSandbox;
+              const idForMode = mode === "live" ? d.dodoMonthlyIdLive : d.dodoMonthlyIdTest;
+              const yearlyIdForMode = mode === "live" ? d.dodoYearlyIdLive : d.dodoYearlyIdTest;
               return (
                 <tr key={d.key} className="border-b border-line/60 align-middle last:border-0">
                   <td className="px-2 py-2 font-mono font-semibold">{d.key}</td>
@@ -174,27 +177,34 @@ export function PlansTab({ token }: { token: string | null }) {
                   <td className="px-2 py-2 w-24"><input className={input} placeholder="unlimited" value={d.views} onChange={(e) => edit(d.key, "views", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={2} max={168} value={d.refreshHours} onChange={(e) => edit(d.key, "refreshHours", e.target.value)} /></td>
                   <td className="px-2 py-2"><input type="checkbox" checked={d.active} onChange={(e) => edit(d.key, "active", e.target.checked)} className="h-4 w-4 accent-brand" /></td>
-                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder={d.key === "FREE" ? "not needed" : "P-..."} value={d.paypalPlanIdSandbox ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalPlanIdSandbox", e.target.value)} /></td>
-                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder={d.key === "FREE" ? "not needed" : "P-..."} value={d.paypalPlanIdLive ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalPlanIdLive", e.target.value)} /></td>
-                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder={d.key === "FREE" ? "not needed" : "P-..."} value={d.paypalYearlyIdSandbox ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalYearlyIdSandbox", e.target.value)} /></td>
-                  <td className="px-2 py-2 w-40"><input className={`${input} font-mono`} placeholder={d.key === "FREE" ? "not needed" : "P-..."} value={d.paypalYearlyIdLive ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "paypalYearlyIdLive", e.target.value)} /></td>
+                  {PRODUCT_FIELDS.map(([field]) => (
+                    <td key={field} className="px-2 py-2 w-40">
+                      <input
+                        className={`${input} font-mono`}
+                        placeholder={d.key === "FREE" ? "not needed" : "pdt_..."}
+                        value={(d[field] as string | null) ?? ""}
+                        disabled={d.key === "FREE"}
+                        onChange={(e) => edit(d.key, field, e.target.value)}
+                      />
+                    </td>
+                  ))}
                   <td className="whitespace-nowrap px-2 py-2">
                     <button type="button" onClick={() => save(d)} disabled={Boolean(busy)}
                       className="inline-flex items-center gap-1 rounded-lg gradient-brand px-2.5 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50">
                       {busy === `save:${d.key}` ? <Spinner className="h-3 w-3" /> : <Check className="h-3.5 w-3.5" />} Save
                     </button>
                     {d.key !== "FREE" && !idForMode && (
-                      <button type="button" onClick={() => pushToPaypal(d, "month")} disabled={Boolean(busy)}
-                        title={`Create the monthly plan on PayPal ${mode}`}
+                      <button type="button" onClick={() => pushToDodo(d, "month")} disabled={Boolean(busy)}
+                        title={`Create the monthly product on Dodo (${mode})`}
                         className="ml-1.5 inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-semibold hover:border-brand/40 hover:text-brand disabled:opacity-50">
-                        {busy === `pp:month:${d.key}` ? <Spinner className="h-3 w-3" /> : <CloudUpload className="h-3.5 w-3.5" />} Monthly on {mode}
+                        {busy === `dodo:month:${d.key}` ? <Spinner className="h-3 w-3" /> : <CloudUpload className="h-3.5 w-3.5" />} Monthly on {mode}
                       </button>
                     )}
                     {d.key !== "FREE" && !yearlyIdForMode && (
-                      <button type="button" onClick={() => pushToPaypal(d, "year")} disabled={Boolean(busy)}
-                        title={`Create the yearly plan on PayPal ${mode}`}
+                      <button type="button" onClick={() => pushToDodo(d, "year")} disabled={Boolean(busy)}
+                        title={`Create the yearly product on Dodo (${mode})`}
                         className="ml-1.5 inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-semibold hover:border-brand/40 hover:text-brand disabled:opacity-50">
-                        {busy === `pp:year:${d.key}` ? <Spinner className="h-3 w-3" /> : <CloudUpload className="h-3.5 w-3.5" />} Yearly on {mode}
+                        {busy === `dodo:year:${d.key}` ? <Spinner className="h-3 w-3" /> : <CloudUpload className="h-3.5 w-3.5" />} Yearly on {mode}
                       </button>
                     )}
                   </td>

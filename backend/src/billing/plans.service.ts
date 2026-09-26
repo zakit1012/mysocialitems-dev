@@ -34,11 +34,11 @@ export class PlansService {
       refreshHours: row.refreshHours ?? defaultRefreshHours(row.key),
       active: row.active,
       sortOrder: row.sortOrder,
-      paypalPlanIdSandbox: row.paypalPlanIdSandbox,
-      paypalPlanIdLive: row.paypalPlanIdLive,
       priceYearlyUsd: row.priceYearlyUsd ?? defaultYearlyPrice(row.priceUsd),
-      paypalYearlyIdSandbox: row.paypalYearlyIdSandbox,
-      paypalYearlyIdLive: row.paypalYearlyIdLive,
+      dodoMonthlyIdTest: row.dodoMonthlyIdTest,
+      dodoMonthlyIdLive: row.dodoMonthlyIdLive,
+      dodoYearlyIdTest: row.dodoYearlyIdTest,
+      dodoYearlyIdLive: row.dodoYearlyIdLive,
     };
   }
 
@@ -75,15 +75,21 @@ export class PlansService {
     return plan;
   }
 
-  /** Paid plan whose PayPal id (in either environment, monthly or yearly) matches. */
-  async byPaypalId(paypalPlanId: string): Promise<Plan | undefined> {
-    return (await this.all()).find(
-      (p) =>
-        p.paypalPlanIdSandbox === paypalPlanId ||
-        p.paypalPlanIdLive === paypalPlanId ||
-        p.paypalYearlyIdSandbox === paypalPlanId ||
-        p.paypalYearlyIdLive === paypalPlanId,
-    );
+  /**
+   * The plan a Dodo product belongs to, and whether it is the yearly one.
+   * Products of both modes count, so test and live data both resolve.
+   */
+  async byDodoProduct(
+    productId: string | undefined,
+  ): Promise<{ plan: Plan; yearly: boolean } | undefined> {
+    if (!productId) return undefined;
+    for (const plan of await this.all()) {
+      if ([plan.dodoMonthlyIdTest, plan.dodoMonthlyIdLive].includes(productId))
+        return { plan, yearly: false };
+      if ([plan.dodoYearlyIdTest, plan.dodoYearlyIdLive].includes(productId))
+        return { plan, yearly: true };
+    }
+    return undefined;
   }
 
   invalidate() {
@@ -166,15 +172,15 @@ export class PlansService {
       refreshHours: input.refreshHours,
       active: input.active,
       sortOrder: input.sortOrder,
-      paypalPlanIdSandbox: input.paypalPlanIdSandbox,
-      paypalPlanIdLive: input.paypalPlanIdLive,
       // null clears it back to "10x monthly"
       priceYearlyUsd:
         input.priceYearlyUsd === undefined || input.priceYearlyUsd === null
           ? input.priceYearlyUsd
           : Math.round(input.priceYearlyUsd * 100) / 100,
-      paypalYearlyIdSandbox: input.paypalYearlyIdSandbox,
-      paypalYearlyIdLive: input.paypalYearlyIdLive,
+      dodoMonthlyIdTest: input.dodoMonthlyIdTest,
+      dodoMonthlyIdLive: input.dodoMonthlyIdLive,
+      dodoYearlyIdTest: input.dodoYearlyIdTest,
+      dodoYearlyIdLive: input.dodoYearlyIdLive,
     };
     // undefined means "leave as is"
     for (const k of Object.keys(data) as (keyof typeof data)[]) {

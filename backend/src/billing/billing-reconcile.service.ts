@@ -13,7 +13,7 @@ const EVERY_MS = 60 * 60 * 1000;
 /**
  * Hourly billing checks: overdue renewals, plans whose paid time ran out, and
  * reminders before yearly renewals. Production only (or
- * BILLING_RECONCILE=true), since it talks to PayPal and emails customers.
+ * BILLING_RECONCILE=true), since it talks to Dodo Payments and emails customers.
  */
 @Injectable()
 export class BillingReconcileService

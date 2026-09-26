@@ -13,9 +13,9 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { BillingService } from './billing.service';
-import type { PaypalMode } from './paypal.client';
+import type { DodoMode } from './dodo.client';
 
-/** Super admin: plans, PayPal keys and every customer's subscription. */
+/** Super admin: plans, Dodo Payments keys and every customer's subscription. */
 @Controller('admin/billing')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
@@ -80,6 +80,8 @@ export class AdminBillingController {
     // Plain strings only; anything else (objects, arrays) is ignored.
     const str = (v: unknown) =>
       typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '';
+    // A product id: left alone when not sent, cleared when sent empty.
+    const id = (v: unknown) => (v === undefined ? undefined : str(v) || null);
     return this.billing.adminSavePlan({
       key,
       name: body.name === undefined ? undefined : str(body.name),
@@ -95,56 +97,42 @@ export class AdminBillingController {
       refreshHours: num(body.refreshHours),
       active: body.active === undefined ? undefined : Boolean(body.active),
       sortOrder: num(body.sortOrder),
-      paypalPlanIdSandbox:
-        body.paypalPlanIdSandbox === undefined
-          ? undefined
-          : str(body.paypalPlanIdSandbox) || null,
-      paypalPlanIdLive:
-        body.paypalPlanIdLive === undefined
-          ? undefined
-          : str(body.paypalPlanIdLive) || null,
       // "" or null -> back to 10x the monthly price
       priceYearlyUsd:
         body.priceYearlyUsd === null || body.priceYearlyUsd === ''
           ? null
           : num(body.priceYearlyUsd),
-      paypalYearlyIdSandbox:
-        body.paypalYearlyIdSandbox === undefined
-          ? undefined
-          : str(body.paypalYearlyIdSandbox) || null,
-      paypalYearlyIdLive:
-        body.paypalYearlyIdLive === undefined
-          ? undefined
-          : str(body.paypalYearlyIdLive) || null,
+      dodoMonthlyIdTest: id(body.dodoMonthlyIdTest),
+      dodoMonthlyIdLive: id(body.dodoMonthlyIdLive),
+      dodoYearlyIdTest: id(body.dodoYearlyIdTest),
+      dodoYearlyIdLive: id(body.dodoYearlyIdLive),
     });
   }
 
-  @Post('plans/:key/paypal')
-  createOnPaypal(
+  @Post('plans/:key/dodo')
+  createOnDodo(
     @Param('key') key: string,
-    @Body() body: { mode?: PaypalMode; interval?: string },
+    @Body() body: { mode?: DodoMode; interval?: string },
   ) {
     const mode =
-      body?.mode === 'live' || body?.mode === 'sandbox' ? body.mode : undefined;
+      body?.mode === 'live' || body?.mode === 'test' ? body.mode : undefined;
     const interval = body?.interval === 'year' ? 'year' : 'month';
-    return this.billing.adminCreateOnPaypal(key, mode, interval);
+    return this.billing.adminCreateOnDodo(key, mode, interval);
   }
 
-  // ---- PayPal keys
-  @Get('paypal')
-  paypal() {
-    return this.billing.adminPaypalSettings();
+  // ---- Dodo Payments keys
+  @Get('dodo')
+  dodo() {
+    return this.billing.adminDodoSettings();
   }
 
-  @Put('paypal')
-  savePaypal(@Body() body: Record<string, string>) {
-    return this.billing.adminSavePaypal(body ?? {});
+  @Put('dodo')
+  saveDodo(@Body() body: Record<string, string>) {
+    return this.billing.adminSaveDodo(body ?? {});
   }
 
-  @Post('paypal/test')
-  testPaypal(@Body() body: { mode: PaypalMode }) {
-    return this.billing.adminTestPaypal(
-      body?.mode === 'live' ? 'live' : 'sandbox',
-    );
+  @Post('dodo/test')
+  testDodo(@Body() body: { mode: DodoMode }) {
+    return this.billing.adminTestDodo(body?.mode === 'live' ? 'live' : 'test');
   }
 }

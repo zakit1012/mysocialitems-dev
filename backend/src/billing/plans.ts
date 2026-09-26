@@ -16,12 +16,13 @@ export type Plan = {
   refreshHours: number;
   active: boolean;
   sortOrder: number;
-  paypalPlanIdSandbox: string | null;
-  paypalPlanIdLive: string | null;
   /** Price for a year paid up front. */
   priceYearlyUsd: number;
-  paypalYearlyIdSandbox: string | null;
-  paypalYearlyIdLive: string | null;
+  /** Dodo Payments product per mode and billing period. */
+  dodoMonthlyIdTest: string | null;
+  dodoMonthlyIdLive: string | null;
+  dodoYearlyIdTest: string | null;
+  dodoYearlyIdLive: string | null;
 };
 
 export type BillingInterval = 'month' | 'year';
@@ -48,11 +49,11 @@ export const FREE_KEY = 'FREE';
 
 export const DEFAULT_PLANS: Omit<
   Plan,
-  | 'paypalPlanIdSandbox'
-  | 'paypalPlanIdLive'
   | 'priceYearlyUsd'
-  | 'paypalYearlyIdSandbox'
-  | 'paypalYearlyIdLive'
+  | 'dodoMonthlyIdTest'
+  | 'dodoMonthlyIdLive'
+  | 'dodoYearlyIdTest'
+  | 'dodoYearlyIdLive'
 >[] = [
   {
     key: 'FREE',
@@ -104,11 +105,11 @@ export const ADMIN_LIMITS: Plan = {
   refreshHours: 12,
   active: true,
   sortOrder: 99,
-  paypalPlanIdSandbox: null,
-  paypalPlanIdLive: null,
   priceYearlyUsd: 0,
-  paypalYearlyIdSandbox: null,
-  paypalYearlyIdLive: null,
+  dodoMonthlyIdTest: null,
+  dodoMonthlyIdLive: null,
+  dodoYearlyIdTest: null,
+  dodoYearlyIdLive: null,
 };
 
 /** Plans saved before refresh hours existed, or added without one. */

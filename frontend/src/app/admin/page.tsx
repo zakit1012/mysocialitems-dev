@@ -110,7 +110,7 @@ export default function AdminOverviewPage() {
 
         <Panel title="Recent billing events">
           {events.length === 0 ? (
-            <p className="text-muted">No PayPal events yet.</p>
+            <p className="text-muted">No payment events yet.</p>
           ) : (
             <ul className="divide-y divide-line/60">
               {events.slice(0, 7).map((e) => (

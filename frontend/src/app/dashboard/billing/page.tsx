@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Check, CreditCard, FileText, RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
+import { Check, CreditCard, FileText, Globe, RefreshCw, ShieldCheck, Smartphone, TriangleAlert } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
@@ -26,6 +26,26 @@ type PlanCard = {
 };
 
 type Interval = "month" | "year";
+/** Where the customer pays from: India gets rupees, UPI AutoPay and Indian cards. */
+type Region = "IN" | "INTL";
+
+/** A first guess from the browser's time zone; the customer can switch it. */
+function guessRegion(): Region {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return zone === "Asia/Kolkata" || zone === "Asia/Calcutta" ? "IN" : "INTL";
+  } catch {
+    return "INTL";
+  }
+}
+
+/** What a plan costs over a year on a period, to tell an upgrade from a downgrade. */
+const yearlyValue = (p: PlanCard, every: Interval) => (every === "year" ? p.priceYearlyUsd : p.priceUsd * 12);
+
+type CheckoutResult =
+  | { checkoutUrl: string }
+  | { done: "resumed" | "upgraded" }
+  | { done: "scheduled"; effectiveAt: string | null };
 
 const money = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
 
@@ -38,11 +58,16 @@ type Overview = {
     cancelAtPeriodEnd: boolean;
     pendingPlan: string | null;
     interval?: Interval;
-    hasPaypal?: boolean;
+    currency?: string | null;
+    /** Billed through Dodo: can be cancelled, resumed or changed here. */
+    hasSubscription?: boolean;
+    /** Card or UPI can be updated in Dodo's customer portal. */
+    canManagePayment?: boolean;
   };
   usage: { period: string; views: number; widgets: number; sources: number };
   plans: PlanCard[];
   billingEnabled: boolean;
+  testMode?: boolean;
   details?: Details;
 };
 
@@ -66,7 +91,10 @@ function Billing() {
   const [period, setPeriod] = useState<Interval | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
-  // One confirm per PayPal return, even if the page re-renders with a
+  const [region, setRegion] = useState<Region>(guessRegion);
+  // A plan change on a running subscription waits for the customer's yes.
+  const [change, setChange] = useState<{ plan: PlanCard; every: Interval; upgrade: boolean } | null>(null);
+  // One confirm per return from checkout, even if the page re-renders with a
   // refreshed sign-in token while it is running.
   const confirmed = useRef<string | null>(null);
 
@@ -85,12 +113,12 @@ function Billing() {
     }
   }, [token]);
 
-  // Coming back from PayPal: confirm straight away instead of waiting for the webhook.
+  // Coming back from checkout: confirm straight away instead of waiting for the webhook.
   useEffect(() => {
     if (!token) return;
-    const status = params.get("paypal");
+    const status = params.get("checkout");
     const subscriptionId = params.get("subscription_id");
-    if (status === "cancel") {
+    if (status === "cancel" || (status === "return" && !subscriptionId)) {
       setNotice({ kind: "bad", text: "Checkout was cancelled. Nothing was charged." });
       router.replace("/dashboard/billing");
     } else if (status === "return" && subscriptionId) {
@@ -105,8 +133,15 @@ function Billing() {
         .then((r) =>
           setNotice(
             r.status === "ACTIVE"
-              ? { kind: "ok", text: "Payment confirmed - your new plan is active." }
-              : { kind: "bad", text: `PayPal says the subscription is ${r.status.toLowerCase()}. It may take a minute.` },
+              ? { kind: "ok", text: "Payment confirmed - your new plan is active. A receipt is on its way to your email." }
+              : r.status === "PENDING"
+                ? {
+                    kind: "ok",
+                    text: "Your payment is being processed. UPI and Indian cards can take a few minutes; we will email you as soon as your plan is active.",
+                  }
+                : r.status === "FAILED"
+                  ? { kind: "bad", text: "The payment did not go through, so nothing was charged. Please try again, or use another card or UPI." }
+                  : { kind: "bad", text: `Your subscription is ${r.status.toLowerCase()}. It may take a minute to update.` },
           ),
         )
         .catch((err) => setNotice({ kind: "bad", text: err instanceof Error ? err.message : "Could not confirm" }))
@@ -120,18 +155,75 @@ function Billing() {
     load();
   }, [token, params, router, load]);
 
-  async function upgrade(plan: string, every: Interval) {
+  /**
+   * A new subscriber goes to checkout. Someone already paying changes plan on
+   * their subscription, after saying yes to what that costs.
+   */
+  function choose(p: PlanCard, every: Interval) {
+    if (!data) return;
+    const sub = data.subscription;
+    const running = Boolean(sub.hasSubscription) && (sub.status === "ACTIVE" || sub.status === "CANCELLED");
+    if (!running) return void checkout(p.id, every);
+    const current = data.plans.find((x) => x.id === sub.plan);
+    const upgrade = !current || yearlyValue(p, every) > yearlyValue(current, sub.interval ?? "month");
+    setChange({ plan: p, every, upgrade });
+  }
+
+  async function checkout(plan: string, every: Interval) {
+    setChange(null);
     setBusy(plan);
     setNotice(null);
     try {
-      const r = await api<{ approveUrl: string }>("/billing/checkout", {
+      const r = await api<CheckoutResult>("/billing/checkout", {
         method: "POST",
         token,
-        body: JSON.stringify({ plan, interval: every }),
+        body: JSON.stringify({ plan, interval: every, region }),
       });
-      window.location.href = r.approveUrl;
+      if ("checkoutUrl" in r) {
+        window.location.href = r.checkoutUrl;
+        return;
+      }
+      const name = data?.plans.find((x) => x.id === plan)?.name ?? plan;
+      setNotice({
+        kind: "ok",
+        text:
+          r.done === "resumed"
+            ? "Welcome back - your plan continues."
+            : r.done === "upgraded"
+              ? `Moving you to ${name}. The difference is charged to your saved card or UPI, and the new limits switch on as soon as it goes through (Indian cards and UPI can take up to 2 days).`
+              : `Done - you move to ${name}${"effectiveAt" in r && r.effectiveAt ? ` on ${fmtDay(r.effectiveAt)}` : " at your next billing date"}. Until then you keep your current plan.`,
+      });
+      await load();
+      setBusy("");
     } catch (err) {
       setNotice({ kind: "bad", text: err instanceof Error ? err.message : "Could not start checkout" });
+      setBusy("");
+    }
+  }
+
+  async function resume() {
+    setBusy("resume");
+    setNotice(null);
+    try {
+      await api("/billing/resume", { method: "POST", token });
+      setNotice({ kind: "ok", text: "Welcome back - your plan continues and renews as before." });
+      await load();
+    } catch (err) {
+      setNotice({ kind: "bad", text: err instanceof Error ? err.message : "Could not resume" });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  /** Dodo's customer portal, where the card or UPI is updated. */
+  async function managePayment() {
+    setBusy("portal");
+    setNotice(null);
+    try {
+      const r = await api<{ url: string }>("/billing/portal", { method: "POST", token });
+      window.location.href = r.url;
+    } catch (err) {
+      setNotice({ kind: "bad", text: err instanceof Error ? err.message : "Could not open the payment settings" });
       setBusy("");
     }
   }
@@ -155,8 +247,8 @@ function Billing() {
       <StatusCard
         icon={<Spinner className="h-6 w-6" />}
         title="Confirming your payment"
-        text="PayPal is telling us about your new plan. This usually takes a few seconds - please keep this page open."
-        slowText="Still working. PayPal can be slow at times; your payment is safe. If this takes more than a minute, refresh the page - the plan switches on as soon as PayPal confirms."
+        text="We are checking your payment with our payment provider. This usually takes a few seconds - please keep this page open."
+        slowText="Still working; your payment is safe. If this takes more than a minute, refresh the page - your plan switches on as soon as the payment is confirmed, and we email you."
       />
     );
   }
@@ -214,6 +306,13 @@ function Billing() {
         </p>
       )}
 
+      {data.billingEnabled && data.testMode && (
+        <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+          <b>Test mode</b> - nothing here charges real money. Pay with card <code>4242 4242 4242 4242</code> (any future
+          date, CVV 123), an Indian test card <code>4576 2389 1277 1450</code>, or UPI <code>success@upi</code>.
+        </div>
+      )}
+
       {!data.billingEnabled && (
         <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-line bg-card px-4 py-3 text-[13px] text-muted">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-coral" />
@@ -223,7 +322,8 @@ function Billing() {
 
       {/* current plan + usage */}
       <section className="relative mb-6 rounded-2xl border border-line bg-card p-5 shadow-card">
-        {busy === "cancel" && <BusyOverlay text={`Cancelling your ${planName} subscription with PayPal...`} />}
+        {busy === "cancel" && <BusyOverlay text={`Cancelling your ${planName} subscription...`} />}
+        {busy === "resume" && <BusyOverlay text={`Resuming your ${planName} plan...`} />}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-[11.5px] font-bold uppercase tracking-wide text-muted">Current plan</p>
@@ -232,9 +332,9 @@ function Billing() {
               {subscription.status === "CANCELLED" && renews
                 ? `Cancelled - paid features until ${renews}`
                 : subscription.status === "PAST_DUE"
-                  ? "Payment overdue - update your payment method in PayPal; your plan returns once it goes through"
+                  ? "Payment overdue - update your card or UPI; your plan returns as soon as it goes through"
                   : subscription.status === "SUSPENDED"
-                  ? "Suspended by PayPal - update your payment method"
+                  ? "Paused - on Free limits until it resumes"
                   : isPaid && renews
                     ? `Renews ${renews}${subscription.interval === "year" ? " · billed yearly" : " · billed monthly"}`
                     : plan.id === "ADMIN"
@@ -244,17 +344,33 @@ function Billing() {
                         : "Free forever"}
             </p>
           </div>
-          {/* Only a PayPal subscription can be cancelled here; a plan set by support is changed by support. */}
-          {isPaid && CANCELLABLE.includes(subscription.status) && subscription.hasPaypal && (
-            <button
-              type="button"
-              onClick={() => setConfirmCancel(true)}
-              disabled={busy === "cancel"}
-              className="rounded-lg border border-line px-3.5 py-2 text-[13px] font-medium text-coral transition hover:bg-coral/5 disabled:opacity-50"
-            >
-              {busy === "cancel" ? "Cancelling..." : "Cancel subscription"}
-            </button>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {subscription.canManagePayment && (
+              <button
+                type="button"
+                onClick={managePayment}
+                disabled={Boolean(busy)}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold transition disabled:opacity-50 ${
+                  subscription.status === "PAST_DUE" || subscription.status === "SUSPENDED"
+                    ? "gradient-brand text-white hover:shadow-glow"
+                    : "border border-line text-ink hover:bg-sand"
+                }`}
+              >
+                {busy === "portal" ? <Spinner /> : <CreditCard className="h-4 w-4" />} Update payment method
+              </button>
+            )}
+            {/* Only a Dodo subscription can be cancelled here; a plan set by support is changed by support. */}
+            {isPaid && CANCELLABLE.includes(subscription.status) && subscription.hasSubscription && (
+              <button
+                type="button"
+                onClick={() => setConfirmCancel(true)}
+                disabled={Boolean(busy)}
+                className="rounded-lg border border-line px-3.5 py-2 text-[13px] font-medium text-coral transition hover:bg-coral/5 disabled:opacity-50"
+              >
+                {busy === "cancel" ? "Cancelling..." : "Cancel subscription"}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="mt-5 grid gap-4 sm:grid-cols-3">
@@ -264,7 +380,22 @@ function Billing() {
         </div>
       </section>
 
-      {openingCheckout(busy) && <FullBusy text="Taking you to PayPal..." />}
+      {openingCheckout(busy) && <FullBusy text="Opening secure checkout..." />}
+
+      <ConfirmDialog
+        open={Boolean(change)}
+        title={change ? `${change.upgrade ? "Switch" : "Move"} to ${change.plan.name}${change.every === "year" ? " yearly" : ""}?` : "Change plan"}
+        message={
+          change &&
+          (change.upgrade
+            ? `You pay the difference now for the rest of your current period, from your saved card or UPI. After that it renews at ${money(change.every === "year" ? change.plan.priceYearlyUsd : change.plan.priceUsd)} a ${change.every}. The new limits apply as soon as the payment goes through.`
+            : `Nothing is charged today. Your ${planName} plan continues until ${renews ?? "your next billing date"}; from then you pay ${money(change.every === "year" ? change.plan.priceYearlyUsd : change.plan.priceUsd)} a ${change.every} for ${change.plan.name}.`)
+        }
+        confirmLabel={change?.upgrade ? "Switch now" : "Schedule the change"}
+        cancelLabel="Keep my plan"
+        onCancel={() => setChange(null)}
+        onConfirm={() => change && checkout(change.plan.id, change.every)}
+      />
 
       <ConfirmDialog
         open={confirmCancel}
@@ -284,6 +415,31 @@ function Billing() {
       {/* plans */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-bold">Plans</h2>
+        {!subscription.hasSubscription && (
+          <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+            <span className="text-muted">Paying from</span>
+            <div className="flex rounded-xl border border-line bg-card p-1" role="group" aria-label="Paying from">
+              {(
+                [
+                  ["IN", "India · ₹ UPI", Smartphone],
+                  ["INTL", "Other countries · $", Globe],
+                ] as const
+              ).map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={region === id}
+                  onClick={() => setRegion(id)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-semibold transition ${
+                    region === id ? "bg-ink text-white" : "text-muted hover:text-ink"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" /> {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex rounded-xl border border-line bg-card p-1" role="group" aria-label="Billing period">
           {(
             [
@@ -350,14 +506,14 @@ function Billing() {
               </ul>
               <div className="mt-auto pt-5">
                 {current && resumable ? (
-                  // Cancelled but still paid up: take it back, first charge when the paid time ends.
+                  // Cancelled but still paid up: take the cancellation back.
                   <button
                     type="button"
-                    onClick={() => upgrade(p.id, every)}
+                    onClick={resume}
                     disabled={Boolean(busy)}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-lg gradient-brand py-2.5 text-[13px] font-semibold text-white transition hover:shadow-glow disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {busy === p.id ? <Spinner /> : <CreditCard className="h-4 w-4" />}
+                    {busy === "resume" ? <Spinner /> : <CreditCard className="h-4 w-4" />}
                     Resume {p.name} - nothing to pay until {renews}
                   </button>
                 ) : current ? (
@@ -367,7 +523,7 @@ function Billing() {
                 ) : free ? null : (
                   <button
                     type="button"
-                    onClick={() => upgrade(p.id, every)}
+                    onClick={() => choose(p, every)}
                     disabled={!available || Boolean(busy)}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-lg gradient-brand py-2.5 text-[13px] font-semibold text-white transition hover:shadow-glow disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -375,8 +531,8 @@ function Billing() {
                     {!available
                       ? "Coming soon"
                       : samePlanOtherPeriod
-                        ? `Switch to ${yearly ? "yearly" : "monthly"} with PayPal`
-                        : `Choose ${p.name}${yearly ? " yearly" : ""} with PayPal`}
+                        ? `Switch to ${yearly ? "yearly" : "monthly"}`
+                        : `Choose ${p.name}${yearly ? " yearly" : ""}`}
                   </button>
                 )}
               </div>
@@ -384,6 +540,19 @@ function Billing() {
           );
         })}
       </div>
+
+      <p className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted">
+        <ShieldCheck className="h-4 w-4 text-emerald-dark" />
+        <span>Secure checkout by Dodo Payments</span>
+        <span aria-hidden>·</span>
+        <span>{region === "IN" ? "UPI AutoPay, RuPay and all Indian cards, billed in ₹" : "Cards, Apple Pay and Google Pay"}</span>
+        <span aria-hidden>·</span>
+        <span>Cancel any time</span>
+        <span aria-hidden>·</span>
+        <Link href="/refund-policy" className="underline hover:text-ink">
+          Refund within 7 days of your first payment
+        </Link>
+      </p>
 
       <PaymentHistory payments={payments} />
       <BillingDetails token={token} initial={data.details ?? { name: "", address: "", taxId: "" }} />
@@ -442,13 +611,14 @@ function PaymentHistory({ payments }: { payments: PaymentRow[] }) {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/invoice/${p.id}`}
+                      <a
+                        href={p.invoiceUrl ?? `/invoice/${p.id}`}
                         target="_blank"
+                        rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 font-semibold text-brand hover:underline"
                       >
                         <FileText className="h-3.5 w-3.5" /> Invoice
-                      </Link>
+                      </a>
                     </td>
                   </tr>
                 );
@@ -534,8 +704,8 @@ function BillingDetails({ token, initial }: { token: string | null; initial: Det
   );
 }
 
-/** Any busy state that is a plan id: checkout is being opened on PayPal. */
-const openingCheckout = (busy: string) => Boolean(busy) && !["confirm", "cancel"].includes(busy);
+/** Any busy state that is a plan id: checkout (or a plan change) is being opened. */
+const openingCheckout = (busy: string) => Boolean(busy) && !["confirm", "cancel", "resume", "portal"].includes(busy);
 
 /** A centred card for a whole-page state: confirming, or a failed load. */
 function StatusCard({
@@ -565,7 +735,7 @@ function StatusCard({
       <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{slow && slowText ? slowText : text}</p>
       {slowText && (
         <p className="mt-5 inline-flex items-center gap-1.5 text-[12px] font-medium text-emerald-dark">
-          <ShieldCheck className="h-3.5 w-3.5" /> Secure payment by PayPal
+          <ShieldCheck className="h-3.5 w-3.5" /> Secure payment by Dodo Payments
         </p>
       )}
       {action}
@@ -601,7 +771,7 @@ function BusyOverlay({ text }: { text: string }) {
   );
 }
 
-/** Covers the page while the browser is on its way to PayPal. */
+/** Covers the page while the browser is on its way to checkout. */
 function FullBusy({ text }: { text: string }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-sand/80 backdrop-blur-sm" role="status">
@@ -610,13 +780,13 @@ function FullBusy({ text }: { text: string }) {
       </span>
       <p className="text-sm font-semibold text-ink">{text}</p>
       <p className="inline-flex items-center gap-1.5 text-[12px] text-muted">
-        <ShieldCheck className="h-3.5 w-3.5 text-emerald-dark" /> You pay on PayPal&apos;s own secure page
+        <ShieldCheck className="h-3.5 w-3.5 text-emerald-dark" /> You pay on a secure checkout page by Dodo Payments
       </p>
     </div>
   );
 }
 
-/** A PayPal subscription in these states can still be stopped from here. */
+/** A Dodo subscription in these states can still be stopped from here. */
 const CANCELLABLE = ["ACTIVE", "PAST_DUE", "SUSPENDED"];
 
 /** The backend sends Number.MAX_SAFE_INTEGER for "no limit". */

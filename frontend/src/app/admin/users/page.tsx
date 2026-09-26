@@ -114,7 +114,7 @@ export default function AdminUsersPage() {
         title={pending?.role === "ADMIN" ? `Make ${pending?.user.name} an admin?` : `Remove ${pending?.user.name}'s admin access?`}
         message={
           pending?.role === "ADMIN"
-            ? "Admins can see every account, change plans and PayPal settings."
+            ? "Admins can see every account, change plans and payment settings."
             : "They lose the admin panel straight away."
         }
         confirmLabel={pending?.role === "ADMIN" ? "Make admin" : "Remove admin"}
