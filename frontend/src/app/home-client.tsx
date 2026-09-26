@@ -27,6 +27,7 @@ import { WidgetPreview } from "@/components/widget/WidgetPreview";
 import { DEFAULT_SETTINGS, type Layout, type WidgetSettings } from "@/lib/widget-settings";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { FAQ } from "@/lib/faq";
+import { rupees, useInIndia } from "@/lib/region";
 import { HOSTS, SITE, appHref } from "@/lib/site";
 
 type PublicPlan = {
@@ -39,6 +40,9 @@ type PublicPlan = {
   views: number | null;
   refreshHours: number;
   priceYearlyUsd?: number;
+  /** Rupee prices from Admin -> Plans, shown to visitors in India. */
+  priceInr?: number | null;
+  priceYearlyInr?: number | null;
 };
 
 /** Shown until the live plans load, and if the API is unreachable. */
@@ -517,6 +521,8 @@ function FeatureGrid() {
 
 function Pricing({ plans, loggedIn }: { plans: PublicPlan[]; loggedIn: boolean }) {
   const [yearly, setYearly] = useState(false);
+  // Visitors in India see rupees; everyone else sees dollars only.
+  const inIndia = useInIndia();
   return (
     <section id="pricing" className="scroll-mt-20 border-t border-line/60 bg-sand">
       <div className="mx-auto max-w-6xl px-4 py-20 md:py-28">
@@ -553,7 +559,12 @@ function Pricing({ plans, loggedIn }: { plans: PublicPlan[]; loggedIn: boolean }
             const free = p.priceUsd <= 0;
             // The middle plan of three is the one we point people at.
             const featured = plans.length === 3 && i === 1;
-            const perYear = p.priceYearlyUsd ?? p.priceUsd * 10;
+            const rupee = inIndia && (free || p.priceInr != null);
+            const fmt = rupee ? rupees : money;
+            const perMonth = rupee ? (p.priceInr ?? 0) : p.priceUsd;
+            const perYear = rupee
+              ? (p.priceYearlyInr ?? perMonth * 10)
+              : (p.priceYearlyUsd ?? p.priceUsd * 10);
             const showYearly = yearly && !free;
             return (
               <div
@@ -569,11 +580,11 @@ function Pricing({ plans, loggedIn }: { plans: PublicPlan[]; loggedIn: boolean }
                 )}
                 <h3 className="text-lg font-bold">{p.name}</h3>
                 <p className="mt-3 flex items-baseline gap-1">
-                  <span className="text-5xl font-black tracking-tight">{money(showYearly ? perYear : p.priceUsd)}</span>
+                  <span className="text-5xl font-black tracking-tight">{fmt(showYearly ? perYear : perMonth)}</span>
                   <span className="text-sm text-muted">{free ? "forever" : showYearly ? "/year" : "/month"}</span>
                 </p>
                 <p className="mt-1 h-5 text-sm font-semibold text-emerald-dark">
-                  {showYearly && `${money(Math.round((perYear / 12) * 100) / 100)} a month, billed yearly`}
+                  {showYearly && `${fmt(Math.round((perYear / 12) * 100) / 100)} a month, billed yearly`}
                 </p>
                 <ul className="mt-7 space-y-3 text-[15px] text-ink-soft">
                   {[

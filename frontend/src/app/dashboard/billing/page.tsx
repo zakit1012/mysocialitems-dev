@@ -3,12 +3,13 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Check, CreditCard, FileText, RefreshCw, ShieldCheck, Smartphone, TriangleAlert } from "lucide-react";
+import { Check, CreditCard, FileText, RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { fmtCents, fmtDay, PAYMENT_STATUS, type PaymentRow } from "@/lib/payments";
+import { rupees } from "@/lib/region";
 import { siteHref } from "@/lib/site";
 
 type PlanCard = {
@@ -22,6 +23,9 @@ type PlanCard = {
   views: number;
   refreshHours: number;
   priceYearlyUsd: number;
+  /** Set in Admin -> Plans; null means India pays the dollar price in rupees. */
+  priceInr: number | null;
+  priceYearlyInr: number | null;
   available: boolean;
   availableYearly?: boolean;
 };
@@ -95,7 +99,7 @@ function Billing() {
   // Only someone whose browser is in India sees the UPI choice at all; to
   // everyone else the page is a plain dollar checkout, with no mention of India.
   const [inIndia] = useState(() => guessRegion() === "IN");
-  const [region, setRegion] = useState<Region>(inIndia ? "IN" : "INTL");
+  const region: Region = inIndia ? "IN" : "INTL";
   // A plan change on a running subscription waits for the customer's yes.
   const [change, setChange] = useState<{ plan: PlanCard; every: Interval; upgrade: boolean } | null>(null);
   // One confirm per return from checkout, even if the page re-renders with a
@@ -292,6 +296,21 @@ function Billing() {
   const renews = subscription.currentPeriodEnd
     ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
     : null;
+  // India sees rupees, everyone else dollars. A running subscription keeps
+  // the currency it is billed in.
+  const inRupees = subscription.hasSubscription ? subscription.currency === "INR" : region === "IN";
+  const priceNumbers = (p: PlanCard) => {
+    const rupee = inRupees && (p.priceUsd <= 0 || p.priceInr != null);
+    return {
+      fmt: rupee ? rupees : money,
+      month: rupee ? (p.priceInr ?? 0) : p.priceUsd,
+      year: rupee ? (p.priceYearlyInr ?? 0) : p.priceYearlyUsd,
+    };
+  };
+  const price = (p: PlanCard, per: Interval) => {
+    const n = priceNumbers(p);
+    return n.fmt(per === "year" ? n.year : n.month);
+  };
 
   return (
     <div>
@@ -398,8 +417,8 @@ function Billing() {
         message={
           change &&
           (change.upgrade
-            ? `You pay the difference now for the rest of your current period, from your saved card or UPI. After that it renews at ${money(change.every === "year" ? change.plan.priceYearlyUsd : change.plan.priceUsd)} a ${change.every}. The new limits apply as soon as the payment goes through.`
-            : `Nothing is charged today. Your ${planName} plan continues until ${renews ?? "your next billing date"}; from then you pay ${money(change.every === "year" ? change.plan.priceYearlyUsd : change.plan.priceUsd)} a ${change.every} for ${change.plan.name}.`)
+            ? `You pay the difference now for the rest of your current period, from your saved card or UPI. After that it renews at ${price(change.plan, change.every)} a ${change.every}. The new limits apply as soon as the payment goes through.`
+            : `Nothing is charged today. Your ${planName} plan continues until ${renews ?? "your next billing date"}; from then you pay ${price(change.plan, change.every)} a ${change.every} for ${change.plan.name}.`)
         }
         confirmLabel={change?.upgrade ? "Switch now" : "Schedule the change"}
         cancelLabel="Keep my plan"
@@ -425,31 +444,6 @@ function Billing() {
       {/* plans */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-bold">Plans</h2>
-        {!subscription.hasSubscription && inIndia && (
-          <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
-            <span className="text-muted">Pay with</span>
-            <div className="flex rounded-xl border border-line bg-card p-1" role="group" aria-label="Pay with">
-              {(
-                [
-                  ["IN", "UPI · ₹", Smartphone],
-                  ["INTL", "Card · $", CreditCard],
-                ] as const
-              ).map(([id, label, Icon]) => (
-                <button
-                  key={id}
-                  type="button"
-                  aria-pressed={region === id}
-                  onClick={() => setRegion(id)}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-semibold transition ${
-                    region === id ? "bg-ink text-white" : "text-muted hover:text-ink"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" /> {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
         <div className="flex rounded-xl border border-line bg-card p-1" role="group" aria-label="Billing period">
           {(
             [
@@ -490,13 +484,15 @@ function Billing() {
             >
               <p className="font-bold">{p.name}</p>
               <p className="mt-2">
-                <span className="text-3xl font-black">{money(yearly ? p.priceYearlyUsd : p.priceUsd)}</span>
+                <span className="text-3xl font-black">{price(p, yearly ? "year" : "month")}</span>
                 <span className="text-[13px] text-muted">{free ? "" : yearly ? " / year" : " / month"}</span>
               </p>
               {yearly && (
                 <p className="text-[12px] font-semibold text-emerald-dark">
-                  {money(Math.round((p.priceYearlyUsd / 12) * 100) / 100)} a month, saves{" "}
-                  {money(Math.max(0, Math.round((p.priceUsd * 12 - p.priceYearlyUsd) * 100) / 100))}
+                  {(({ fmt, month, year }) =>
+                    `${fmt(Math.round((year / 12) * 100) / 100)} a month, you save ${fmt(Math.max(0, Math.round((month * 12 - year) * 100) / 100))}`)(
+                    priceNumbers(p),
+                  )}
                 </p>
               )}
               <ul className="mt-4 space-y-2 text-[13px]">
@@ -553,14 +549,14 @@ function Billing() {
 
       <p className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted">
         <ShieldCheck className="h-4 w-4 text-emerald-dark" />
-        <span>Secure checkout by Dodo Payments</span>
+        <span>Secure checkout</span>
         <span aria-hidden>·</span>
-        <span>{region === "IN" ? "UPI AutoPay, RuPay and all Indian cards, billed in ₹" : "Cards, Apple Pay and Google Pay"}</span>
+        <span>{inRupees ? "Pay with UPI or any Indian card" : "Pay with card, Apple Pay or Google Pay"}</span>
         <span aria-hidden>·</span>
         <span>Cancel any time</span>
         <span aria-hidden>·</span>
         <Link href={siteHref("/refund-policy")} className="underline hover:text-ink">
-          Refund within 7 days of your first payment
+          7-day refund on your first payment
         </Link>
       </p>
 
@@ -745,7 +741,7 @@ function StatusCard({
       <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{slow && slowText ? slowText : text}</p>
       {slowText && (
         <p className="mt-5 inline-flex items-center gap-1.5 text-[12px] font-medium text-emerald-dark">
-          <ShieldCheck className="h-3.5 w-3.5" /> Secure payment by Dodo Payments
+          <ShieldCheck className="h-3.5 w-3.5" /> Secure payment
         </p>
       )}
       {action}
@@ -790,7 +786,7 @@ function FullBusy({ text }: { text: string }) {
       </span>
       <p className="text-sm font-semibold text-ink">{text}</p>
       <p className="inline-flex items-center gap-1.5 text-[12px] text-muted">
-        <ShieldCheck className="h-3.5 w-3.5 text-emerald-dark" /> You pay on a secure checkout page by Dodo Payments
+        <ShieldCheck className="h-3.5 w-3.5 text-emerald-dark" /> You pay on a secure checkout page
       </p>
     </div>
   );
