@@ -97,8 +97,9 @@ export function DodoTab({ token }: { token: string | null }) {
         <div>
           <p className="text-[13px] font-bold">Mode</p>
           <p className="text-[12.5px] text-muted">
-            Test uses test cards and fake UPI, nothing is charged. Live charges real customers. Checkout and
-            webhooks use whichever is on.
+            Test uses test cards and fake UPI, nothing is charged. Live charges real customers. Checkout uses
+            whichever is on - except developer accounts (Admin → Users), which always check out in test mode. So
+            on live, keep the test keys, test webhook and test products (Plans tab) set up for them too.
           </p>
         </div>
         <div className="flex rounded-lg border border-line p-0.5">

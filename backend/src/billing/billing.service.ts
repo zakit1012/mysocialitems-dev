@@ -361,20 +361,46 @@ export class BillingService {
     return sub.status === 'CANCELLED' || sub.status === 'EXPIRED';
   }
 
+  /**
+   * Where a new checkout for this account goes: Dodo's test mode (sandbox)
+   * for a developer account, else the site-wide switch in Admin -> Dodo.
+   */
+  private async checkoutMode(userId: string): Promise<DodoMode> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { testPayments: true },
+    });
+    return user?.testPayments ? 'test' : this.dodo.mode();
+  }
+
+  /** The mode a subscription lives in; rows from before it was kept use the site-wide one. */
+  private async modeOf(sub: Subscription): Promise<DodoMode> {
+    return sub.dodoMode === 'test' || sub.dodoMode === 'live'
+      ? sub.dodoMode
+      : this.dodo.mode();
+  }
+
+  /** A subscription that is not over is handled in its own mode; otherwise the account's. */
+  private async accountMode(sub: Subscription): Promise<DodoMode> {
+    return sub.dodoSubscriptionId && sub.status !== 'EXPIRED'
+      ? this.modeOf(sub)
+      : this.checkoutMode(sub.userId);
+  }
+
   async overview(userId: string) {
-    const [sub, plan, widgets, sources, usage, all, enabled, mode] =
-      await Promise.all([
-        this.subscriptionFor(userId),
-        this.planFor(userId),
-        this.prisma.widget.count({ where: { userId } }),
-        this.prisma.source.count({ where: { userId } }),
-        this.prisma.usage.findUnique({
-          where: { userId_period: { userId, period: currentPeriod() } },
-        }),
-        this.plans.all(),
-        this.dodo.configured(),
-        this.dodo.mode(),
-      ]);
+    const [sub, plan, widgets, sources, usage, all] = await Promise.all([
+      this.subscriptionFor(userId),
+      this.planFor(userId),
+      this.prisma.widget.count({ where: { userId } }),
+      this.prisma.source.count({ where: { userId } }),
+      this.prisma.usage.findUnique({
+        where: { userId_period: { userId, period: currentPeriod() } },
+      }),
+      this.plans.all(),
+    ]);
+    // A developer account sees test mode (and its test products) even on a live site.
+    const mode = await this.accountMode(sub);
+    const enabled = await this.dodo.configured(mode);
 
     const plans = all
       .filter((p) => p.active)
@@ -456,13 +482,6 @@ export class BillingService {
       throw new BadRequestException('Pick a paid plan.');
     }
     const interval: BillingInterval = intervalRaw === 'year' ? 'year' : 'month';
-    const mode = await this.dodo.mode();
-    const productId = BillingService.productFor(plan, mode, interval);
-    if (!productId || !(await this.dodo.configured())) {
-      throw new BadRequestException(
-        `${plan.name}${interval === 'year' ? ' yearly' : ''} is not available yet.`,
-      );
-    }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException();
@@ -473,6 +492,18 @@ export class BillingService {
     const running =
       Boolean(sub.dodoSubscriptionId) &&
       (sub.status === 'ACTIVE' || (sub.status === 'CANCELLED' && paidAhead));
+
+    // A running subscription changes in the mode it lives in; a new one
+    // starts in the account's (test for a developer account).
+    const mode = running
+      ? await this.modeOf(sub)
+      : await this.checkoutMode(userId);
+    const productId = BillingService.productFor(plan, mode, interval);
+    if (!productId || !(await this.dodo.configured(mode))) {
+      throw new BadRequestException(
+        `${plan.name}${interval === 'year' ? ' yearly' : ''} is not available yet.`,
+      );
+    }
 
     if (running && sub.dodoSubscriptionId) {
       const id = sub.dodoSubscriptionId;
@@ -489,14 +520,18 @@ export class BillingService {
       const current = (await this.plans.get(sub.plan)) ?? plan;
       if (sub.status === 'CANCELLED') {
         // Choosing another plan takes back the cancellation too.
-        await this.dodo.updateSubscription(id, {
-          cancel_at_next_billing_date: false,
-        });
+        await this.dodo.updateSubscription(
+          id,
+          { cancel_at_next_billing_date: false },
+          mode,
+        );
       }
       const upgrade =
         yearlyValue(plan, interval) > yearlyValue(current, sub.interval);
-      await this.dodo.changePlan(id, productId, upgrade);
-      await this.sync(userId, await this.dodo.getSubscription(id));
+      await this.dodo.changePlan(id, productId, upgrade, mode);
+      await this.sync(userId, await this.dodo.getSubscription(id, mode), {
+        mode,
+      });
       return upgrade
         ? { done: 'upgraded' }
         : { done: 'scheduled', effectiveAt: sub.currentPeriodEnd };
@@ -504,13 +539,14 @@ export class BillingService {
 
     const india = regionRaw === 'IN';
     const session = await this.dodo.createCheckout({
+      mode,
       productId,
       email: user.email,
       name: user.name,
       india,
       returnUrl: `${this.appUrl()}/dashboard/billing?checkout=return`,
       cancelUrl: `${this.appUrl()}/dashboard/billing?checkout=cancel`,
-      metadata: { user_id: userId, plan: plan.key, interval },
+      metadata: { user_id: userId, plan: plan.key, interval, mode },
     });
     await this.prisma.subscription.update({
       where: { userId },
@@ -527,8 +563,10 @@ export class BillingService {
     if (!subscriptionId) {
       throw new BadRequestException('Missing subscription id.');
     }
+    // The checkout that brought them back ran in the account's mode.
+    const mode = await this.checkoutMode(userId);
     const [remote, user] = await Promise.all([
-      this.dodo.getSubscription(subscriptionId),
+      this.dodo.getSubscription(subscriptionId, mode),
       this.prisma.user.findUnique({ where: { id: userId } }),
     ]);
     // The id comes from a query string; make sure it is this user's.
@@ -543,7 +581,7 @@ export class BillingService {
     }
     if (remote.status === 'pending') return { status: 'PENDING' };
     if (remote.status === 'failed') return { status: 'FAILED' };
-    const after = await this.sync(userId, remote);
+    const after = await this.sync(userId, remote, { mode });
     return { status: after.status };
   }
 
@@ -560,6 +598,7 @@ export class BillingService {
       throw new BadRequestException('This subscription is already cancelled.');
     }
     const id = sub.dodoSubscriptionId;
+    const mode = await this.modeOf(sub);
     const remote = await this.dodo.updateSubscription(
       id,
       sub.status === 'ACTIVE'
@@ -568,10 +607,14 @@ export class BillingService {
             cancel_reason: 'cancelled_by_customer',
           }
         : { status: 'cancelled', cancel_reason: 'cancelled_by_customer' },
+      mode,
     );
     await this.sync(
       userId,
-      remote?.subscription_id ? remote : await this.dodo.getSubscription(id),
+      remote?.subscription_id
+        ? remote
+        : await this.dodo.getSubscription(id, mode),
+      { mode },
     );
     return { ok: true };
   }
@@ -588,12 +631,18 @@ export class BillingService {
       throw new BadRequestException('There is no cancelled plan to resume.');
     }
     const id = sub.dodoSubscriptionId;
-    const remote = await this.dodo.updateSubscription(id, {
-      cancel_at_next_billing_date: false,
-    });
+    const mode = await this.modeOf(sub);
+    const remote = await this.dodo.updateSubscription(
+      id,
+      { cancel_at_next_billing_date: false },
+      mode,
+    );
     await this.sync(
       userId,
-      remote?.subscription_id ? remote : await this.dodo.getSubscription(id),
+      remote?.subscription_id
+        ? remote
+        : await this.dodo.getSubscription(id, mode),
+      { mode },
     );
     return { ok: true };
   }
@@ -604,7 +653,12 @@ export class BillingService {
     if (!sub.dodoCustomerId) {
       throw new BadRequestException('There is no payment method to manage.');
     }
-    return { url: await this.dodo.portalLink(sub.dodoCustomerId) };
+    return {
+      url: await this.dodo.portalLink(
+        sub.dodoCustomerId,
+        await this.modeOf(sub),
+      ),
+    };
   }
 
   /** The public pricing section: active plans and their limits, nothing internal. */
@@ -639,7 +693,8 @@ export class BillingService {
   private async sync(
     userId: string,
     remote: DodoSubscription,
-    opts: { quiet?: boolean } = {},
+    /** mode: the Dodo mode `remote` was read from; it is kept with the subscription. */
+    opts: { quiet?: boolean; mode?: DodoMode } = {},
   ): Promise<Subscription> {
     const before = await this.subscriptionFor(userId);
     const next = stateFor(remote);
@@ -667,10 +722,11 @@ export class BillingService {
     // A second subscription replaces the first: stop billing the old one.
     if (isNew && before.dodoSubscriptionId && !BillingService.ended(before)) {
       await this.dodo
-        .updateSubscription(before.dodoSubscriptionId, {
-          status: 'cancelled',
-          cancel_reason: 'cancelled_by_merchant',
-        })
+        .updateSubscription(
+          before.dodoSubscriptionId,
+          { status: 'cancelled', cancel_reason: 'cancelled_by_merchant' },
+          await this.modeOf(before),
+        )
         .catch((err: unknown) =>
           this.log.warn(
             `Could not cancel the old subscription: ${String(err)}`,
@@ -694,6 +750,7 @@ export class BillingService {
         status: next.status,
         cancelAtPeriodEnd: next.cancelAtPeriodEnd,
         dodoSubscriptionId: remote.subscription_id,
+        ...(opts.mode ? { dodoMode: opts.mode } : {}),
         dodoCustomerId: remote.customer?.customer_id ?? before.dodoCustomerId,
         currency: remote.currency ?? before.currency,
         interval,
@@ -779,7 +836,7 @@ export class BillingService {
           'Changed your mind? You can resume it from Billing before then.',
       );
       await this.tellTeamCancelled(
-        userId,
+        after,
         `${plan.name} (${period}) was cancelled.`,
         nextDate
           ? `They keep ${plan.name} until ${nextDate}, then move to Free.`
@@ -810,7 +867,7 @@ export class BillingService {
       // After a cancellation the team heard already; this is one that ended at once.
       if (was !== 'CANCELLED') {
         await this.tellTeamCancelled(
-          userId,
+          after,
           `${plan.name} (${period}) ended` +
             (was === 'PAST_DUE' || was === 'SUSPENDED'
               ? ' while a renewal was unpaid.'
@@ -821,14 +878,28 @@ export class BillingService {
     }
   }
 
-  /** Tells the team at SUPPORT_EMAIL that a customer's paid plan stopped. */
-  private async tellTeamCancelled(userId: string, what: string, after: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  /**
+   * Tells the team at SUPPORT_EMAIL that a customer's paid plan stopped. A
+   * developer's test subscription says so, so it is not taken for lost money.
+   */
+  private async tellTeamCancelled(
+    sub: Subscription,
+    what: string,
+    after: string,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: sub.userId },
+    });
     if (!user) return;
+    const test = sub.dodoMode === 'test';
     // Not awaited, like notify(): send() never throws.
     void this.mail.sendTeam(
-      `Subscription cancelled: ${user.email}`,
-      ['Hi team,', `${user.name} (${user.email}): ${what} ${after}`],
+      `${test ? '[Test] ' : ''}Subscription cancelled: ${user.email}`,
+      [
+        'Hi team,',
+        `${user.name} (${user.email}): ${what} ${after}`,
+        ...(test ? ['This was a test-mode subscription: no real money.'] : []),
+      ],
       '/admin/subscriptions',
     );
   }
@@ -949,7 +1020,7 @@ export class BillingService {
     if (type.startsWith('subscription.')) {
       const remote = data as unknown as DodoSubscription;
       const before = await this.subscriptionFor(userId);
-      await this.sync(userId, remote);
+      await this.sync(userId, remote, { mode });
       // The grace period opened: access continues, but the customer should act.
       if (
         type === 'subscription.past_due' &&
@@ -1013,7 +1084,7 @@ export class BillingService {
 
     const before = await this.subscriptionFor(userId);
     // Quiet: the receipt below says "active again" itself.
-    if (remote) await this.sync(userId, remote, { quiet: true });
+    if (remote) await this.sync(userId, remote, { quiet: true, mode });
     const after = await this.subscriptionFor(userId);
     const back =
       (before.status === 'PAST_DUE' || before.status === 'SUSPENDED') &&
@@ -1121,8 +1192,11 @@ export class BillingService {
    * Charges Dodo made on a subscription that no webhook told us about. No
    * receipt goes out for these; they show in the payment list.
    */
-  private async syncPayments(userId: string, subscriptionId: string) {
-    const mode = await this.dodo.mode();
+  private async syncPayments(
+    userId: string,
+    subscriptionId: string,
+    mode: DodoMode,
+  ) {
     const [list, remote] = await Promise.all([
       this.dodo.subscriptionPayments(subscriptionId, mode),
       this.dodo.getSubscription(subscriptionId, mode).catch(() => null),
@@ -1334,7 +1408,12 @@ export class BillingService {
    * webhook went missing. Charges nobody told us about are recorded too.
    */
   async reconcileOverdue(): Promise<{ checked: number }> {
-    if (!(await this.dodo.configured())) return { checked: 0 };
+    // Developer accounts run in test mode on a live site: either set of keys will do.
+    const [live, test] = await Promise.all([
+      this.dodo.configured('live'),
+      this.dodo.configured('test'),
+    ]);
+    if (!live && !test) return { checked: 0 };
     const cutoff = new Date(Date.now() - CHECK_AFTER_MS);
     let checked = 0;
     let after: string | undefined;
@@ -1369,10 +1448,13 @@ export class BillingService {
 
   private async refreshFromDodo(sub: Subscription) {
     const id = sub.dodoSubscriptionId as string;
-    await this.syncPayments(sub.userId, id).catch((err: unknown) =>
+    const mode = await this.modeOf(sub);
+    await this.syncPayments(sub.userId, id, mode).catch((err: unknown) =>
       this.log.warn(`Payment sync failed for ${sub.userId}: ${String(err)}`),
     );
-    return this.sync(sub.userId, await this.dodo.getSubscription(id));
+    return this.sync(sub.userId, await this.dodo.getSubscription(id, mode), {
+      mode,
+    });
   }
 
   /**
@@ -1484,7 +1566,15 @@ export class BillingService {
     const rows = await this.prisma.subscription.findMany({
       orderBy: { updatedAt: 'desc' },
       include: {
-        user: { select: { id: true, email: true, name: true, role: true } },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            testPayments: true,
+          },
+        },
       },
     });
     const usage = await this.prisma.usage.findMany({
@@ -1522,7 +1612,7 @@ export class BillingService {
     if (running) {
       const plan = await this.plans.get(sub.plan);
       await this.tellTeamCancelled(
-        userId,
+        sub,
         `${plan?.name ?? sub.plan} was cancelled because they deleted their account.`,
         'It was stopped at once; no further charges.',
       );
@@ -1532,10 +1622,11 @@ export class BillingService {
   /** Stops a Dodo subscription at once (support actions). */
   private async cancelNow(sub: Subscription) {
     if (!sub.dodoSubscriptionId || BillingService.ended(sub)) return;
-    await this.dodo.updateSubscription(sub.dodoSubscriptionId, {
-      status: 'cancelled',
-      cancel_reason: 'cancelled_by_merchant',
-    });
+    await this.dodo.updateSubscription(
+      sub.dodoSubscriptionId,
+      { status: 'cancelled', cancel_reason: 'cancelled_by_merchant' },
+      await this.modeOf(sub),
+    );
   }
 
   /**
@@ -1574,6 +1665,7 @@ export class BillingService {
         cancelAtPeriodEnd: false,
         pendingPlan: null,
         dodoSubscriptionId: switching ? null : sub.dodoSubscriptionId,
+        dodoMode: switching ? null : sub.dodoMode,
         currentPeriodEnd: endsAt,
       },
     });
@@ -1600,6 +1692,7 @@ export class BillingService {
         plan: FREE_KEY,
         status: 'ACTIVE',
         dodoSubscriptionId: null,
+        dodoMode: null,
         cancelAtPeriodEnd: false,
         currentPeriodEnd: null,
       },
@@ -1612,6 +1705,35 @@ export class BillingService {
       );
     }
     return updated;
+  }
+
+  /**
+   * A developer account (its checkouts go to Dodo's test mode, no real
+   * money) or a normal one. Refused while a Dodo subscription is not over:
+   * a test subscription must not outlive the switch and keep a paid plan for
+   * free, and a live one is not moved into test mode.
+   */
+  async adminSetTestPayments(userId: string, on: unknown) {
+    if (typeof on !== 'boolean') {
+      throw new BadRequestException('"on" must be true or false.');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, testPayments: true },
+    });
+    if (!user) throw new NotFoundException('User not found.');
+    if (user.testPayments === on) return user;
+    const sub = await this.subscriptionFor(userId);
+    if (sub.dodoSubscriptionId && sub.status !== 'EXPIRED') {
+      throw new BadRequestException(
+        `${user.email} has a ${(await this.modeOf(sub)) === 'test' ? 'test' : 'live'} subscription that is not over. Cancel it under Subscriptions first, then switch.`,
+      );
+    }
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { testPayments: on },
+      select: { id: true, email: true, testPayments: true },
+    });
   }
 
   /** Read the truth back from Dodo when a webhook was missed. */

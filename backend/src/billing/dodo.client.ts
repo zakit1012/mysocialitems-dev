@@ -259,6 +259,7 @@ export class DodoClient {
    * dollars with cards and wallets.
    */
   createCheckout(input: {
+    mode: DodoMode;
     productId: string;
     email: string;
     name: string;
@@ -289,6 +290,7 @@ export class DodoClient {
           allow_customer_editing_email: false,
         },
       },
+      input.mode,
     );
   }
 
@@ -303,11 +305,16 @@ export class DodoClient {
     );
   }
 
-  updateSubscription(id: string, body: Record<string, unknown>) {
+  updateSubscription(
+    id: string,
+    body: Record<string, unknown>,
+    mode?: DodoMode,
+  ) {
     return this.request<DodoSubscription>(
       'PATCH',
       `/subscriptions/${encodeURIComponent(id)}`,
       body,
+      mode,
     );
   }
 
@@ -316,7 +323,7 @@ export class DodoClient {
    * (credit for unused time, then the new price) and stays on the old plan
    * if that charge fails; a downgrade waits for the next billing date.
    */
-  changePlan(id: string, productId: string, upgrade: boolean) {
+  changePlan(id: string, productId: string, upgrade: boolean, mode?: DodoMode) {
     return this.request<unknown>(
       'POST',
       `/subscriptions/${encodeURIComponent(id)}/change-plan`,
@@ -333,6 +340,7 @@ export class DodoClient {
             proration_billing_mode: 'do_not_bill',
             effective_at: 'next_billing_date',
           },
+      mode,
     );
   }
 

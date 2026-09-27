@@ -14,9 +14,11 @@ type Sub = {
   pendingPlan: string | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  /** test | live: where the Dodo subscription lives; null = the site-wide mode. */
+  dodoMode: string | null;
   updatedAt: string;
   viewsThisMonth: number;
-  user: { email: string; name: string; role: string };
+  user: { email: string; name: string; role: string; testPayments: boolean };
 };
 
 type Event = { id: string; type: string; userId: string | null; createdAt: string };
@@ -81,7 +83,7 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
       <p className="mb-3 text-[12.5px] text-muted">
         Changing a plan here is a manual override (a comp, a refund, a support fix). If the customer
         has a running Dodo subscription for another plan, it is cancelled so they are not billed twice.
-        Mode: <b>{mode}</b>
+        Mode: <b>{mode}</b>. Developer accounts (Admin → Users) always pay in test mode.
       </p>
       {msg && (
         <p className={`mb-3 rounded-lg px-3 py-2 text-[12.5px] ${msg.ok ? "bg-emerald-wash text-emerald-dark" : "bg-coral/10 text-coral"}`}>
@@ -102,8 +104,17 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
             {subs.map((s) => (
               <tr key={s.userId} className="border-b border-line/60 last:border-0">
                 <td className="px-2 py-2.5">
-                  <p className="font-semibold">{s.user.name}</p>
-                  <p className="text-[11.5px] text-muted">{s.user.email}{s.user.role === "ADMIN" ? " · admin" : ""}</p>
+                  <p className="font-semibold">
+                    {s.user.name}
+                    {(s.dodoMode ?? (s.dodoSubscriptionId ? mode : null)) === "test" && (
+                      <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">test</span>
+                    )}
+                  </p>
+                  <p className="text-[11.5px] text-muted">
+                    {s.user.email}
+                    {s.user.role === "ADMIN" ? " · admin" : ""}
+                    {s.user.testPayments ? " · developer" : ""}
+                  </p>
                 </td>
                 <td className="px-2 py-2.5">
                   <select

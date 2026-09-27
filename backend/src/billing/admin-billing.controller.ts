@@ -51,6 +51,15 @@ export class AdminBillingController {
     return this.billing.adminRefresh(userId);
   }
 
+  /** Developer account on or off: its checkouts go to Dodo's test mode. */
+  @Patch('users/:userId/test-payments')
+  testPayments(
+    @Param('userId') userId: string,
+    @Body() body: { on?: unknown },
+  ) {
+    return this.billing.adminSetTestPayments(userId, body?.on);
+  }
+
   // ---- payments
   @Get('payments')
   payments(@Query('mode') mode?: string) {

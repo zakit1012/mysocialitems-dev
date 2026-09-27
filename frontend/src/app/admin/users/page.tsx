@@ -12,9 +12,11 @@ type AdminUser = {
   email: string;
   name: string;
   role: string;
+  /** Developer account: its checkouts go to Dodo's test mode. */
+  testPayments: boolean;
   createdAt: string;
   _count: { widgets: number; sources: number };
-  subscription: { plan: string; status: string } | null;
+  subscription: { plan: string; status: string; dodoMode: string | null } | null;
 };
 
 const ROLES = ["USER", "MERCHANT", "ADMIN"];
@@ -26,6 +28,9 @@ export default function AdminUsersPage() {
   const [error, setError] = useState("");
   // A change to or from ADMIN waits for a yes.
   const [pending, setPending] = useState<{ user: AdminUser; role: string } | null>(null);
+  // So does making someone a developer (test-mode payments).
+  const [developer, setDeveloper] = useState<AdminUser | null>(null);
+  const [switching, setSwitching] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -53,6 +58,19 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function setTestPayments(u: AdminUser, on: boolean) {
+    setError("");
+    setSwitching(u.id);
+    try {
+      await api(`/admin/billing/users/${u.id}/test-payments`, { method: "PATCH", token, body: JSON.stringify({ on }) });
+      setReload((n) => n + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not change how this account pays");
+    } finally {
+      setSwitching(null);
+    }
+  }
+
   const q = query.trim().toLowerCase();
   const shown = (users ?? []).filter((u) => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
 
@@ -63,7 +81,7 @@ export default function AdminUsersPage() {
       {!users ? (
         <Loader label="Loading users" />
       ) : (
-        <AdminTable head={["User", "Role", "Plan", "Widgets", "Websites", "Joined"]} empty={shown.length === 0}>
+        <AdminTable head={["User", "Role", "Payments", "Plan", "Widgets", "Websites", "Joined"]} empty={shown.length === 0}>
           {shown.map((u) => (
             <tr key={u.id} className="border-b border-line/60 last:border-0 hover:bg-sand/50">
               <td className="px-4 py-3">
@@ -93,7 +111,29 @@ export default function AdminUsersPage() {
                 </select>
               </td>
               <td className="px-4 py-3">
+                <button
+                  type="button"
+                  disabled={switching === u.id}
+                  onClick={() => (u.testPayments ? void setTestPayments(u, false) : setDeveloper(u))}
+                  title={
+                    u.testPayments
+                      ? "Developer: pays in Dodo test mode. Click to switch back to real payments."
+                      : "Real payments. Click to make this a developer account (Dodo test mode)."
+                  }
+                  className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition disabled:opacity-50 ${
+                    u.testPayments
+                      ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                      : "border-line bg-card text-muted hover:border-brand/40 hover:text-ink"
+                  }`}
+                >
+                  {switching === u.id ? "Saving..." : u.testPayments ? "Test (developer)" : "Live"}
+                </button>
+              </td>
+              <td className="px-4 py-3">
                 <span className="font-semibold">{u.subscription?.plan ?? "FREE"}</span>
+                {u.subscription?.dodoMode === "test" && (
+                  <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-bold uppercase text-amber-800">test</span>
+                )}
                 {u.subscription && u.subscription.status !== "ACTIVE" && (
                   <span className="ml-1.5 text-[11.5px] text-coral">{u.subscription.status.toLowerCase()}</span>
                 )}
@@ -120,6 +160,18 @@ export default function AdminUsersPage() {
         onConfirm={() => {
           if (pending) void setRole(pending.user, pending.role);
           setPending(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(developer)}
+        title={`Make ${developer?.name} a developer?`}
+        message="Their checkouts go to Dodo's test mode: test cards, no real money, and a paid plan without paying. Everyone else keeps paying for real."
+        confirmLabel="Make developer"
+        onCancel={() => setDeveloper(null)}
+        onConfirm={() => {
+          if (developer) void setTestPayments(developer, true);
+          setDeveloper(null);
         }}
       />
     </div>

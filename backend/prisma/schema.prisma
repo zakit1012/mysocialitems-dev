@@ -22,6 +22,9 @@ model User {
   totpEnabledAt DateTime?
   /// The last 30-second step used, so each code works only once.
   totpLastStep  Int?
+  /// A developer account, set in Admin -> Users: its checkouts go to Dodo's
+  /// test mode (sandbox, no real money) whatever the site-wide mode is.
+  testPayments  Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -201,6 +204,10 @@ model Subscription {
   /// Dodo Payments subscription (sub_...) and customer (cus_...).
   dodoSubscriptionId   String?
   dodoCustomerId       String?
+  /// test | live - the Dodo mode dodoSubscriptionId lives in, so cancel,
+  /// resume and plan changes reach it there. Null (older rows): the
+  /// site-wide mode.
+  dodoMode             String?
   /// USD or INR - the currency the customer is billed in.
   currency             String?
   /// Legacy (PayPal, no longer used).

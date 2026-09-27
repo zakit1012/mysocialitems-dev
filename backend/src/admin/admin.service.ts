@@ -16,8 +16,13 @@ export class AdminService {
     const newUsers = await this.prisma.user.count({
       where: { createdAt: { gte: since } },
     });
+    // Developer accounts on test-mode subscriptions pay nothing: not counted.
     const paying = await this.prisma.subscription.count({
-      where: { status: 'ACTIVE', plan: { not: 'FREE' } },
+      where: {
+        status: 'ACTIVE',
+        plan: { not: 'FREE' },
+        OR: [{ dodoMode: null }, { dodoMode: { not: 'test' } }],
+      },
     });
     return {
       users,
@@ -37,12 +42,18 @@ export class AdminService {
         name: true,
         role: true,
         city: true,
+        testPayments: true,
         createdAt: true,
         _count: {
           select: { widgets: true, sources: true },
         },
         subscription: {
-          select: { plan: true, status: true, currentPeriodEnd: true },
+          select: {
+            plan: true,
+            status: true,
+            currentPeriodEnd: true,
+            dodoMode: true,
+          },
         },
       },
     });
