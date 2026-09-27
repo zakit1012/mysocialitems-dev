@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
@@ -6,6 +7,7 @@ import nodemailer, { Transporter } from 'nodemailer';
 import { PRODUCT_NAME, SUPPORT_EMAIL } from '../common/product';
 import { appUrl, siteUrl } from '../common/urls';
 import { PrismaService } from '../prisma/prisma.service';
+import { bounceHint } from './bounces';
 
 // Brand colours, the same as the website.
 const BRAND = '#E8446D';
@@ -17,9 +19,29 @@ const WASH = '#FFF1F2';
 const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
-/** The address inside "Name <address>", lower case. */
-const addressOf = (from: string) =>
-  (/<([^>]+)>/.exec(from)?.[1] ?? from).trim().toLowerCase();
+const EMAIL = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
+
+/**
+ * SMTP_FROM as a name and an address. Forgiving about quotes - a missing
+ * closing " once turned the sender into "WidgetPop <support"@widgetpop.com,
+ * which Gmail refused - and null when no valid address is in it.
+ */
+function parseSender(raw: string): { name: string; address: string } | null {
+  const text = raw
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .trim();
+  const angled = /^(.*?)<\s*([^<>\s]+)\s*>\s*$/.exec(text);
+  const address = (angled ? angled[2] : text).trim().toLowerCase();
+  if (!EMAIL.test(address)) return null;
+  const name = angled
+    ? angled[1]
+        .trim()
+        .replace(/^["'`]+|["'`]+$/g, '')
+        .trim()
+    : '';
+  return { name, address };
+}
 
 type SmtpError = { code?: string; responseCode?: number; message?: string };
 
@@ -70,6 +92,8 @@ type Setup = {
   missing: string[];
   otherNames: string[];
   passwordCut: boolean;
+  /** SMTP_FROM is set but holds no valid address (unclosed quotes, a typo). */
+  fromInvalid?: boolean;
   /** Lines of .env that are not NAME=value, shown up to their ":" only. */
   unreadable: string[];
 };
@@ -146,7 +170,10 @@ type Message = { to: string; subject: string; text: string; html: string };
 export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
   private readonly transporter: Transporter | null;
-  private readonly from: string;
+  /** Who the email is from, as the From header shows it. */
+  private readonly from: { name: string; address: string };
+  /** Where bounces go: the mailbox that logs in, so they can be read back. */
+  private readonly returnPath: string;
   private readonly site: string;
   private readonly app: string;
   private readonly login: string;
@@ -171,19 +198,34 @@ export class MailService implements OnModuleInit {
     const pass = config.get<string>('SMTP_PASS');
     this.login = `${host ?? ''}:${port} as ${user ?? ''}`;
     this.smtp = { host: host ?? '', port, user: user ?? '' };
-    this.setup = setupReport(config);
     // Most mail servers only send from the mailbox that logs in, so that is
     // the sender unless SMTP_FROM names another one.
-    this.from =
-      config.get<string>('SMTP_FROM') ||
-      `${PRODUCT_NAME} <${user?.includes('@') ? user : SUPPORT_EMAIL}>`;
+    const login =
+      user && EMAIL.test(user.trim())
+        ? user.trim().toLowerCase()
+        : SUPPORT_EMAIL;
+    const rawFrom = config.get<string>('SMTP_FROM')?.trim() ?? '';
+    const sender = rawFrom ? parseSender(rawFrom) : null;
+    this.from = sender
+      ? { name: sender.name || PRODUCT_NAME, address: sender.address }
+      : { name: PRODUCT_NAME, address: login };
+    this.returnPath = login;
+    this.setup = {
+      ...setupReport(config),
+      fromInvalid: Boolean(rawFrom) && !sender,
+    };
+    if (this.setup.fromInvalid) {
+      this.logger.warn(
+        `SMTP_FROM is not a valid sender (check that its quotes are closed). Sending as ${this.fromLabel} instead.`,
+      );
+    }
     this.site = siteUrl(config);
     this.app = appUrl(config);
 
     if (host && user && pass) {
-      if (user.includes('@') && addressOf(this.from) !== user.toLowerCase()) {
+      if (this.from.address !== login) {
         this.logger.warn(
-          `SMTP_FROM (${addressOf(this.from)}) is not the SMTP login (${user}). ` +
+          `SMTP_FROM (${this.from.address}) is not the SMTP login (${login}). ` +
             'Many mail servers refuse that; if emails do not arrive, set SMTP_FROM to the same address.',
         );
       }
@@ -198,10 +240,11 @@ export class MailService implements OnModuleInit {
         // connect + TLS + login each time.
         pool: true,
         // Nodemailer waits up to 2 minutes by default on a mail server that
-        // does not answer; give up much sooner.
-        connectionTimeout: 10_000,
-        greetingTimeout: 10_000,
-        socketTimeout: 20_000,
+        // does not answer; give up sooner. Some servers are slow to say hello
+        // (a reverse-DNS lookup on our IP), so the greeting gets 30 seconds.
+        connectionTimeout: 15_000,
+        greetingTimeout: 30_000,
+        socketTimeout: 30_000,
       });
     } else {
       this.transporter = null;
@@ -218,6 +261,11 @@ export class MailService implements OnModuleInit {
    */
   onModuleInit() {
     void this.check();
+  }
+
+  /** The sender as people see it: WidgetPop <support@widgetpop.com>. */
+  get fromLabel() {
+    return `${this.from.name} <${this.from.address}>`;
   }
 
   /** Log in to the mail server now; the admin panel's "Check again". */
@@ -254,7 +302,7 @@ export class MailService implements OnModuleInit {
     return {
       configured: Boolean(this.transporter),
       ...this.smtp,
-      from: this.from,
+      from: this.fromLabel,
       ...this.state,
       setup: this.setup,
     };
@@ -269,17 +317,28 @@ export class MailService implements OnModuleInit {
 
   /** The admin panel's email log: the latest attempts, newest first. */
   async overview() {
-    const emails = await this.prisma.emailLog.findMany({
+    const rows = await this.prisma.emailLog.findMany({
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
+    // The usual fix next to each problem: a refusal from the receiving
+    // server reads differently from our own mail server's error.
+    const emails = rows.map((row) => ({
+      ...row,
+      hint:
+        row.status === 'FAILED'
+          ? hintFor({ message: row.error ?? '' })
+          : row.error && row.status !== 'SKIPPED'
+            ? bounceHint(row.error)
+            : null,
+    }));
     return { smtp: this.status(), emails };
   }
 
   /** A test email from the admin panel, with the mail server's answer. */
   async sendTest(to: string) {
     const subject = `Test email from ${PRODUCT_NAME}`;
-    const line = `If you can read this, ${PRODUCT_NAME} can send email (sent from ${this.from} through ${this.smtp.host}:${this.smtp.port}).`;
+    const line = `If you can read this, ${PRODUCT_NAME} can send email (sent from ${this.fromLabel} through ${this.smtp.host}:${this.smtp.port}).`;
     try {
       const sent = await this.deliver('test', {
         to,
@@ -313,15 +372,21 @@ export class MailService implements OnModuleInit {
       void this.record(kind, message, 'SKIPPED', 'SMTP is not set up.');
       return false;
     }
+    // Found again in a bounce report, which quotes the original headers.
+    const messageId = `<wpop-${randomUUID()}@${this.from.address.split('@')[1]}>`;
     try {
       await this.transporter.sendMail({
         from: this.from,
         // A customer's reply reaches support, whoever the sender is.
         replyTo: SUPPORT_EMAIL,
+        // Bounces go back to the mailbox that logs in, where BounceService
+        // reads them; always a plain, valid address.
+        envelope: { from: this.returnPath, to: message.to },
+        messageId,
         ...message,
       });
       this.state = { ok: true, at: new Date(), error: null, hint: null };
-      void this.record(kind, message, 'SENT', null);
+      void this.record(kind, message, 'SENT', null, messageId);
       return true;
     } catch (err) {
       this.state = {
@@ -340,6 +405,7 @@ export class MailService implements OnModuleInit {
     message: Message,
     status: 'SENT' | 'FAILED' | 'SKIPPED',
     error: string | null,
+    messageId: string | null = null,
   ) {
     try {
       await this.prisma.emailLog.create({
@@ -351,6 +417,7 @@ export class MailService implements OnModuleInit {
           kind,
           status,
           error,
+          messageId,
         },
       });
       // Thirty days is plenty to see what went wrong; checked once an hour.

@@ -56,6 +56,12 @@ to send as any other address. After `pm2 restart`, the backend log says
 `SMTP ready` or `SMTP check failed: <reason>`. **Admin → Emails** shows the
 same, every email sent with the mail server's answer, and a test-email button.
 
+"Sent" means our mail server took the email. When Gmail or another receiving
+server refuses it afterwards, the report comes back to `support@`'s inbox; the
+backend reads that inbox over IMAP (port 993, the same login) every few
+minutes and marks the email **Bounced** with the receiving server's reason.
+Set `IMAP_HOST` / `IMAP_PORT` only if IMAP is not on the same host.
+
 `frontend/.env`:
 
 ```

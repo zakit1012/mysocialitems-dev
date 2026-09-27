@@ -20,6 +20,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { AdminService } from './admin.service';
 import { HiddenReviewsService } from '../moderation/hidden-reviews.service';
 import { MailService } from '../mail/mail.service';
+import { BounceService } from '../mail/bounce.service';
 
 @Controller('admin')
 // Signed in, an admin, and a fresh authenticator-app code; every change logged.
@@ -31,17 +32,20 @@ export class AdminController {
     private readonly admin: AdminService,
     private readonly hidden: HiddenReviewsService,
     private readonly mail: MailService,
+    private readonly bounces: BounceService,
   ) {}
 
   // ---- email: is SMTP working, and what happened to each email
   @Get('email')
-  email() {
-    return this.mail.overview();
+  async email() {
+    return { ...(await this.mail.overview()), bounces: this.bounces.status() };
   }
 
+  /** The mail server login, and the inbox read for bounces, right now. */
   @Post('email/check')
-  checkEmail() {
-    return this.mail.check();
+  async checkEmail() {
+    const [smtp] = await Promise.all([this.mail.check(), this.bounces.check()]);
+    return smtp;
   }
 
   @Post('email/test')
