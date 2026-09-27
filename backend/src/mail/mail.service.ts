@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { Transporter } from 'nodemailer';
@@ -59,6 +61,84 @@ function hintFor(err: unknown): string | null {
   return null;
 }
 
+const REQUIRED = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'];
+const KNOWN = [...REQUIRED, 'SMTP_PORT', 'SMTP_FROM'];
+
+type Setup = {
+  envFile: string;
+  envFileFound: boolean;
+  missing: string[];
+  otherNames: string[];
+  passwordCut: boolean;
+  /** Lines of .env that are not NAME=value, shown up to their ":" only. */
+  unreadable: string[];
+};
+
+/** Why mail might not be set up, by setting names only: never a value. */
+function setupReport(config: ConfigService): Setup {
+  const envFile = resolve(process.cwd(), '.env');
+  let raw = '';
+  try {
+    raw = readFileSync(envFile, 'utf8');
+  } catch {
+    // Not there, or not readable: reported as not found.
+  }
+  const passLine = /^\s*SMTP_PASS\s*=(.*)$/m.exec(raw)?.[1]?.trim() ?? '';
+  return {
+    envFile,
+    envFileFound: existsSync(envFile),
+    missing: REQUIRED.filter((k) => !config.get<string>(k)),
+    // Mail settings under names the backend does not read.
+    otherNames: Object.keys(process.env)
+      .filter((k) => /^(SMTP|MAIL|EMAIL)_/i.test(k) && !KNOWN.includes(k))
+      .sort(),
+    // Unquoted, everything from a # on is read as a comment.
+    passwordCut: passLine.includes('#') && !/^["'`]/.test(passLine),
+    // e.g. "SMTP Host: mail.example.com" copied from a mail panel.
+    unreadable: raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(
+        (line) =>
+          line &&
+          !line.startsWith('#') &&
+          !/^(export\s+)?[A-Za-z_][\w.-]*\s*=/.test(line),
+      )
+      .map((line) => line.split(/[:=]/)[0].trim().slice(0, 40))
+      .filter((label) =>
+        /smtp|mail|user|pass|host|port|secur|auth/i.test(label),
+      )
+      .slice(0, 10),
+  };
+}
+
+const CUT_PASSWORD =
+  'SMTP_PASS has a # without quotes, so everything from the # on is read as a comment. Put the password in double quotes: SMTP_PASS="your#password".';
+
+/** What to do when SMTP is not set up, from the report. */
+function setupHint(r: Setup): string {
+  if (!r.envFileFound) {
+    return `The backend did not find ${r.envFile}. Start the backend from its own folder (cd backend, then pm2 start), or put the SMTP settings in that file.`;
+  }
+  const parts: string[] = [];
+  if (r.unreadable.length) {
+    parts.push(
+      `${r.envFile} has lines the backend cannot read (${r.unreadable.map((l) => `"${l}: ..."`).join(', ')}). Each setting must be one NAME=value line, like SMTP_HOST=mail.widgetpop.com.`,
+    );
+  }
+  if (r.missing.length) {
+    parts.push(`Missing or empty in ${r.envFile}: ${r.missing.join(', ')}.`);
+  }
+  if (r.otherNames.length) {
+    parts.push(
+      `Found under other names: ${r.otherNames.join(', ')}. The backend only reads SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and SMTP_FROM.`,
+    );
+  }
+  if (r.passwordCut) parts.push(CUT_PASSWORD);
+  parts.push('Then restart the backend (pm2 restart <backend-name>).');
+  return parts.join(' ');
+}
+
 type Kind = 'login' | 'signup' | 'email' | 'notice' | 'test';
 type Message = { to: string; subject: string; text: string; html: string };
 
@@ -79,6 +159,7 @@ export class MailService implements OnModuleInit {
     hint: string | null;
   } = { ok: null, at: null, error: null, hint: null };
   private prunedAt = 0;
+  private readonly setup: Setup;
 
   constructor(
     config: ConfigService,
@@ -90,6 +171,7 @@ export class MailService implements OnModuleInit {
     const pass = config.get<string>('SMTP_PASS');
     this.login = `${host ?? ''}:${port} as ${user ?? ''}`;
     this.smtp = { host: host ?? '', port, user: user ?? '' };
+    this.setup = setupReport(config);
     // Most mail servers only send from the mailbox that logs in, so that is
     // the sender unless SMTP_FROM names another one.
     this.from =
@@ -124,7 +206,7 @@ export class MailService implements OnModuleInit {
     } else {
       this.transporter = null;
       this.logger.warn(
-        'SMTP is not fully configured. Codes will be logged until you set SMTP_HOST, SMTP_USER and SMTP_PASS.',
+        `SMTP is not set up, so no email is sent. ${setupHint(this.setup)}`,
       );
     }
   }
@@ -145,7 +227,7 @@ export class MailService implements OnModuleInit {
         ok: false,
         at: new Date(),
         error: 'SMTP is not set up.',
-        hint: 'Set SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASS in backend/.env, then restart the backend.',
+        hint: setupHint(this.setup),
       };
       return this.status();
     }
@@ -158,7 +240,7 @@ export class MailService implements OnModuleInit {
         ok: false,
         at: new Date(),
         error: describe(err),
-        hint: hintFor(err),
+        hint: this.hint(err),
       };
       this.logger.error(
         `SMTP check failed (${this.login}): ${describe(err)}. Codes and emails will not be delivered until this is fixed.`,
@@ -174,7 +256,15 @@ export class MailService implements OnModuleInit {
       ...this.smtp,
       from: this.from,
       ...this.state,
+      setup: this.setup,
     };
+  }
+
+  /** The usual fix for an error, with a cut-off password named first. */
+  private hint(err: unknown): string | null {
+    const usual = hintFor(err);
+    if (!this.setup.passwordCut) return usual;
+    return `${CUT_PASSWORD}${usual ? ` ${usual}` : ''}`;
   }
 
   /** The admin panel's email log: the latest attempts, newest first. */
@@ -209,7 +299,7 @@ export class MailService implements OnModuleInit {
             hint: this.state.hint,
           };
     } catch (err) {
-      return { ok: false, error: describe(err), hint: hintFor(err) };
+      return { ok: false, error: describe(err), hint: this.hint(err) };
     }
   }
 
@@ -238,7 +328,7 @@ export class MailService implements OnModuleInit {
         ok: false,
         at: new Date(),
         error: describe(err),
-        hint: hintFor(err),
+        hint: this.hint(err),
       };
       void this.record(kind, message, 'FAILED', describe(err));
       throw err;
@@ -253,7 +343,15 @@ export class MailService implements OnModuleInit {
   ) {
     try {
       await this.prisma.emailLog.create({
-        data: { to: message.to, subject: message.subject, kind, status, error },
+        data: {
+          to: message.to,
+          subject: message.subject,
+          // What it said, for the admin panel; a 6-digit code never lands here.
+          preview: message.text.replace(/\b\d{6}\b/g, '••••••').slice(0, 2000),
+          kind,
+          status,
+          error,
+        },
       });
       // Thirty days is plenty to see what went wrong; checked once an hour.
       if (Date.now() - this.prunedAt > 3_600_000) {

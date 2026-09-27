@@ -43,9 +43,13 @@ PUBLIC_API_URL=https://api.widgetpop.com
 SMTP_HOST=mail.widgetpop.com
 SMTP_PORT=587
 SMTP_USER=support@widgetpop.com
-SMTP_PASS=<the mailbox password>
-SMTP_FROM=WidgetPop <support@widgetpop.com>
+SMTP_PASS="<the mailbox password>"
+SMTP_FROM="WidgetPop <support@widgetpop.com>"
 ```
+
+Each setting is one `NAME=value` line (not `SMTP Host: ...` as the mail panel
+shows it), and the password stays in double quotes: an unquoted `#` starts a
+comment and cuts it off.
 
 `SMTP_FROM` must be the same mailbox as `SMTP_USER`: most mail servers refuse
 to send as any other address. After `pm2 restart`, the backend log says
