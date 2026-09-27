@@ -162,7 +162,22 @@ export function widgetScript(key: string, preview = false): string {
     '.wpop-powered{margin-top:14px;text-align:center;font-size:11.5px;color:var(--muted)}' +
     '.wpop-powered a{color:inherit;text-decoration:none}' +
     '.wpop-powered a:hover{color:var(--btn)}' +
-    '.wpop-err{border:1px dashed #fecaca;background:#fef2f2;color:#b91c1c;border-radius:10px;padding:12px;font-size:13px}';
+    '.wpop-err{border:1px dashed #fecaca;background:#fef2f2;color:#b91c1c;border-radius:10px;padding:12px;font-size:13px}' +
+    // First-visit placeholder: one row of review-shaped cards in see-through
+    // grey, so it suits light and dark sites alike.
+    '.wpop-skel *,.wpop-skel{box-sizing:border-box}' +
+    '.wpop-skel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}' +
+    '.wpop-skel-head .wpop-skel-line{margin-top:8px}' +
+    '.wpop-skel-btn{width:128px;height:36px;border-radius:999px;flex:none}' +
+    '.wpop-skel-row{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));max-height:156px;overflow:hidden}' +
+    '.wpop-skel-card{height:156px;border-radius:14px;padding:16px;background:rgba(127,127,127,.07);border:1px solid rgba(127,127,127,.12)}' +
+    '.wpop-skel-who{display:flex;align-items:center;gap:10px;margin-bottom:6px}' +
+    '.wpop-skel-av{width:36px;height:36px;border-radius:50%;flex:none}' +
+    '.wpop-skel-line{display:block;width:100%;height:10px;border-radius:6px;margin-top:10px}' +
+    '.wpop-skel-who .wpop-skel-line{margin-top:0}' +
+    '.wpop-skel-av,.wpop-skel-line,.wpop-skel-btn{background:rgba(127,127,127,.18);animation:wpop-pulse 1.4s ease-in-out infinite}' +
+    '@keyframes wpop-pulse{0%,100%{opacity:.45}50%{opacity:1}}' +
+    '@media (prefers-reduced-motion:reduce){.wpop-skel-av,.wpop-skel-line,.wpop-skel-btn{animation:none}}';
 
   var PREV = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
   var NEXT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
@@ -779,6 +794,23 @@ export function widgetScript(key: string, preview = false): string {
       // Private mode, blocked or full storage: the widget just loads as before.
     }
   }
+  /** First visit: review-shaped grey cards until the reviews arrive. */
+  function skeleton() {
+    var card =
+      '<div class="wpop-skel-card">' +
+        '<div class="wpop-skel-who"><span class="wpop-skel-av"></span><span class="wpop-skel-line" style="width:45%"></span></div>' +
+        '<span class="wpop-skel-line" style="width:35%"></span>' +
+        '<span class="wpop-skel-line"></span><span class="wpop-skel-line"></span>' +
+        '<span class="wpop-skel-line" style="width:70%"></span>' +
+      '</div>';
+    return '<div class="wpop-skel" role="status" aria-busy="true" aria-label="Loading reviews">' +
+      '<div class="wpop-skel-head"><div style="flex:1">' +
+        '<span class="wpop-skel-line" style="width:180px;max-width:60%;height:14px"></span>' +
+        '<span class="wpop-skel-line" style="width:120px;max-width:40%"></span>' +
+      '</div><span class="wpop-skel-btn"></span></div>' +
+      '<div class="wpop-skel-row">' + card + card + card + card + '</div></div>';
+  }
+
   /** What a visitor sees, without the timing fields: the same means no redraw. */
   function shownAs(body) {
     return JSON.stringify([body.widget, body.business, body.reviews, body.link, body.branding]);
@@ -791,12 +823,14 @@ export function widgetScript(key: string, preview = false): string {
     var sort = host.getAttribute('data-sort');
     var ck = cacheKey(count, sort);
     // A repeat visitor sees the saved reviews at once; a first-time one sees
-    // nothing until they arrive - never a "Loading" bar.
+    // review-shaped placeholders until they arrive.
     if (!attempt && !host.__wpopShown) {
       var saved = readCache(ck);
       if (saved) {
         render(host, saved);
         host.__wpopShown = shownAs(saved);
+      } else {
+        host.innerHTML = skeleton();
       }
     }
 
