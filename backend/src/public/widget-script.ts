@@ -757,12 +757,48 @@ export function widgetScript(key: string, preview = false): string {
   if (PREVIEW) return;
   if (!KEY) { console.error('[widgetpop] Missing widget key.'); return; }
 
+  // The last answer for this widget, kept in the visitor's browser: a repeat
+  // visit shows the reviews at once while a fresh copy loads behind them.
+  var CACHE_DAYS = 3;
+  function cacheKey(count, sort) {
+    return 'wpop:' + KEY + ':' + (count || '') + ':' + (sort || '');
+  }
+  function readCache(k) {
+    try {
+      var c = JSON.parse(localStorage.getItem(k) || 'null');
+      return c && c.body && Date.now() - c.at < CACHE_DAYS * 86400000 ? c.body : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function writeCache(k, body) {
+    try {
+      if (body) localStorage.setItem(k, JSON.stringify({ at: Date.now(), body: body }));
+      else localStorage.removeItem(k);
+    } catch (e) {
+      // Private mode, blocked or full storage: the widget just loads as before.
+    }
+  }
+  /** What a visitor sees, without the timing fields: the same means no redraw. */
+  function shownAs(body) {
+    return JSON.stringify([body.widget, body.business, body.reviews, body.link, body.branding]);
+  }
+
   function mount(host, attempt) {
     attempt = attempt || 0;
     styleOnce();
     var count = host.getAttribute('data-count');
     var sort = host.getAttribute('data-sort');
-    if (!attempt) host.innerHTML = '<div class="wpop"><div class="wpop-count">Loading reviews...</div></div>';
+    var ck = cacheKey(count, sort);
+    // A repeat visitor sees the saved reviews at once; a first-time one sees
+    // nothing until they arrive - never a "Loading" bar.
+    if (!attempt && !host.__wpopShown) {
+      var saved = readCache(ck);
+      if (saved) {
+        render(host, saved);
+        host.__wpopShown = shownAs(saved);
+      }
+    }
 
     fetch(BASE + API + encodeURIComponent(KEY) + '/reviews?' +
           (count ? 'count=' + encodeURIComponent(count) + '&' : '') +
@@ -772,6 +808,9 @@ export function widgetScript(key: string, preview = false): string {
       })
       .then(function (res) {
         if (!res.ok) {
+          // Paused, over its views or not allowed here: the saved copy goes too.
+          writeCache(ck, null);
+          host.__wpopShown = null;
           // The owner needs to see why; a visitor just sees nothing.
           console.error('[widgetpop] ' + (res.body.error || 'Could not load reviews'));
           // Visitors of a live site should never see our configuration errors;
@@ -787,11 +826,18 @@ export function widgetScript(key: string, preview = false): string {
           setTimeout(function () { mount(host, attempt + 1); }, 4000);
           return;
         }
+        if (res.body.served !== 'fetching') writeCache(ck, res.body);
+        // Already on screen from the saved copy: a redraw would only restart
+        // the carousel and move the page.
+        var now = shownAs(res.body);
+        if (host.__wpopShown === now) return;
+        host.__wpopShown = now;
         render(host, res.body);
       })
       .catch(function (err) {
         console.error('[widgetpop]', err);
-        host.innerHTML = '';
+        // Offline, or our API is down: keep the saved copy if one is showing.
+        if (!host.__wpopShown) host.innerHTML = '';
       });
   }
 
