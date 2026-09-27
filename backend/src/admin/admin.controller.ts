@@ -19,6 +19,7 @@ import { AdminAuditInterceptor } from '../common/interceptors/admin-audit.interc
 import { Roles } from '../common/decorators/roles.decorator';
 import { AdminService } from './admin.service';
 import { HiddenReviewsService } from '../moderation/hidden-reviews.service';
+import { MailService } from '../mail/mail.service';
 
 @Controller('admin')
 // Signed in, an admin, and a fresh authenticator-app code; every change logged.
@@ -29,7 +30,30 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly hidden: HiddenReviewsService,
+    private readonly mail: MailService,
   ) {}
+
+  // ---- email: is SMTP working, and what happened to each email
+  @Get('email')
+  email() {
+    return this.mail.overview();
+  }
+
+  @Post('email/check')
+  checkEmail() {
+    return this.mail.check();
+  }
+
+  @Post('email/test')
+  testEmail(@Body() body: { to?: unknown }) {
+    const to = typeof body?.to === 'string' ? body.to.trim() : '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || to.length > 200) {
+      throw new BadRequestException(
+        'Enter an email address to send the test to.',
+      );
+    }
+    return this.mail.sendTest(to);
+  }
 
   // ---- reviews a reviewer asked us to stop showing
   @Get('hidden-reviews')

@@ -8,22 +8,22 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  password     String
-  name         String
-  role         String   @default("USER")
-  city         String?
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  role          String    @default("USER")
+  city          String?
   /// Bumped when the password or email changes: older sign-ins stop working.
-  tokenVersion Int      @default(0)
+  tokenVersion  Int       @default(0)
   /// Admin 2-step sign-in (authenticator app): the secret, encrypted with
   /// SETTINGS_SECRET. Pending until totpEnabledAt is set.
   totpSecret    String?
   totpEnabledAt DateTime?
   /// The last 30-second step used, so each code works only once.
   totpLastStep  Int?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   deals        Deal[]
   favorites    Favorite[]
@@ -356,4 +356,21 @@ model HiddenReview {
 
   @@unique([placeId, author, textStart])
   @@index([placeId])
+}
+
+/// Every email the app tried to send, for the admin panel's email log: to
+/// whom, what kind, and what the mail server said. Never the code itself.
+/// Rows older than 30 days are removed.
+model EmailLog {
+  id        String   @id @default(cuid())
+  to        String
+  subject   String
+  /// login, signup, email (change of address), notice or test
+  kind      String
+  /// SENT, FAILED, or SKIPPED when SMTP is not set up
+  status    String
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }

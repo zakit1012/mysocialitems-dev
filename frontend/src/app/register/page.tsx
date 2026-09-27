@@ -10,6 +10,7 @@ import { Button } from "@/components/Button";
 import { PasswordField } from "@/components/PasswordField";
 import { TextField } from "@/components/TextField";
 import { siteHref } from "@/lib/site";
+import { useCooldown } from "@/lib/use-cooldown";
 
 export default function RegisterPage() {
   const { requestSignup, verifySignup } = useAuth();
@@ -21,6 +22,8 @@ export default function RegisterPage() {
     confirmPassword: "",
   });
   const [pendingEmail, setPendingEmail] = useState("");
+  // Matches the API's 30 seconds between codes to one address.
+  const [wait, startWait] = useCooldown(30);
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -53,6 +56,7 @@ export default function RegisterPage() {
       });
       setPendingEmail(form.email);
       setInfo("Enter the 6-digit code sent to this email.");
+      startWait();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start signup");
     } finally {
@@ -83,6 +87,7 @@ export default function RegisterPage() {
         password: form.password,
       });
       setInfo("A new code was sent.");
+      startWait();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not resend code");
     } finally {
@@ -218,11 +223,11 @@ export default function RegisterPage() {
           </Button>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || wait > 0}
             onClick={() => void resend()}
-            className="w-full text-sm font-medium text-brand disabled:opacity-50"
+            className="w-full text-sm font-medium text-brand disabled:text-muted disabled:opacity-70"
           >
-            Resend code
+            {wait > 0 ? `Resend code in ${wait}s` : "Resend code"}
           </button>
           {/* The API gives an existing account the same answer; its owner
               gets an email saying so instead of a code. */}
