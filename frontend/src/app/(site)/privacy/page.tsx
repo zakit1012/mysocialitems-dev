@@ -50,9 +50,9 @@ export default function PrivacyPage() {
       <ul>
         <li>
           When a widget loads, the visitor&apos;s browser connects to our servers, which receive technical data
-          such as the IP address, the website it loads on and the browser type. We use the IP address only to
-          count views once per visitor every 30 minutes and to stop abuse; that record is deleted after 30
-          minutes. We keep counts, not the addresses themselves.
+          such as the IP address, the website it loads on and the browser type. Every widget load counts as a
+          view; we keep counts, not the addresses. We use the IP address only to stop abuse, such as limiting how
+          often one address can call us, for about a minute.
         </li>
         <li>We count clicks on the widget&apos;s buttons. We do not set cookies on visitors&apos; devices.</li>
         <li>
@@ -122,7 +122,7 @@ export default function PrivacyPage() {
       <ul>
         <li>Account and widget data: while your account is open, and deleted within 30 days after you close it.</li>
         <li>Billing records: as long as tax and accounting laws require.</li>
-        <li>Visitor IP addresses for view counting: 30 minutes. Daily view and click counts: while the widget exists.</li>
+        <li>Visitor IP addresses: about a minute, for abuse limits only. Daily view and click counts: while the widget exists.</li>
         <li>Stored reviews: while a widget uses that business, then removed.</li>
       </ul>
 

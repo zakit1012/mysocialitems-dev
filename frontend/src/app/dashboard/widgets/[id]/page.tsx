@@ -22,7 +22,7 @@ import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
 import { WidgetEditor } from "@/components/widget/WidgetEditor";
 import { WidgetPreview, type PreviewData, type PreviewReview } from "@/components/widget/WidgetPreview";
-import { newProChoices, proMessage, toPayload, type WidgetSettings } from "@/lib/widget-settings";
+import { filtersOf, newProChoices, proMessage, toPayload, type WidgetSettings } from "@/lib/widget-settings";
 import { useLeaveGuard } from "@/lib/use-leave-guard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { timeAgo } from "@/lib/time";
@@ -144,10 +144,17 @@ function WidgetStudio() {
   // Do not lose edits to a stray tab close or a click on the sidebar.
   const leaveGuard = useLeaveGuard(dirty && !saving);
   const isPaid = plan.id !== "" && plan.id !== "FREE";
-  // Choosing a Pro design or background needs a paid plan. One saved before
-  // a downgrade can stay (the site shows the free look) while other things
-  // are edited.
-  const proLocked = plan.id === "FREE" ? newProChoices(draft, saved) : [];
+  // A Free owner can preview up to 10 reviews - what an upgrade adds - while
+  // the site shows the plan's own number.
+  const previewMax = plan.id === "FREE" ? Math.max(plan.reviews, 10) : plan.reviews;
+  const previewSettings = useMemo(
+    () => ({ ...draft, reviewCount: Math.min(draft.reviewCount ?? plan.reviews, previewMax) }),
+    [draft, plan.reviews, previewMax],
+  );
+  // Pro choices (a design, a background, an order, filters, more reviews)
+  // need a paid plan. One saved before a downgrade can stay (the site shows
+  // the free look) while other things are edited.
+  const proLocked = plan.id === "FREE" ? newProChoices(draft, saved, plan.reviews) : [];
 
   async function save(): Promise<boolean> {
     if (!widget) return false;
@@ -159,6 +166,7 @@ function WidgetStudio() {
     setFlash(null);
     try {
       const previousSort = saved.sort ?? "mostRelevant";
+      const previousFilters = filtersOf(saved);
       const w = await api<Widget>(`/widgets/${widget.id}`, {
         method: "PATCH",
         token,
@@ -167,8 +175,11 @@ function WidgetStudio() {
       setSaved(w.settings);
       setDraft(w.settings);
       setFlash({ ok: true, text: "Saved. Your website shows the new look on its next page load." });
+      // The order and the filters are applied by the server: fetch again to see them.
       const nextSort = w.settings.sort ?? "mostRelevant";
-      if (nextSort !== previousSort) void loadReviews(widget.id, nextSort);
+      if (nextSort !== previousSort || filtersOf(w.settings) !== previousFilters) {
+        void loadReviews(widget.id, nextSort);
+      }
       return true;
     } catch (err) {
       setFlash({ ok: false, text: err instanceof Error ? err.message : "Could not save" });
@@ -290,12 +301,13 @@ function WidgetStudio() {
           <WidgetEditor
             value={draft}
             onChange={setDraft}
-            maxReviews={plan.reviews}
+            maxReviews={previewMax}
+            saveReviews={plan.reviews}
             planName={plan.name}
             canUsePro={isPaid || plan.id === ""}
           />
           <div className="min-w-0">
-            <WidgetPreview data={preview} settings={draft} busy={reviewsBusy} note={reviewsNote} branding={plan.id === "FREE"} />
+            <WidgetPreview data={preview} settings={previewSettings} busy={reviewsBusy} note={reviewsNote} branding={plan.id === "FREE"} />
           </div>
         </div>
       ) : (

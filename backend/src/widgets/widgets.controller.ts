@@ -19,7 +19,14 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { BillingService } from '../billing/billing.service';
-import { MAX_REVIEW_COUNT, fiveStarOnly } from './widget-settings';
+import { isPaidPlan } from '../billing/plans';
+import { MAX_REVIEW_COUNT, normalizeSettings } from './widget-settings';
+import {
+  FREE_PREVIEW_REVIEWS,
+  HIGHEST_RATED,
+  pickReviews,
+  widgetOrder,
+} from './review-picker';
 import { HiddenReviewsService } from '../moderation/hidden-reviews.service';
 
 @Controller('widgets')
@@ -42,22 +49,44 @@ export class WidgetsController {
     const widget = await this.widgets.get(user.id, id);
     if (!widget) throw new NotFoundException();
     const plan = await this.billing.planFor(user.id);
+    const paid = isPaidPlan(plan);
+    const settings = normalizeSettings(widget.settings);
+    const order = widgetOrder(paid, settings, sort);
     // The full allowance of 5-star reviews, like the embed: everything the
-    // engine has cached, filtered, then cut to the plan. The editor applies
-    // the count itself so every change previews instantly. One request waits
-    // for a real answer instead of the dashboard polling several.
+    // engine has cached, filtered and topped up, then cut to the plan. The
+    // editor applies the count itself so every change previews instantly.
+    // One request waits for a real answer instead of the dashboard polling.
     const result = await this.engine.fetchAndWait(
       widget.placeId,
       MAX_REVIEW_COUNT,
-      sort,
+      order,
     );
     await this.widgets.syncName(user.id, id, result.business?.name);
-    return {
-      ...result,
-      reviews: (
-        await this.hidden.filter(widget.placeId, fiveStarOnly(result.reviews))
-      ).slice(0, plan.reviews),
-    };
+    const reviews = result.error
+      ? []
+      : await pickReviews({
+          reviews: result.reviews,
+          order,
+          paid,
+          settings,
+          // Free owners see what an upgrade adds; their site shows the plan's.
+          want: paid
+            ? plan.reviews
+            : Math.max(plan.reviews, FREE_PREVIEW_REVIEWS),
+          hide: (list) => this.hidden.filter(widget.placeId, list),
+          // One try at the engine, so the editor is not held up by a cold place.
+          highestRated: async () => {
+            const more = await this.engine.fetch(
+              widget.placeId,
+              MAX_REVIEW_COUNT,
+              HIGHEST_RATED,
+            );
+            return more.served !== 'fetching' && !more.error
+              ? more.reviews
+              : [];
+          },
+        });
+    return { ...result, reviews };
   }
 
   @Get(':id/logo')

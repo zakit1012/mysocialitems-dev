@@ -23,16 +23,22 @@ import { hostFrom, hostMatches } from '../sources/domain.util';
 import {
   MAX_REVIEW_COUNT,
   PRO_LAYOUTS,
-  SORTS,
   backgroundMode,
-  fiveStarOnly,
   normalizeSettings,
 } from '../widgets/widget-settings';
+import {
+  HIGHEST_RATED,
+  pickReviews,
+  widgetOrder,
+} from '../widgets/review-picker';
+import type { EngineReview } from '../reviews-engine/reviews-engine.service';
 import { widgetScript } from './widget-script';
 import { siteUrl } from '../common/urls';
 
-/** One visitor reloading or browsing a site counts as one view per window. */
-const VIEW_WINDOW_SECONDS = 30 * 60;
+/** "Installed and live" is written at most this often per widget, not on every load. */
+const SEEN_EVERY_SECONDS = 10 * 60;
+/** A visitor never waits longer than this for the fill-up reviews. */
+const FILL_WAIT_MS = 2500;
 
 /**
  * The only endpoints a customer's website talks to. No auth token here - the
@@ -57,21 +63,40 @@ export class PublicController {
     return siteUrl(this.config);
   }
 
-  /**
-   * True the first time this visitor loads this widget in the window. Keyed
-   * by IP, so production must run with TRUST_PROXY=true behind nginx, or
-   * every visitor looks like 127.0.0.1 and shares one view.
-   */
-  private async isNewView(widgetId: string, req: Request): Promise<boolean> {
+  /** True when "last seen" is due to be written again for this widget. */
+  private async seenDue(widgetId: string): Promise<boolean> {
     try {
       return await this.redis.setIfAbsent(
-        `view:${widgetId}:${req.ip}`,
-        VIEW_WINDOW_SECONDS,
+        `seen:${widgetId}`,
+        SEEN_EVERY_SECONDS,
       );
     } catch {
-      // Without Redis, every load counts - the old behaviour.
       return true;
     }
+  }
+
+  /**
+   * A place's highest-rated reviews, to fill a paid widget whose own order
+   * has too few 5-star ones. A visitor never waits long for them: the first
+   * time a place needs them the engine starts on them and the widget shows
+   * what it has; later views get the fuller list from the cache.
+   */
+  private async highestRated(
+    placeId: string,
+    planHours: number,
+  ): Promise<EngineReview[]> {
+    const result = await Promise.race([
+      this.engine.fetchCached(
+        placeId,
+        MAX_REVIEW_COUNT,
+        HIGHEST_RATED,
+        planHours,
+      ),
+      new Promise<null>((done) => setTimeout(() => done(null), FILL_WAIT_MS)),
+    ]);
+    return result && result.served !== 'fetching' && !result.error
+      ? result.reviews
+      : [];
   }
 
   private originOf(req: Request): string | null {
@@ -193,10 +218,11 @@ export class PublicController {
       settings.background = 'theme';
       delete settings.backgroundColor;
     }
-    // data-sort on the snippet may only pick one of the widget's own orders:
-    // "lowest rated" would leave a 5-star-only widget empty.
-    const order =
-      sort && SORTS.includes(sort) ? sort : settings.sort || 'mostRelevant';
+    const paid = isPaidPlan(plan);
+    // Free widgets show the highest-rated reviews. On a paid one, data-sort
+    // on the snippet may only pick one of the widget's own orders: "lowest
+    // rated" would leave a 5-star-only widget empty.
+    const order = widgetOrder(paid, settings, sort);
     // Only 5-star reviews are shown. Asking for just the allowance and then
     // filtering can leave one card, so take everything the engine has cached
     // for this place (no extra scrape) and cut to the allowance afterwards.
@@ -214,22 +240,21 @@ export class PublicController {
       return res.json({ served: 'fetching' });
     }
 
-    // A shown widget counts against the owner's monthly views (once per
-    // visitor per window), and the plan decides how many reviews it shows.
-    const isNew = await this.isNewView(widget.id, req);
-    const usage = await this.billing.recordView(widget.userId, isNew, plan);
+    // Every load of a shown widget is a view against the owner's monthly
+    // allowance, and the plan decides how many reviews it shows.
+    const usage = await this.billing.recordView(widget.userId, true, plan);
     if (!usage.allowed) {
       // Shown to the owner as visitors their widget missed.
-      void this.analytics.record(widget.id, { missed: isNew ? 1 : 0 });
+      void this.analytics.record(widget.id, { missed: 1 });
       return res.status(402).json({
         error:
           'This widget has used its monthly views. The owner can upgrade to show it again.',
       });
     }
 
-    void this.analytics.record(widget.id, { loads: 1, views: isNew ? 1 : 0 });
-    if (isNew) {
-      // "Installed and live" in the dashboard. Once per visitor per window.
+    void this.analytics.record(widget.id, { loads: 1, views: 1 });
+    if (await this.seenDue(widget.id)) {
+      // "Installed and live" in the dashboard.
       this.prisma.widget
         .update({
           where: { id: widget.id },
@@ -244,9 +269,20 @@ export class PublicController {
     const wanted =
       Math.max(0, Math.floor(Number(count)) || 0) || settings.reviewCount || 0;
     const shown = Math.min(wanted || usage.reviews, usage.reviews);
-    const reviews = (
-      await this.hidden.filter(widget.placeId, fiveStarOnly(result.reviews))
-    ).slice(0, shown);
+    const reviews = await pickReviews({
+      reviews: result.reviews,
+      order,
+      paid,
+      settings,
+      want: shown,
+      hide: (list) => this.hidden.filter(widget.placeId, list),
+      highestRated: () => this.highestRated(widget.placeId, plan.refreshHours),
+    });
+    // The owner's filter words stay in the dashboard, not on their website.
+    const publicSettings = { ...settings };
+    delete publicSettings.excludeWords;
+    delete publicSettings.includeWords;
+    delete publicSettings.photosOnly;
 
     // Best effort - a counter is not worth failing a page render over.
     this.prisma.source
@@ -260,7 +296,7 @@ export class PublicController {
       widget: {
         placeName: widget.placeName,
         placeAddress: widget.placeAddress,
-        settings,
+        settings: publicSettings,
         // Google's own "leave a review" form for this place.
         writeReviewUrl: `https://search.google.com/local/writereview?placeid=${encodeURIComponent(widget.placeId)}`,
       },

@@ -65,9 +65,19 @@ const BOOL_KEYS = [
   'cardShadow',
   'reviewItalic',
   'reviewBold',
+  // Paid filter: only reviews that came with photos.
+  'photosOnly',
   // Older widgets: on/off Google logo on "See all reviews", before allButtonIcon.
   'buttonIcon',
 ] as const;
+
+/**
+ * Paid filters, as the owner typed them: comma-separated words or names.
+ * excludeWords hides reviews that mention any (or are by that name);
+ * includeWords shows only reviews that mention one of them.
+ */
+const WORD_KEYS = ['excludeWords', 'includeWords'] as const;
+const MAX_WORDS_LENGTH = 300;
 
 /** Old names from earlier screens -> the name everything uses now. */
 const RENAMED: Record<string, string> = {
@@ -103,7 +113,21 @@ export type WidgetSettings = {
   headerAlign?: string;
   background?: string;
 } & Partial<Record<(typeof COLOR_KEYS)[number], string>> &
-  Partial<Record<(typeof BOOL_KEYS)[number], boolean>>;
+  Partial<Record<(typeof BOOL_KEYS)[number], boolean>> &
+  Partial<Record<(typeof WORD_KEYS)[number], string>>;
+
+/** A comma list of words as stored: trimmed, single-spaced, no control characters. */
+function words(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const list = value
+    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+    .split(',')
+    .map((w) => w.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join(', ')
+    .slice(0, MAX_WORDS_LENGTH);
+  return list || undefined;
+}
 
 function color(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -165,6 +189,10 @@ export function normalizeSettings(raw: unknown): WidgetSettings {
   for (const key of BOOL_KEYS) {
     if (typeof input[key] === 'boolean') out[key] = input[key];
   }
+  for (const key of WORD_KEYS) {
+    const w = words(input[key]);
+    if (w) out[key] = w;
+  }
   return out;
 }
 
@@ -186,11 +214,44 @@ export function backgroundMode(
 /**
  * The paid-plan choices a widget uses, keyed so a changed colour counts as
  * a new choice. Free accounts can try these in the editor, not save them.
+ * `reviewLimit` is the plan's reviews per widget: showing more is a choice too.
  */
 export function proChoices(
   s: WidgetSettings,
+  reviewLimit?: number,
 ): { key: string; label: string }[] {
   const out: { key: string; label: string }[] = [];
+  // Free widgets always show the highest-rated reviews.
+  if (s.sort) {
+    out.push({
+      key: `sort:${s.sort}`,
+      label: `the ${s.sort === 'newest' ? 'Newest' : 'Most relevant'} order`,
+    });
+  }
+  if (reviewLimit && s.reviewCount && s.reviewCount > reviewLimit) {
+    out.push({
+      key: `count:${s.reviewCount}`,
+      label: `showing ${s.reviewCount} reviews`,
+    });
+  }
+  if (s.photosOnly) {
+    out.push({
+      key: 'filter:photos',
+      label: 'showing only reviews with photos',
+    });
+  }
+  if (s.excludeWords) {
+    out.push({
+      key: `filter:exclude:${s.excludeWords.toLowerCase()}`,
+      label: 'hiding reviews by word or name',
+    });
+  }
+  if (s.includeWords) {
+    out.push({
+      key: `filter:include:${s.includeWords.toLowerCase()}`,
+      label: 'showing only reviews with chosen words',
+    });
+  }
   if (s.layout && PRO_LAYOUTS.includes(s.layout)) {
     out.push({
       key: `layout:${s.layout}`,

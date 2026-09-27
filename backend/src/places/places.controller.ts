@@ -13,7 +13,14 @@ import { AutocompleteDto } from './dto/autocomplete.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { ReviewsEngineService } from '../reviews-engine/reviews-engine.service';
 import { BillingService } from '../billing/billing.service';
-import { MAX_REVIEW_COUNT, fiveStarOnly } from '../widgets/widget-settings';
+import { MAX_REVIEW_COUNT } from '../widgets/widget-settings';
+import {
+  FREE_PREVIEW_REVIEWS,
+  HIGHEST_RATED,
+  pickReviews,
+  widgetOrder,
+} from '../widgets/review-picker';
+import { isPaidPlan } from '../billing/plans';
 import { HiddenReviewsService } from '../moderation/hidden-reviews.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
@@ -70,25 +77,42 @@ export class PlacesController {
     await this.guardNewPlace(user, placeId);
     // Up to the plan's allowance, or 10 so a Free user sees what an upgrade adds.
     const plan = await this.billing.planFor(user.id);
-    const max = Math.max(10, plan.reviews);
+    const paid = isPaidPlan(plan);
+    const max = Math.max(FREE_PREVIEW_REVIEWS, plan.reviews);
     // The dashboard is already showing an "importing" spinner for this call,
     // so it is fine for the one request to wait instead of the browser
     // polling several - see fetchAndWait's own doc for why this must never
     // be used on the public embed.
     const wanted = Math.min(Math.max(Number(count) || 6, 1), max);
-    // 5-star only, like the embed: filter everything the engine has cached
-    // for this place first, so the filter does not leave a single card.
+    // Free: the highest-rated reviews. Paid: the order asked for, topped up
+    // from the highest-rated ones when it has too few 5-star reviews.
+    const order = widgetOrder(paid, {}, sort);
     const result = await this.engine.fetchAndWait(
       placeId,
       MAX_REVIEW_COUNT,
-      sort || 'mostRelevant',
+      order,
     );
-    return {
-      ...result,
-      reviews: (
-        await this.hidden.filter(placeId, fiveStarOnly(result.reviews))
-      ).slice(0, wanted),
-    };
+    const reviews = result.error
+      ? []
+      : await pickReviews({
+          reviews: result.reviews,
+          order,
+          paid,
+          settings: {},
+          want: wanted,
+          hide: (list) => this.hidden.filter(placeId, list),
+          highestRated: async () => {
+            const more = await this.engine.fetch(
+              placeId,
+              MAX_REVIEW_COUNT,
+              HIGHEST_RATED,
+            );
+            return more.served !== 'fetching' && !more.error
+              ? more.reviews
+              : [];
+          },
+        });
+    return { ...result, reviews };
   }
 
   @Get('autocomplete')

@@ -58,15 +58,25 @@ export type WidgetSettings = {
   allButtonIcon?: ButtonIcon;
   /** Older widgets: on/off Google logo on "See all reviews", before allButtonIcon. */
   buttonIcon?: boolean;
+  /** Paid filters: comma-separated words or names to hide, or to require. */
+  excludeWords?: string;
+  includeWords?: string;
+  /** Paid filter: only reviews that came with photos. */
+  photosOnly?: boolean;
 } & Partial<Record<ColorKey, string>> &
   Partial<Record<ToggleKey, boolean>>;
 
-/** What a brand new widget starts with. Colors are unset = follow the theme. */
+/** The order a paid widget starts with. Free widgets always show the highest-rated reviews. */
+export const PAID_DEFAULT_SORT: Sort = "newest";
+
+/**
+ * What a brand new widget starts with. Colors are unset = follow the theme.
+ * No order: a paid account's new widget gets PAID_DEFAULT_SORT.
+ */
 export const DEFAULT_SETTINGS: WidgetSettings = {
   theme: "light",
   background: "theme",
   layout: "grid",
-  sort: "mostRelevant",
   radius: "md",
   textLines: "6",
   headerAlign: "center",
@@ -164,11 +174,25 @@ export function backgroundMode(s: WidgetSettings): BackgroundMode {
 }
 
 /**
- * The paid-plan choices a widget uses (same keys as the API), so a Free
- * account can try them here but not save them.
+ * The paid-plan choices a widget uses (same keys and order as the API), so a
+ * Free account can try them here but not save them. `reviewLimit` is the
+ * plan's reviews per widget: showing more is a choice too.
  */
-export function proChoices(s: WidgetSettings): { key: string; label: string }[] {
+export function proChoices(s: WidgetSettings, reviewLimit?: number): { key: string; label: string }[] {
   const out: { key: string; label: string }[] = [];
+  if (s.sort) {
+    out.push({ key: `sort:${s.sort}`, label: `the ${s.sort === "newest" ? "Newest" : "Most relevant"} order` });
+  }
+  if (reviewLimit && s.reviewCount && s.reviewCount > reviewLimit) {
+    out.push({ key: `count:${s.reviewCount}`, label: `showing ${s.reviewCount} reviews` });
+  }
+  if (s.photosOnly) out.push({ key: "filter:photos", label: "showing only reviews with photos" });
+  if (s.excludeWords) {
+    out.push({ key: `filter:exclude:${s.excludeWords.toLowerCase()}`, label: "hiding reviews by word or name" });
+  }
+  if (s.includeWords) {
+    out.push({ key: `filter:include:${s.includeWords.toLowerCase()}`, label: "showing only reviews with chosen words" });
+  }
   if (isProLayout(s.layout)) out.push({ key: `layout:${s.layout}`, label: `the ${layoutName(s.layout)} design` });
   const bg = backgroundMode(s);
   if (bg === "transparent") out.push({ key: "bg:transparent", label: "a transparent background" });
@@ -177,12 +201,16 @@ export function proChoices(s: WidgetSettings): { key: string; label: string }[] 
 }
 
 /** Pro choices in `next` that `saved` did not already have. */
-export function newProChoices(next: WidgetSettings, saved?: WidgetSettings): string[] {
-  const had = new Set(saved ? proChoices(saved).map((c) => c.key) : []);
-  return proChoices(next)
+export function newProChoices(next: WidgetSettings, saved?: WidgetSettings, reviewLimit?: number): string[] {
+  const had = new Set(saved ? proChoices(saved, reviewLimit).map((c) => c.key) : []);
+  return proChoices(next, reviewLimit)
     .filter((c) => !had.has(c.key))
     .map((c) => c.label);
 }
+
+/** The filter settings, as the API keeps them: a change needs a fresh preview. */
+export const filtersOf = (s: WidgetSettings) =>
+  JSON.stringify([s.excludeWords ?? "", s.includeWords ?? "", s.photosOnly === true]);
 
 /** "X is part of Pro..." for one or more choices, as the API words it. */
 export function proMessage(labels: string[]): string {
@@ -193,8 +221,8 @@ export function proMessage(labels: string[]): string {
 }
 
 export const SORT_OPTIONS: { value: Sort; label: string }[] = [
+  { value: "newest", label: "Newest first (recommended)" },
   { value: "mostRelevant", label: "Most relevant" },
-  { value: "newest", label: "Newest first" },
 ];
 
 export const writeReviewUrl = (placeId: string) =>
@@ -210,5 +238,7 @@ export function toPayload(s: WidgetSettings): Record<string, unknown> {
   out.background = s.background ?? "";
   out.gridColumns = s.gridColumns ?? "";
   out.reviewCount = s.reviewCount ?? "";
+  out.excludeWords = s.excludeWords ?? "";
+  out.includeWords = s.includeWords ?? "";
   return out;
 }

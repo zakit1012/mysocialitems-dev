@@ -8,8 +8,12 @@ export type EngineReview = {
   author_photo: string | null;
   rating: number | null;
   text: string;
+  /** Apify's date (ISO); the scraper only has published_at_text. */
+  published_at?: string | null;
   published_at_text: string | null;
   images: string[];
+  /** "Helpful" votes, from Apify. */
+  likes?: number;
   /** An object from Apify and the fixed scraper; older cached rows may hold a string. */
   owner_response?:
     { text: string; responded_at?: string | null } | string | null;
@@ -133,10 +137,10 @@ export class ReviewsEngineService {
    * views skip the round trip to the engine. "Still fetching" and failures
    * are never kept - the next view asks again.
    *
-   * Reviews are cached per place, so a place a Business widget also shows
-   * refreshes every 12h for everyone on it. A widget on a slower plan then
+   * Reviews are cached per place, so a place a paid widget also shows
+   * refreshes every 24h for everyone on it. A widget on a slower plan then
    * keeps its own copy for its plan's hours instead, so it still updates at
-   * its own pace (a Free widget every 48h).
+   * its own pace (a Free widget every 72h).
    */
   async fetchCached(
     placeId: string,

@@ -105,24 +105,28 @@ export function WidgetEditor({
   value,
   onChange,
   maxReviews,
+  saveReviews,
   planName,
   footer,
   canUsePro = true,
 }: {
   value: WidgetSettings;
   onChange: (next: WidgetSettings) => void;
-  /** The plan's reviews-per-widget allowance. */
+  /** How many reviews the preview may show: the plan's, or 10 on Free to show what Pro adds. */
   maxReviews: number;
+  /** The plan's own reviews-per-widget allowance, when lower than maxReviews. */
+  saveReviews?: number;
   planName?: string;
   footer?: ReactNode;
-  /** False on Free: Pro designs carry a badge and can be tried, not saved. */
+  /** False on Free: Pro choices carry a badge and can be tried, not saved. */
   canUsePro?: boolean;
 }) {
   const [tab, setTab] = useState<TabId>("layout");
   const set = (patch: Partial<WidgetSettings>) => onChange({ ...value, ...patch });
   const theme = value.theme ?? "light";
   const layout = value.layout === ("compact" as Layout) ? "quotes" : (value.layout ?? "grid");
-  const count = Math.min(value.reviewCount ?? maxReviews, maxReviews);
+  const limit = Math.min(saveReviews ?? maxReviews, maxReviews);
+  const count = Math.min(value.reviewCount ?? limit, maxReviews);
 
   return (
     <aside className="flex flex-col overflow-hidden rounded-2xl border border-line bg-card shadow-card lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)]">
@@ -242,29 +246,89 @@ export function WidgetEditor({
                   <Plus className="h-4 w-4" />
                 </button>
               </div>
-              <p className="mt-1.5 text-[11.5px] text-muted">
-                {planName ? `${planName} plan: ` : ""}up to {maxReviews} per widget.{" "}
-                {count >= maxReviews && planName !== "Admin" && (
-                  <Link href="/dashboard/billing" className="font-semibold text-brand hover:underline">
-                    Show more
-                  </Link>
-                )}
-              </p>
+              {count > limit ? (
+                <p className="mt-2.5 rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800">
+                  Your site shows {limit} on the {planName || "current"} plan. Try {count} here;{" "}
+                  <Link href="/dashboard/billing" className="font-semibold underline">
+                    upgrade
+                  </Link>{" "}
+                  to show them on your site.
+                </p>
+              ) : (
+                <p className="mt-1.5 text-[11.5px] text-muted">
+                  {planName ? `${planName} plan: ` : ""}up to {limit} per widget.{" "}
+                  {count >= limit && planName !== "Admin" && (
+                    <Link href="/dashboard/billing" className="font-semibold text-brand hover:underline">
+                      Show more
+                    </Link>
+                  )}
+                </p>
+              )}
             </Section>
 
-            <Section
-              title="Order"
-              hint="Fetches fresh reviews when you save, so the preview will not update until then."
-            >
-              <select
-                value={value.sort ?? "mostRelevant"}
-                onChange={(e) => set({ sort: e.target.value as WidgetSettings["sort"] })}
-                className="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-[13px] font-medium outline-none focus:border-brand"
+            {canUsePro ? (
+              <Section
+                title="Order"
+                hint="Fetches fresh reviews when you save, so the preview will not update until then."
               >
-                {SORT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+                <select
+                  value={value.sort ?? "mostRelevant"}
+                  onChange={(e) => set({ sort: e.target.value as WidgetSettings["sort"] })}
+                  className="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-[13px] font-medium outline-none focus:border-brand"
+                >
+                  {SORT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </Section>
+            ) : (
+              <Section title="Order">
+                <p className="rounded-xl border border-line px-3 py-2.5 text-[13px] font-medium text-ink">
+                  Highest rated
+                </p>
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800">
+                  Free widgets show your highest-rated 5-star reviews. Newest first and Most relevant are part of
+                  Pro.{" "}
+                  <Link href="/dashboard/billing" className="font-semibold underline">
+                    Upgrade
+                  </Link>
+                </p>
+              </Section>
+            )}
+
+            <Section
+              title="Filters"
+              hint={canUsePro ? "Applied when you save. Only 5-star reviews are ever shown." : undefined}
+            >
+              {!canUsePro && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800">
+                  Filters are part of Pro.{" "}
+                  <Link href="/dashboard/billing" className="font-semibold underline">
+                    Upgrade
+                  </Link>{" "}
+                  to choose which reviews your widget shows.
+                </p>
+              )}
+              <WordsField
+                label="Hide reviews that mention"
+                placeholder="Words or names, separated by commas"
+                value={value.excludeWords}
+                disabled={!canUsePro}
+                onChange={(v) => set({ excludeWords: v })}
+              />
+              <WordsField
+                label="Only show reviews that mention"
+                placeholder="Words, separated by commas"
+                value={value.includeWords}
+                disabled={!canUsePro}
+                onChange={(v) => set({ includeWords: v })}
+              />
+              <SwitchRow
+                label="Only reviews with photos"
+                on={value.photosOnly === true}
+                disabled={!canUsePro}
+                onToggle={() => set({ photosOnly: !value.photosOnly })}
+              />
             </Section>
           </>
         )}
@@ -561,6 +625,35 @@ function Segmented({
   );
 }
 
+/** A comma list of words or names for a filter. */
+function WordsField({
+  label,
+  placeholder,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  value?: string;
+  disabled?: boolean;
+  onChange: (v: string | undefined) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[12px] font-medium text-muted">{label}</span>
+      <input
+        value={value ?? ""}
+        disabled={disabled}
+        maxLength={300}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value || undefined)}
+        className="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-[13px] outline-none focus:border-brand disabled:opacity-50"
+      />
+    </label>
+  );
+}
+
 function ToggleRow({
   label,
   k,
@@ -576,12 +669,33 @@ function ToggleRow({
 }) {
   const on = isOn(value, k);
   return (
+    <SwitchRow
+      label={label}
+      on={on}
+      disabled={disabled}
+      onToggle={() => set({ [k]: !on } as Partial<WidgetSettings>)}
+    />
+  );
+}
+
+function SwitchRow({
+  label,
+  on,
+  disabled,
+  onToggle,
+}: {
+  label: string;
+  on: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
       disabled={disabled}
-      onClick={() => set({ [k]: !on } as Partial<WidgetSettings>)}
+      onClick={onToggle}
       className="flex w-full items-center justify-between gap-3 rounded-xl border border-line px-3 py-2.5 text-left transition hover:border-brand/30 disabled:opacity-40"
     >
       <span className="text-[13px] font-medium text-ink">{label}</span>

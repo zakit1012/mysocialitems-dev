@@ -107,7 +107,7 @@ function Report({ data }: { data: Analytics }) {
 
   return (
     <>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <Tile label="Views this month">
           <p className="text-2xl font-bold">
             {fmt(monthShown)}
@@ -124,11 +124,8 @@ function Report({ data }: { data: Analytics }) {
             </div>
           )}
         </Tile>
-        <Tile label={`Views, last ${data.days} days`} hint="One per visitor every 30 minutes">
+        <Tile label={`Views, last ${data.days} days`} hint="Every time a widget loads">
           <p className="text-2xl font-bold">{fmt(totals.views)}</p>
-        </Tile>
-        <Tile label="Times shown" hint="Every load, reloads included">
-          <p className="text-2xl font-bold">{fmt(totals.loads)}</p>
         </Tile>
         <Tile label="Button clicks" hint="“Write a review” and “See all reviews”">
           <p className="text-2xl font-bold">
@@ -143,7 +140,7 @@ function Report({ data }: { data: Analytics }) {
           <p className="flex items-start gap-2">
             <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-coral" />
             <span>
-              <b>{fmt(totals.missed)} visitors</b> did not see your widget in the last {data.days} days because
+              Your widget was not shown <b>{fmt(totals.missed)} times</b> in the last {data.days} days because
               the {plan.name} plan&apos;s monthly views ran out.
             </span>
           </p>
@@ -164,8 +161,8 @@ function Report({ data }: { data: Analytics }) {
           <summary className="cursor-pointer font-medium text-muted hover:text-ink">Show as a table</summary>
           <div className="mt-3 max-h-72 overflow-auto">
             <Table
-              head={["Day", "Views", "Times shown", "Clicks", "Missed"]}
-              rows={[...data.daily].reverse().map((d) => [shortDay(d.day), d.views, d.loads, d.clicks, d.missed])}
+              head={["Day", "Views", "Clicks", "Missed"]}
+              rows={[...data.daily].reverse().map((d) => [shortDay(d.day), d.views, d.clicks, d.missed])}
             />
           </div>
         </details>
@@ -178,8 +175,8 @@ function Report({ data }: { data: Analytics }) {
           <div className="mt-3 overflow-x-auto">
             {data.widgets.length ? (
               <Table
-                head={["Widget", "Views", "Times shown", "Clicks", "Missed"]}
-                rows={data.widgets.map((w) => [w.name, w.views, w.loads, w.clicks, w.missed])}
+                head={["Widget", "Views", "Clicks", "Missed"]}
+                rows={data.widgets.map((w) => [w.name, w.views, w.clicks, w.missed])}
               />
             ) : (
               <p className="text-sm text-muted">No widgets yet.</p>
@@ -192,7 +189,7 @@ function Report({ data }: { data: Analytics }) {
           <div className="mt-3 overflow-x-auto">
             {data.domains.length ? (
               <Table
-                head={["Website", "Times shown", "Last seen"]}
+                head={["Website", "Views", "Last seen"]}
                 rows={data.domains.map((d) => [
                   d.domain,
                   d.hits,
@@ -279,8 +276,6 @@ function DailyChart({ daily }: { daily: Analytics["daily"] }) {
               <dl className="mt-1.5 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-muted">
                 <dt>Views</dt>
                 <dd className="text-right font-semibold tabular-nums text-ink">{fmt(hovered.views)}</dd>
-                <dt>Times shown</dt>
-                <dd className="text-right tabular-nums">{fmt(hovered.loads)}</dd>
                 <dt>Clicks</dt>
                 <dd className="text-right tabular-nums">{fmt(hovered.clicks)}</dd>
                 {hovered.missed > 0 && (

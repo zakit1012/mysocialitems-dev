@@ -47,9 +47,9 @@ type PublicPlan = {
 
 /** Shown until the live plans load, and if the API is unreachable. */
 const DEFAULT_PLANS: PublicPlan[] = [
-  { id: "FREE", name: "Free", priceUsd: 0, sources: 1, widgets: 1, reviews: 3, views: 200, refreshHours: 48 },
+  { id: "FREE", name: "Free", priceUsd: 0, sources: 1, widgets: 1, reviews: 3, views: 1000, refreshHours: 72 },
   { id: "PRO", name: "Pro", priceUsd: 5, sources: 3, widgets: 3, reviews: 10, views: null, refreshHours: 24, priceYearlyUsd: 50 },
-  { id: "BUSINESS", name: "Business", priceUsd: 10, sources: 8, widgets: 8, reviews: 50, views: null, refreshHours: 12, priceYearlyUsd: 100 },
+  { id: "BUSINESS", name: "Business", priceUsd: 10, sources: 8, widgets: 8, reviews: 50, views: null, refreshHours: 24, priceYearlyUsd: 100 },
 ];
 
 const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
@@ -84,7 +84,7 @@ const FEATURES = [
   {
     icon: RefreshCw,
     title: "Always up to date",
-    text: "New reviews appear on their own, as often as every 12 hours. Nothing to refresh by hand.",
+    text: "New reviews appear on their own, as often as every 24 hours. Nothing to refresh by hand.",
   },
   {
     icon: LayoutGrid,

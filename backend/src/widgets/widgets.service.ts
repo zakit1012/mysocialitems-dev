@@ -53,20 +53,22 @@ export class WidgetsService {
   }
 
   /**
-   * Pro designs and backgrounds need a paid plan; the editor lets Free
-   * accounts try them only. Only new choices are checked: after a downgrade
-   * a widget keeps what it had (the site shows the free look) and its other
-   * settings can still be edited.
+   * Pro designs, backgrounds, orders, filters and more reviews than the
+   * plan's need a paid plan; the editor lets Free accounts try them only.
+   * Only new choices are checked: after a downgrade a widget keeps what it
+   * had (the site shows the free look) and its other settings can still be
+   * edited.
    */
   private async assertProAllowed(
     userId: string,
     next: WidgetSettings,
     previous: WidgetSettings = {},
   ) {
-    const had = new Set(proChoices(previous).map((c) => c.key));
-    const added = proChoices(next).filter((c) => !had.has(c.key));
+    const plan = await this.billing.planFor(userId);
+    if (isPaidPlan(plan)) return;
+    const had = new Set(proChoices(previous, plan.reviews).map((c) => c.key));
+    const added = proChoices(next, plan.reviews).filter((c) => !had.has(c.key));
     if (!added.length) return;
-    if (isPaidPlan(await this.billing.planFor(userId))) return;
     throw new ForbiddenException(proMessage(added.map((c) => c.label)));
   }
 

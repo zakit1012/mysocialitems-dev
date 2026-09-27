@@ -10,7 +10,14 @@ import { WidgetEditor } from "@/components/widget/WidgetEditor";
 import { WidgetPreview, type PreviewData, type PreviewReview } from "@/components/widget/WidgetPreview";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { DEFAULT_SETTINGS, newProChoices, proMessage, toPayload, type WidgetSettings } from "@/lib/widget-settings";
+import {
+  DEFAULT_SETTINGS,
+  PAID_DEFAULT_SORT,
+  newProChoices,
+  proMessage,
+  toPayload,
+  type WidgetSettings,
+} from "@/lib/widget-settings";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useLeaveGuard } from "@/lib/use-leave-guard";
 
@@ -39,8 +46,12 @@ export default function NewWidgetPage() {
   const [plan, setPlan] = useState({ id: "FREE", name: "Free", reviews: 3 });
   const [settings, setSettings] = useState<WidgetSettings>(DEFAULT_SETTINGS);
   const isPaid = plan.id !== "FREE";
-  // Pro designs and backgrounds can be tried on Free, not saved.
-  const proLocked = isPaid ? [] : newProChoices(settings);
+  // Pro choices (designs, backgrounds, filters, more reviews) can be tried on Free, not saved.
+  const proLocked = isPaid ? [] : newProChoices(settings, undefined, plan.reviews);
+  // A Free owner previews up to 10 reviews - what an upgrade adds.
+  const previewMax = isPaid ? plan.reviews : Math.max(plan.reviews, 10);
+  // Paid widgets start on Newest; Free ones always show the highest-rated reviews.
+  const sort = isPaid ? (settings.sort ?? PAID_DEFAULT_SORT) : undefined;
   // Reviews fetched but the widget not saved yet: a stray click on the sidebar
   // must not throw that away, or the place has to be fetched all over again.
   const leaveGuard = useLeaveGuard(status === "preview");
@@ -48,7 +59,11 @@ export default function NewWidgetPage() {
   useEffect(() => {
     if (!token) return;
     api<{ plan: { id: string; name: string; reviews: number } }>("/billing", { token })
-      .then((b) => setPlan({ id: b.plan.id, name: b.plan.name, reviews: b.plan.reviews }))
+      .then((b) => {
+        setPlan({ id: b.plan.id, name: b.plan.name, reviews: b.plan.reviews });
+        // A paid account's new widget starts on Newest.
+        if (b.plan.id !== "FREE") setSettings((s) => (s.sort ? s : { ...s, sort: PAID_DEFAULT_SORT }));
+      })
       .catch(() => undefined);
   }, [token]);
 
@@ -82,7 +97,8 @@ export default function NewWidgetPage() {
       const count = Math.min(50, Math.max(10, plan.reviews));
       try {
         const data = await api<EngineResponse>(
-          `/places/reviews?placeId=${encodeURIComponent(place.placeId)}&count=${count}`,
+          `/places/reviews?placeId=${encodeURIComponent(place.placeId)}&count=${count}` +
+            (sort ? `&sort=${sort}` : ""),
           { token },
         );
         if (cancelled) return;
@@ -101,7 +117,7 @@ export default function NewWidgetPage() {
     return () => {
       cancelled = true;
     };
-  }, [status, place, token, plan.reviews]);
+  }, [status, place, token, plan.reviews, sort]);
 
   async function createWidget() {
     if (!place) return;
@@ -143,8 +159,8 @@ export default function NewWidgetPage() {
 
   // The preview shows what the plan allows, not everything we fetched.
   const previewSettings = useMemo(
-    () => ({ ...settings, reviewCount: Math.min(settings.reviewCount ?? plan.reviews, plan.reviews) }),
-    [settings, plan.reviews],
+    () => ({ ...settings, reviewCount: Math.min(settings.reviewCount ?? plan.reviews, previewMax) }),
+    [settings, plan.reviews, previewMax],
   );
 
   const fetched = engine?.reviews.length ?? 0;
@@ -263,7 +279,8 @@ export default function NewWidgetPage() {
             <WidgetEditor
               value={settings}
               onChange={setSettings}
-              maxReviews={plan.reviews}
+              maxReviews={previewMax}
+              saveReviews={plan.reviews}
               planName={plan.name}
               canUsePro={isPaid}
               footer={
