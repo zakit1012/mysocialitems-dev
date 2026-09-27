@@ -10,7 +10,7 @@ import { WidgetEditor } from "@/components/widget/WidgetEditor";
 import { WidgetPreview, type PreviewData, type PreviewReview } from "@/components/widget/WidgetPreview";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { DEFAULT_SETTINGS, isProLayout, layoutName, toPayload, type WidgetSettings } from "@/lib/widget-settings";
+import { DEFAULT_SETTINGS, newProChoices, proMessage, toPayload, type WidgetSettings } from "@/lib/widget-settings";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useLeaveGuard } from "@/lib/use-leave-guard";
 
@@ -39,7 +39,8 @@ export default function NewWidgetPage() {
   const [plan, setPlan] = useState({ id: "FREE", name: "Free", reviews: 3 });
   const [settings, setSettings] = useState<WidgetSettings>(DEFAULT_SETTINGS);
   const isPaid = plan.id !== "FREE";
-  const proLocked = !isPaid && isProLayout(settings.layout);
+  // Pro designs and backgrounds can be tried on Free, not saved.
+  const proLocked = isPaid ? [] : newProChoices(settings);
   // Reviews fetched but the widget not saved yet: a stray click on the sidebar
   // must not throw that away, or the place has to be fetched all over again.
   const leaveGuard = useLeaveGuard(status === "preview");
@@ -109,8 +110,8 @@ export default function NewWidgetPage() {
 
   async function createWidget() {
     if (!place) return;
-    if (proLocked) {
-      setError(`${layoutName(settings.layout)} is a Pro design. Upgrade to use it, or pick Grid, List or Carousel.`);
+    if (proLocked.length) {
+      setError(proMessage(proLocked));
       return;
     }
     setStatus("saving");

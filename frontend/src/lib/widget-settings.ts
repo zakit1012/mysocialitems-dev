@@ -45,6 +45,8 @@ export type ToggleKey =
 
 export type WidgetSettings = {
   theme?: "light" | "dark";
+  /** The theme's panel or none; a backgroundColor (custom) wins over both. */
+  background?: "theme" | "transparent";
   layout?: Layout;
   gridColumns?: "1" | "2" | "3" | "4";
   sort?: Sort;
@@ -63,6 +65,7 @@ export type WidgetSettings = {
 /** What a brand new widget starts with. Colors are unset = follow the theme. */
 export const DEFAULT_SETTINGS: WidgetSettings = {
   theme: "light",
+  background: "theme",
   layout: "grid",
   sort: "mostRelevant",
   radius: "md",
@@ -83,7 +86,7 @@ export const DEFAULT_SETTINGS: WidgetSettings = {
   showHeaderGoogle: true,
   showOwnerResponse: true,
   readMore: true,
-  autoplay: false,
+  autoplay: true,
   cardBorder: true,
   cardShadow: false,
   reviewItalic: false,
@@ -132,7 +135,7 @@ export function themeColor(key: ColorKey, theme: "light" | "dark" = "light"): st
   const dark = theme === "dark";
   switch (key) {
     case "backgroundColor":
-      return dark ? "#111827" : "transparent";
+      return dark ? "#111827" : "#f9fafb";
     case "cardBgColor":
       return dark ? "#1f2937" : "#ffffff";
     case "headerTextColor":
@@ -151,6 +154,47 @@ export function themeColor(key: ColorKey, theme: "light" | "dark" = "light"): st
   }
 }
 
+export type BackgroundMode = "theme" | "transparent" | "custom";
+
+/**
+ * What sits behind the reviews, the way widget.js reads it. Widgets saved
+ * before this choice existed: light sat on the site, dark in its panel.
+ */
+export function backgroundMode(s: WidgetSettings): BackgroundMode {
+  if (s.backgroundColor) return "custom";
+  if (s.background === "theme" || s.background === "transparent") return s.background;
+  return s.theme === "dark" ? "theme" : "transparent";
+}
+
+/**
+ * The paid-plan choices a widget uses (same keys as the API), so a Free
+ * account can try them here but not save them.
+ */
+export function proChoices(s: WidgetSettings): { key: string; label: string }[] {
+  const out: { key: string; label: string }[] = [];
+  if (isProLayout(s.layout)) out.push({ key: `layout:${s.layout}`, label: `the ${layoutName(s.layout)} design` });
+  const bg = backgroundMode(s);
+  if (bg === "transparent") out.push({ key: "bg:transparent", label: "a transparent background" });
+  if (bg === "custom") out.push({ key: `bg:${s.backgroundColor?.toLowerCase()}`, label: "a custom background colour" });
+  return out;
+}
+
+/** Pro choices in `next` that `saved` did not already have. */
+export function newProChoices(next: WidgetSettings, saved?: WidgetSettings): string[] {
+  const had = new Set(saved ? proChoices(saved).map((c) => c.key) : []);
+  return proChoices(next)
+    .filter((c) => !had.has(c.key))
+    .map((c) => c.label);
+}
+
+/** "X is part of Pro..." for one or more choices, as the API words it. */
+export function proMessage(labels: string[]): string {
+  const list =
+    labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}` : labels[0];
+  const them = labels.length > 1 ? "them" : "it";
+  return `${list.charAt(0).toUpperCase()}${list.slice(1)} ${labels.length > 1 ? "are" : "is"} part of Pro. Upgrade to use ${them}, or switch ${them} off to save.`;
+}
+
 export const SORT_OPTIONS: { value: Sort; label: string }[] = [
   { value: "mostRelevant", label: "Most relevant" },
   { value: "newest", label: "Newest first" },
@@ -166,6 +210,7 @@ export const writeReviewUrl = (placeId: string) =>
 export function toPayload(s: WidgetSettings): Record<string, unknown> {
   const out: Record<string, unknown> = { ...s };
   for (const f of COLOR_FIELDS) out[f.key] = s[f.key] ?? "";
+  out.background = s.background ?? "";
   out.gridColumns = s.gridColumns ?? "";
   out.reviewCount = s.reviewCount ?? "";
   return out;

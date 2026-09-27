@@ -36,6 +36,30 @@ function extractPlaceId(raw: string): string | null {
   return /^ChIJ[\w-]{10,}$/.test(text) ? text : null;
 }
 
+/**
+ * A link that names no place we can read: said straight away instead of
+ * searching Google for the link's text, which finds nothing.
+ */
+function unreadableLink(raw: string): string | null {
+  const text = raw.trim();
+  if (!/^https?:\/\//i.test(text)) return null;
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return "That link looks broken. Copy it again, or type the business name.";
+  }
+  const host = url.hostname.replace(/^www\./, "");
+  if (host === "maps.app.goo.gl" || host === "goo.gl") {
+    return "Short share links (maps.app.goo.gl) can't be read here. Open the link, copy the full address from your browser's address bar and paste that, or just type the business name.";
+  }
+  const name = url.pathname.startsWith("/maps/place/") ? url.pathname.split("/")[3] : "";
+  if (!/(^|\.)google\.[a-z.]+$/.test(host) || !name) {
+    return "That link doesn't point to one business. On Google Maps, open the business itself and copy its link, or type the business name.";
+  }
+  return null;
+}
+
 export function PlaceAutocomplete({ onSelect }: Props) {
   const { token } = useAuth();
   const sessionToken = useMemo(
@@ -57,6 +81,8 @@ export function PlaceAutocomplete({ onSelect }: Props) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Nothing to pick: no match, or a link we cannot read.
+  const [notice, setNotice] = useState("");
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [selected, setSelected] = useState<PlaceSuggestion | null>(null);
   const [copied, setCopied] = useState(false);
@@ -112,6 +138,14 @@ export function PlaceAutocomplete({ onSelect }: Props) {
         return;
       }
 
+      const badLink = unreadableLink(query);
+      if (badLink) {
+        setSuggestions([]);
+        setNotice(badLink);
+        setLoading(false);
+        return;
+      }
+
       let searchQuery = query.trim();
       if (searchQuery.startsWith("http")) {
         try {
@@ -154,6 +188,11 @@ export function PlaceAutocomplete({ onSelect }: Props) {
         if (stale) return;
         setSuggestions(results);
         setOpen(true);
+        if (!results.length) {
+          setNotice(
+            `No business found for “${searchQuery}”. Check the spelling, add the city or area, or paste the business's Google Maps link.`,
+          );
+        }
       } catch (err) {
         if (stale) return;
         setSuggestions([]);
@@ -184,7 +223,12 @@ export function PlaceAutocomplete({ onSelect }: Props) {
       <div className="relative">
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            // New typing: the last search's message no longer applies.
+            setNotice("");
+            setError("");
+          }}
           onFocus={() => suggestions.length && setOpen(true)}
           placeholder="Search name, address, or paste a Google Maps URL"
           className={`${fieldClass} pr-10`}
@@ -196,6 +240,11 @@ export function PlaceAutocomplete({ onSelect }: Props) {
         )}
       </div>
       {error && <p className="mt-2 text-sm text-coral">{error}</p>}
+      {notice && !error && !loading && (
+        <p role="status" className="mt-2 rounded-xl bg-sand px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-soft">
+          {notice}
+        </p>
+      )}
       {open && suggestions.length > 0 && (
         <ul className="absolute z-20 mt-2 max-h-80 w-full overflow-auto rounded-2xl border border-line bg-white shadow-panel">
           {suggestions.map((item) => (

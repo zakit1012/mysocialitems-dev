@@ -503,9 +503,13 @@ function Billing() {
                 <Feature>{p.views >= UNLIMITED ? "Unlimited views" : `${p.views.toLocaleString()} views a month`}</Feature>
                 <Feature>Reviews update every {p.refreshHours} hours</Feature>
                 {free ? (
-                  <Feature>Small &quot;Powered by&quot; link on widgets</Feature>
+                  <>
+                    <Feature>Grid, List and Carousel designs</Feature>
+                    <Feature>Small &quot;Powered by&quot; link on widgets</Feature>
+                  </>
                 ) : (
                   <>
+                    <Feature>All 6 designs, transparent or custom background</Feature>
                     <Feature>No &quot;Powered by&quot; link</Feature>
                     <Feature>Review QR code poster and share link</Feature>
                   </>

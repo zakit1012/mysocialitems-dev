@@ -31,11 +31,19 @@ export function widgetScript(key: string, preview = false): string {
   })();
 
   var CSS = '' +
-    '.wpop{--bg:transparent;--head:#111827;--text:#374151;--muted:#6b7280;--card:#fff;--line:#e5e7eb;--star:#f59e0b;--btn:#f43f5e;--btn-text:#fff;--r:14px;' +
+    '.wpop{--bg:#f9fafb;--head:#111827;--text:#374151;--muted:#6b7280;--card:#fff;--line:#e5e7eb;--star:#f59e0b;--btn:#f43f5e;--btn-text:#fff;--r:14px;' +
       'font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--head);background:var(--bg);border-radius:calc(var(--r) + 4px);text-align:left}' +
     '.wpop.wpop-dark{--bg:#111827;--head:#f9fafb;--text:#d1d5db;--muted:#9ca3af;--card:#1f2937;--line:#374151}' +
+    // Background: the theme's panel (boxed), the site's own colour (clear) or
+    // the owner's colour (--bg set inline).
+    '.wpop.wpop-clear{--bg:transparent}' +
+    '.wpop.wpop-boxed{border:1px solid var(--line)}' +
     '.wpop.wpop-r-none{--r:4px}.wpop.wpop-r-lg{--r:22px}' +
     '.wpop.wpop-pad{padding:20px}' +
+    '@media (max-width:480px){.wpop.wpop-pad{padding:14px}}' +
+    // Text outside the cards follows the colour it sits on (see contrast()).
+    '.wpop.wpop-on-dark .wpop-head,.wpop.wpop-on-dark .wpop-empty,.wpop.wpop-on-dark .wpop-powered{--head:#f9fafb;--muted:rgba(255,255,255,.78);--line:rgba(255,255,255,.22)}' +
+    '.wpop.wpop-on-light .wpop-head,.wpop.wpop-on-light .wpop-empty,.wpop.wpop-on-light .wpop-powered{--head:#111827;--muted:#4b5563;--line:rgba(17,24,39,.14)}' +
     '.wpop *{box-sizing:border-box}' +
     '.wpop-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}' +
     '.wpop-head.wpop-sep{border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:14px}' +
@@ -84,6 +92,8 @@ export function widgetScript(key: string, preview = false): string {
     '.wpop-carousel .wpop-items{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:2px 0 6px;align-items:stretch}' +
     '.wpop-carousel .wpop-items::-webkit-scrollbar{display:none}' +
     '.wpop-carousel .wpop-card{flex:0 0 var(--slide,min(280px,85%));scroll-snap-align:start}' +
+    // Off while the arrows or autoplay glide, so an unseen jump lands exactly.
+    '.wpop-carousel .wpop-items.wpop-glide{scroll-snap-type:none}' +
     // The arrows sit in their own gutter, beside the cards, centred on them.
     // Sites style every <button> (colours, hover fills, padding, transforms),
     // so each look-defining property is pinned with !important, in every state.
@@ -196,6 +206,84 @@ export function widgetScript(key: string, preview = false): string {
     return /^#[0-9a-fA-F]{3,8}$/.test(String(c || '')) ? c : '';
   }
 
+  /**
+   * What sits behind the reviews: the theme's panel, nothing (the site shows
+   * through) or the owner's colour. Widgets saved before this choice: light
+   * sat on the site, dark in its panel.
+   */
+  function backdrop(s) {
+    if (hex(s.backgroundColor)) return 'custom';
+    if (s.background === 'theme' || s.background === 'transparent') return s.background;
+    return s.theme === 'dark' ? 'theme' : 'transparent';
+  }
+
+  /** [r, g, b, a] from a #hex or any colour a computed style gives back. */
+  var paint = null;
+  function rgba(c) {
+    c = String(c || '');
+    if (c.charAt(0) === '#') {
+      var h = c.slice(1);
+      if (h.length < 6) h = h.replace(/./g, '$&$&');
+      return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), 1];
+    }
+    var m = /^rgba?\\(([^)]*)\\)$/.exec(c);
+    if (m) {
+      var p = m[1].split(/[\\s,\\/]+/);
+      var a = p[3] ? parseFloat(p[3]) / (p[3].indexOf('%') > 0 ? 100 : 1) : 1;
+      return [Number(p[0]), Number(p[1]), Number(p[2]), a];
+    }
+    // oklch(), lab(), color(): let a 1px canvas turn it into rgb.
+    try {
+      if (!paint) {
+        var cv = document.createElement('canvas');
+        cv.width = cv.height = 1;
+        paint = cv.getContext('2d');
+      }
+      paint.clearRect(0, 0, 1, 1);
+      paint.fillStyle = 'rgba(0,0,0,0)';
+      paint.fillStyle = c;
+      paint.fillRect(0, 0, 1, 1);
+      var d = paint.getImageData(0, 0, 1, 1).data;
+      return [d[0], d[1], d[2], d[3] / 255];
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** The colour a transparent widget sits on: the nearest solid background around it. */
+  function siteColor(host) {
+    for (var n = host; n && n.nodeType === 1; n = n.parentElement) {
+      var c = rgba(getComputedStyle(n).backgroundColor);
+      if (c && c[3] >= 0.5) return c;
+    }
+    return [255, 255, 255, 1];
+  }
+
+  /** True when white text reads better on it than black (WCAG luminance). */
+  function isDark(c) {
+    function lin(x) { x /= 255; return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }
+    return 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]) < 0.179;
+  }
+
+  /**
+   * On a transparent or custom background, the heading, empty note and
+   * "Powered by" turn light on a dark colour and dark on a light one -
+   * unless the owner picked the heading colour.
+   */
+  function contrast(host, bg, s) {
+    var root = host.firstChild;
+    if (!root || !root.classList || bg === 'theme' || hex(s.headerTextColor)) return;
+    var c = bg === 'custom' ? rgba(hex(s.backgroundColor)) : siteColor(host);
+    var dark = isDark(c);
+    root.classList.toggle('wpop-on-dark', dark);
+    root.classList.toggle('wpop-on-light', !dark);
+  }
+
+  /** Something to undo when the widget is drawn again (the editor preview redraws often). */
+  function onStop(host, fn) {
+    (host.__wpopStops = host.__wpopStops || []).push(fn);
+  }
+
   /** A faded row of five, with the colored row cut to the exact rating on top: 4.8 fills 96%. */
   function stars(n) {
     var value = Math.max(0, Math.min(5, Number(n) || 0));
@@ -273,9 +361,10 @@ export function widgetScript(key: string, preview = false): string {
   /**
    * Cards are sized so a view holds only whole cards - never half of one at
    * the edge. "Columns" caps how many a view shows; a phone gets one. Arrows
-   * move one view and wrap around at either end. Autoplay moves every 5s and
-   * pauses while the visitor hovers. When every card fits, the arrows hide
-   * and the cards sit centred.
+   * move one card and wrap around at either end. Autoplay moves one card
+   * every few seconds and waits while the visitor hovers, touches or tabs
+   * through it, and while it is off screen. When every card fits, the arrows
+   * hide and the cards sit centred.
    */
   /**
    * A carousel that never runs out: a copy of every card sits before and
@@ -330,10 +419,13 @@ export function widgetScript(key: string, preview = false): string {
     }
     /** Back among the real cards if the track came to rest on a copy. */
     function settle() {
-      if (fits()) return;
-      var w = set();
-      if (track.scrollLeft < w - 2) jump(track.scrollLeft + w);
-      else if (track.scrollLeft >= 2 * w - 2) jump(track.scrollLeft - w);
+      aim = null;
+      if (!fits()) {
+        var w = set();
+        if (track.scrollLeft < w - 2) jump(track.scrollLeft + w);
+        else if (track.scrollLeft >= 2 * w - 2) jump(track.scrollLeft - w);
+      }
+      track.classList.remove('wpop-glide');
     }
     var resting;
     track.addEventListener('scroll', function () {
@@ -341,11 +433,20 @@ export function widgetScript(key: string, preview = false): string {
       resting = setTimeout(settle, 140);
     }, { passive: true });
 
+    /** Where the running glide is heading; null at rest. */
+    var aim = null;
+    var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    /** One card on. Quick clicks add up: each goes on from the last one's aim. */
     function step(dir) {
       if (fits()) return;
-      settle();
-      var page = perView(track.clientWidth) * unit();
-      track.scrollTo({ left: track.scrollLeft + dir * page, behavior: 'smooth' });
+      var u = unit(), w = set();
+      var at = aim === null ? Math.round(track.scrollLeft / u) * u : aim;
+      track.classList.add('wpop-glide');
+      // Stay among the real cards, jumping unseen by one whole set.
+      if (at < w) { jump(track.scrollLeft + w); at += w; }
+      else if (at >= 2 * w) { jump(track.scrollLeft - w); at -= w; }
+      aim = at + dir * u;
+      track.scrollTo({ left: aim, behavior: still ? 'auto' : 'smooth' });
     }
     wrap.querySelector('.wpop-prev').onclick = function () { step(-1); };
     wrap.querySelector('.wpop-next').onclick = function () { step(1); };
@@ -357,6 +458,8 @@ export function widgetScript(key: string, preview = false): string {
       // Measured after the arrows' gutters are on or off.
       var width = track.clientWidth, per = perView(width);
       wrap.style.setProperty('--slide', (width - (per - 1) * GAP) / per + 'px');
+      aim = null;
+      track.classList.remove('wpop-glide');
       if (nowFits) { jump(0); looping = false; return; }
       // Keep the card in view when the width changes; start on the first.
       var at = looping ? current() : 0;
@@ -365,14 +468,36 @@ export function widgetScript(key: string, preview = false): string {
     }
     fit();
     setTimeout(fit, 400);
-    host.__wpopResize = fit;
     window.addEventListener('resize', fit);
-    if (s.autoplay) {
-      host.__wpopTimer = setInterval(function () {
-        if (wrap.matches(':hover') || fits()) return;
-        step(1);
-      }, 5000);
+    onStop(host, function () { window.removeEventListener('resize', fit); });
+    if (s.autoplay && !still) autoplay(host, wrap, fits, step);
+  }
+
+  /**
+   * One card on every few seconds. It waits while a mouse is over it, for a
+   * few seconds after a tap, swipe, click or key, while a key has focus in
+   * it, and while it is off screen or in a hidden tab.
+   */
+  function autoplay(host, wrap, fits, step) {
+    var over = false, touched = 0, seen = true;
+    wrap.addEventListener('pointerenter', function (e) { if (e.pointerType === 'mouse') over = true; });
+    wrap.addEventListener('pointerleave', function () { over = false; });
+    var wake = function () { touched = Date.now(); };
+    var events = ['pointerdown', 'wheel', 'keydown', 'focusin'];
+    for (var i = 0; i < events.length; i++) wrap.addEventListener(events[i], wake, { passive: true });
+    function tabbing() {
+      try { return !!wrap.querySelector(':focus-visible'); } catch (e) { return false; }
     }
+    if (window.IntersectionObserver) {
+      var watch = new IntersectionObserver(function (e) { seen = e[e.length - 1].isIntersecting; });
+      watch.observe(wrap);
+      onStop(host, function () { watch.disconnect(); });
+    }
+    var timer = setInterval(function () {
+      if (over || !seen || document.hidden || fits() || tabbing() || Date.now() - touched < 6000) return;
+      step(1);
+    }, 3500);
+    onStop(host, function () { clearInterval(timer); });
   }
 
   /**
@@ -395,8 +520,8 @@ export function widgetScript(key: string, preview = false): string {
       if (columns >= 3) best.classList.add('wpop-feature');
     }
     fit();
-    host.__wpopResize = fit;
     window.addEventListener('resize', fit);
+    onStop(host, function () { window.removeEventListener('resize', fit); });
   }
 
   /**
@@ -479,8 +604,11 @@ export function widgetScript(key: string, preview = false): string {
     if (layout === 'compact') layout = 'quotes';
 
     var classes = ['wpop', 'wpop-' + layout];
-    if (s.theme === 'dark') classes.push('wpop-dark', 'wpop-pad');
-    if (hex(s.backgroundColor)) classes.push('wpop-pad');
+    if (s.theme === 'dark') classes.push('wpop-dark');
+    var bg = backdrop(s);
+    if (bg === 'transparent') classes.push('wpop-clear');
+    else classes.push('wpop-pad');
+    if (bg === 'theme') classes.push('wpop-boxed');
     if (s.cardBorder === false) classes.push('wpop-noborder');
     if (s.cardShadow) classes.push('wpop-shadow');
     if (s.reviewItalic) classes.push('wpop-italic');
@@ -542,9 +670,9 @@ export function widgetScript(key: string, preview = false): string {
         html += '<div class="wpop-empty">No reviews to show yet.</div>';
       } else if (layout === 'carousel') {
         html += '<div class="wpop-car">' +
-          '<button type="button" class="wpop-nav wpop-prev" aria-label="Previous reviews">' + PREV + '</button>' +
+          '<button type="button" class="wpop-nav wpop-prev" aria-label="Previous review">' + PREV + '</button>' +
           '<div class="wpop-items">' + items + '</div>' +
-          '<button type="button" class="wpop-nav wpop-next" aria-label="Next reviews">' + NEXT + '</button></div>';
+          '<button type="button" class="wpop-nav wpop-next" aria-label="Next review">' + NEXT + '</button></div>';
       } else {
         var style = '';
         if (cols && (layout === 'grid' || layout === 'quotes' || layout === 'showcase')) {
@@ -572,20 +700,42 @@ export function widgetScript(key: string, preview = false): string {
         'Powered by <b>WidgetPop</b></a></div>';
     }
 
-    // The preview re-renders on every settings change; drop the last
-    // carousel's timer and resize listener first.
-    if (host.__wpopTimer) clearInterval(host.__wpopTimer);
-    if (host.__wpopResize) window.removeEventListener('resize', host.__wpopResize);
-    host.__wpopTimer = host.__wpopResize = null;
+    // The preview re-renders on every settings change; stop the last
+    // drawing's timers, watchers and listeners first.
+    var stops = host.__wpopStops || [];
+    host.__wpopStops = [];
+    for (var k = 0; k < stops.length; k++) stops[k]();
 
     host.innerHTML = html + '</div>';
+    contrast(host, bg, s);
+    if (bg === 'transparent' && !hex(s.headerTextColor)) {
+      var recheck = function () { contrast(host, bg, s); };
+      // Sites switch light/dark mode with a class on <html> or <body>, or
+      // with the visitor's system setting.
+      if (window.MutationObserver) {
+        var modes = new MutationObserver(recheck);
+        var what = { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-mode'] };
+        modes.observe(document.documentElement, what);
+        if (document.body) modes.observe(document.body, what);
+        onStop(host, function () { modes.disconnect(); });
+      }
+      var scheme = window.matchMedia && matchMedia('(prefers-color-scheme: dark)');
+      if (scheme && scheme.addEventListener) {
+        scheme.addEventListener('change', recheck);
+        onStop(host, function () { scheme.removeEventListener('change', recheck); });
+      }
+    }
     // Columns here means the most cards one view shows.
     if (layout === 'carousel') carousel(host, s, cols);
     if (layout === 'showcase') showcase(host);
 
     addReadMore(host, s);
-    // Fonts and images can change line breaks after the first paint.
-    setTimeout(function () { addReadMore(host, s); }, 400);
+    // Fonts and images can change line breaks after the first paint, and
+    // the site's own styles may land late.
+    setTimeout(function () {
+      addReadMore(host, s);
+      contrast(host, bg, s);
+    }, 400);
 
     host.onclick = function (e) {
       if (!e.target || !e.target.closest) return;

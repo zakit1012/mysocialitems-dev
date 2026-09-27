@@ -20,10 +20,12 @@ import {
 import {
   COLOR_FIELDS,
   SORT_OPTIONS,
+  backgroundMode,
   isOn,
   isProLayout,
   layoutName,
   themeColor,
+  type BackgroundMode,
   type ButtonIcon,
   type ColorKey,
   type Layout,
@@ -181,7 +183,7 @@ export function WidgetEditor({
             </Section>
 
             {layout === "carousel" && (
-              <Section title="Carousel" hint="Slides every 5 seconds and pauses while someone hovers.">
+              <Section title="Carousel" hint="Moves one review every few seconds; waits while someone hovers or touches it.">
                 <ToggleRow label="Autoplay" k="autoplay" value={value} set={set} />
               </Section>
             )}
@@ -215,6 +217,8 @@ export function WidgetEditor({
                 onChange={(v) => set({ theme: v as "light" | "dark" })}
               />
             </Section>
+
+            <BackgroundPicker value={value} set={set} canUsePro={canUsePro} />
 
             <Section title="Reviews to show">
               <div className="flex items-center justify-between rounded-xl border border-line px-2 py-1.5">
@@ -343,7 +347,8 @@ export function WidgetEditor({
             {["Widget", "Text", "Accents"].map((group) => (
               <Section key={group} title={group}>
                 <div className="space-y-3.5">
-                  {COLOR_FIELDS.filter((f) => f.group === group).map((f) => (
+                  {/* The background has its own picker on the Layout tab. */}
+                  {COLOR_FIELDS.filter((f) => f.group === group && f.key !== "backgroundColor").map((f) => (
                     <ColorRow
                       key={f.key}
                       label={f.label}
@@ -396,6 +401,99 @@ export function WidgetEditor({
 
       {footer && <div className="border-t border-line p-4">{footer}</div>}
     </aside>
+  );
+}
+
+const BACKGROUNDS: { id: BackgroundMode; label: string; hint: string }[] = [
+  { id: "theme", label: "Theme", hint: "A soft panel in the theme's colours." },
+  {
+    id: "transparent",
+    label: "Transparent",
+    hint: "Sits on your website's own colour. The heading turns light or dark to match it.",
+  },
+  { id: "custom", label: "Custom", hint: "Any colour. The heading turns light or dark to match it." },
+];
+
+/** Theme panel (free), transparent or a colour of their own (Pro). */
+function BackgroundPicker({
+  value,
+  set,
+  canUsePro,
+}: {
+  value: WidgetSettings;
+  set: (patch: Partial<WidgetSettings>) => void;
+  canUsePro: boolean;
+}) {
+  const theme = value.theme ?? "light";
+  const mode = backgroundMode(value);
+  const pick = (id: BackgroundMode) => {
+    if (id === "custom") {
+      set({ backgroundColor: value.backgroundColor ?? (theme === "dark" ? "#1e293b" : "#eef2ff") });
+    } else {
+      set({ background: id, backgroundColor: undefined });
+    }
+  };
+  const swatch = (id: BackgroundMode) =>
+    id === "theme"
+      ? { background: themeColor("backgroundColor", theme) }
+      : id === "transparent"
+        ? {
+            backgroundImage: "conic-gradient(#e2e8f0 25%, #fff 0 50%, #e2e8f0 0 75%, #fff 0)",
+            backgroundSize: "8px 8px",
+          }
+        : {
+            background:
+              value.backgroundColor ??
+              "conic-gradient(#f43f5e, #f59e0b, #10b981, #0ea5e9, #6366f1, #f43f5e)",
+          };
+
+  return (
+    <Section title="Background" hint={BACKGROUNDS.find((b) => b.id === mode)?.hint}>
+      <div className="grid grid-cols-3 gap-2">
+        {BACKGROUNDS.map((b) => (
+          <button
+            key={b.id}
+            type="button"
+            aria-pressed={mode === b.id}
+            onClick={() => pick(b.id)}
+            className={`relative flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 text-[11.5px] font-semibold transition ${
+              mode === b.id
+                ? "border-brand bg-brand-wash text-brand"
+                : "border-line text-muted hover:border-brand/40 hover:text-ink"
+            }`}
+          >
+            {!canUsePro && b.id !== "theme" && (
+              <span className="absolute right-1 top-1 rounded bg-amber-100 px-1 text-[9px] font-bold uppercase leading-4 tracking-wide text-amber-700">
+                Pro
+              </span>
+            )}
+            <span className="h-6 w-9 rounded-md border border-line" style={swatch(b.id)} />
+            {b.label}
+          </button>
+        ))}
+      </div>
+      {mode === "custom" && (
+        <div className="pt-2">
+          <ColorRow
+            label="Background colour"
+            value={value.backgroundColor}
+            auto={themeColor("backgroundColor", theme)}
+            onChange={(c) => set({ backgroundColor: c })}
+            allowAuto={false}
+          />
+        </div>
+      )}
+      {!canUsePro && mode !== "theme" && (
+        <p className="mt-2.5 rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800">
+          {mode === "transparent" ? "A transparent" : "A custom"} background is part of Pro. Try it here; to use it on
+          your site,{" "}
+          <Link href="/dashboard/billing" className="font-semibold underline">
+            upgrade
+          </Link>
+          . The theme background is free.
+        </p>
+      )}
+    </Section>
   );
 }
 
@@ -503,11 +601,14 @@ function ColorRow({
   value,
   auto,
   onChange,
+  allowAuto = true,
 }: {
   label: string;
   value: string | undefined;
   auto: string;
   onChange: (c: string | undefined) => void;
+  /** Off where "follow the theme" is a separate choice. */
+  allowAuto?: boolean;
 }) {
   const current = value ?? auto;
   const same = (c: string) => value?.toLowerCase() === c.toLowerCase();
@@ -518,16 +619,18 @@ function ColorRow({
         <span className="font-mono text-[11px] uppercase text-muted">{value ?? "auto"}</span>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => onChange(undefined)}
-          title="Follow the theme"
-          className={`h-6 rounded-full border px-2 text-[10.5px] font-bold transition ${
-            value === undefined ? "border-brand bg-brand-wash text-brand" : "border-line text-muted hover:text-ink"
-          }`}
-        >
-          Auto
-        </button>
+        {allowAuto && (
+          <button
+            type="button"
+            onClick={() => onChange(undefined)}
+            title="Follow the theme"
+            className={`h-6 rounded-full border px-2 text-[10.5px] font-bold transition ${
+              value === undefined ? "border-brand bg-brand-wash text-brand" : "border-line text-muted hover:text-ink"
+            }`}
+          >
+            Auto
+          </button>
+        )}
         {SWATCHES.map((c) => (
           <button
             key={c}

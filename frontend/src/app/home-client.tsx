@@ -337,6 +337,10 @@ function LiveDemo() {
     headerAlign: "center",
     showAllReviewsBtn: true,
     cardShadow: true,
+    autoplay: true,
+    // Pro: sits on the page, so trying a dark or blue "site" above shows the
+    // heading switching colour.
+    background: "transparent",
     reviewCount: DEMO_REVIEW_COUNT,
   };
   // The demo photos need this page's origin (the widget draws http(s) images
@@ -609,7 +613,13 @@ function Pricing({ plans, loggedIn, pricesReady }: { plans: PublicPlan[]; logged
                     p.views === null ? "Unlimited views" : `${p.views.toLocaleString()} views a month`,
                     `Reviews update every ${p.refreshHours} hours`,
                     "Analytics included",
-                    ...(free ? ["Small “Powered by” link"] : ["No “Powered by” link", "Review QR code poster and share link"]),
+                    ...(free
+                      ? ["Grid, List and Carousel designs", "Small “Powered by” link"]
+                      : [
+                          "All 6 designs, transparent or custom background",
+                          "No “Powered by” link",
+                          "Review QR code poster and share link",
+                        ]),
                   ].map((f) => (
                     <li key={f} className="flex items-center gap-2.5">
                       <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-wash text-emerald">

@@ -24,6 +24,7 @@ import {
   MAX_REVIEW_COUNT,
   PRO_LAYOUTS,
   SORTS,
+  backgroundMode,
   fiveStarOnly,
   normalizeSettings,
 } from '../widgets/widget-settings';
@@ -186,6 +187,11 @@ export class PublicController {
       !isPaidPlan(plan)
     ) {
       settings.layout = 'grid';
+    }
+    // So do transparent and custom backgrounds: the theme's own panel.
+    if (!isPaidPlan(plan) && backgroundMode(settings) !== 'theme') {
+      settings.background = 'theme';
+      delete settings.backgroundColor;
     }
     // data-sort on the snippet may only pick one of the widget's own orders:
     // "lowest rated" would leave a 5-star-only widget empty.
