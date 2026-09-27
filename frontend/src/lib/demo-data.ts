@@ -22,9 +22,6 @@ const REVIEWS: (Omit<PreviewReview, "images"> & { photos?: string[] })[] = [
     published_at_text: "2 weeks ago",
     text: "Booked a table for my parents' anniversary and the team made it special with a little dessert and a candle. Lovely people.",
     photos: ["cake", "table"],
-    owner_response: {
-      text: "Thank you, Arjun! It was a joy to be part of your parents' day. Please pass on our wishes, and come back for the next one.",
-    },
   },
   {
     review_id: "d3",
@@ -47,9 +44,6 @@ const REVIEWS: (Omit<PreviewReview, "images"> & { photos?: string[] })[] = [
     published_at_text: "a month ago",
     text: "I have coeliac disease and eating out is usually stressful. Here the staff knew exactly which dishes were safe, the kitchen changed gloves without being asked and the gluten-free pancakes were honestly better than the normal ones I remember. Thank you for making it easy.",
     photos: ["pancakes", "salad", "latte"],
-    owner_response: {
-      text: "Aisha, this means a lot to our kitchen team. We take gluten-free seriously and we're so glad you could relax and enjoy your meal. See you soon!",
-    },
   },
   {
     review_id: "d6",
