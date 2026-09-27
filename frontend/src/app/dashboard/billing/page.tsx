@@ -685,7 +685,7 @@ function PaymentHistory({ payments }: { payments: PaymentRow[] }) {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <a
-                        href={p.invoiceUrl ?? `/invoice/${p.id}`}
+                        href={`/invoice/${p.id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 font-semibold text-brand hover:underline"

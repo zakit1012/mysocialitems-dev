@@ -95,6 +95,12 @@ const fmtViews = (views: number) =>
 /** A string field from an untrusted webhook payload, or ''. */
 const text = (v: unknown) => (typeof v === 'string' ? v : '');
 
+/** The currency a checkout was opened in (INR in India, else USD), from its metadata. */
+const checkoutCurrency = (metadata?: Record<string, string>) =>
+  metadata?.currency === 'INR' || metadata?.currency === 'USD'
+    ? metadata.currency
+    : null;
+
 /** What a plan costs over a year on a period, to tell an upgrade from a downgrade. */
 const yearlyValue = (plan: Plan, interval: string) =>
   interval === 'year' ? plan.priceYearlyUsd : plan.priceUsd * 12;
@@ -546,7 +552,13 @@ export class BillingService {
       india,
       returnUrl: `${this.appUrl()}/dashboard/billing?checkout=return`,
       cancelUrl: `${this.appUrl()}/dashboard/billing?checkout=cancel`,
-      metadata: { user_id: userId, plan: plan.key, interval, mode },
+      metadata: {
+        user_id: userId,
+        plan: plan.key,
+        interval,
+        mode,
+        currency: india ? 'INR' : 'USD',
+      },
     });
     await this.prisma.subscription.update({
       where: { userId },
@@ -743,6 +755,15 @@ export class BillingService {
         : remote.payment_frequency_interval === 'Month'
           ? 'month'
           : (before.interval as BillingInterval);
+    // What the customer is charged in. Dodo's subscription reports its
+    // product's own currency (US dollars) even when an Indian customer pays
+    // in rupees, so the charges decide; before the first one is recorded,
+    // the currency checkout was opened in.
+    const currency =
+      (await this.chargedIn(remote.subscription_id)) ??
+      (isNew ? checkoutCurrency(remote.metadata) : before.currency) ??
+      remote.currency ??
+      null;
     const after = await this.prisma.subscription.update({
       where: { userId },
       data: {
@@ -752,7 +773,7 @@ export class BillingService {
         dodoSubscriptionId: remote.subscription_id,
         ...(opts.mode ? { dodoMode: opts.mode } : {}),
         dodoCustomerId: remote.customer?.customer_id ?? before.dodoCustomerId,
-        currency: remote.currency ?? before.currency,
+        currency,
         interval,
         currentPeriodEnd: remote.next_billing_date
           ? new Date(remote.next_billing_date)
@@ -762,6 +783,62 @@ export class BillingService {
     });
     await this.announce(before, after, plan, isNew, opts.quiet);
     return after;
+  }
+
+  /** The currency of a subscription's latest recorded charge, if any. */
+  private async chargedIn(subscriptionId: string): Promise<string | null> {
+    const last = await this.prisma.payment.findFirst({
+      where: { dodoSubscriptionId: subscriptionId },
+      orderBy: { paidAt: 'desc' },
+      select: { currency: true },
+    });
+    return last?.currency ?? null;
+  }
+
+  /**
+   * Safety net, run on a timer: every subscription shows the currency its
+   * latest charge was made in. Puts right accounts saved before the charges
+   * decided it (Indian customers paying in rupees shown dollar prices).
+   */
+  async settleCurrencies(): Promise<number> {
+    let fixed = 0;
+    let after: string | undefined;
+    for (;;) {
+      const subs = await this.prisma.subscription.findMany({
+        where: {
+          dodoSubscriptionId: { not: null },
+          ...(after ? { id: { gt: after } } : {}),
+        },
+        orderBy: { id: 'asc' },
+        take: 200,
+        select: { id: true, dodoSubscriptionId: true, currency: true },
+      });
+      const latest = await this.prisma.payment.findMany({
+        where: {
+          dodoSubscriptionId: {
+            in: subs.map((s) => s.dodoSubscriptionId as string),
+          },
+        },
+        orderBy: [{ dodoSubscriptionId: 'asc' }, { paidAt: 'desc' }],
+        distinct: ['dodoSubscriptionId'],
+        select: { dodoSubscriptionId: true, currency: true },
+      });
+      const paidIn = new Map(
+        latest.map((p) => [p.dodoSubscriptionId, p.currency]),
+      );
+      for (const sub of subs) {
+        const currency = paidIn.get(sub.dodoSubscriptionId);
+        if (!currency || currency === sub.currency) continue;
+        await this.prisma.subscription.update({
+          where: { id: sub.id },
+          data: { currency },
+        });
+        fixed++;
+      }
+      if (subs.length < 200) break;
+      after = subs[subs.length - 1].id;
+    }
+    return fixed;
   }
 
   /** The email for a change of subscription state, if it deserves one. */
@@ -1111,8 +1188,10 @@ export class BillingService {
       `Payment received - ${invoiceNumber(row.number)}`,
       parts.filter(Boolean).join(' '),
       {
-        label: row.invoiceUrl ? 'Download invoice' : 'View receipt',
-        url: row.invoiceUrl ?? `${this.appUrl()}/invoice/${row.id}`,
+        // Our page shows the amount as charged (rupees for India) and links
+        // the official PDF, which Dodo issues in US dollars.
+        label: 'View invoice',
+        url: `${this.appUrl()}/invoice/${row.id}`,
       },
     );
   }
@@ -1262,8 +1341,8 @@ export class BillingService {
           `${fmtMoney(now.amountCents, now.currency)} payment for ${now.planName}. ` +
           'It goes back to the card or account you paid with; it can take 5-10 business days to show.',
         {
-          label: now.invoiceUrl ? 'Download invoice' : 'View receipt',
-          url: now.invoiceUrl ?? `${this.appUrl()}/invoice/${now.id}`,
+          label: 'View invoice',
+          url: `${this.appUrl()}/invoice/${now.id}`,
         },
       );
     }
@@ -1383,6 +1462,8 @@ export class BillingService {
       currency: p.currency,
       reference: p.dodoPaymentId ?? p.paypalSaleId ?? p.id,
       invoiceUrl: p.invoiceUrl,
+      /** Dodo's PDF shows amounts in the currency it settles in (USD). */
+      officialCurrency: p.invoiceUrl ? p.settlementCurrency : null,
     };
   }
 

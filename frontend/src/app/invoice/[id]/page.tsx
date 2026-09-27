@@ -25,7 +25,11 @@ type Invoice = {
   reference: string;
   /** Dodo's own invoice PDF - the legal invoice, since Dodo is the seller. */
   invoiceUrl: string | null;
+  /** The currency that PDF is in (USD), when there is one. */
+  officialCurrency?: string | null;
 };
+
+const CURRENCY_NAME: Record<string, string> = { USD: "US dollars", INR: "rupees" };
 
 /**
  * A printable invoice for one payment. "Print / Save as PDF" uses the
@@ -103,6 +107,15 @@ export default function InvoicePage() {
           <Printer className="h-4 w-4" /> Print / Save as PDF
         </button>
       </div>
+
+      {/* Paid in rupees, the official invoice in dollars: say so before it surprises anyone. */}
+      {invoice.invoiceUrl && invoice.officialCurrency && invoice.officialCurrency !== invoice.currency && (
+        <p className="mb-4 rounded-xl border border-line bg-card px-4 py-3 text-[13px] text-muted print:hidden">
+          You were charged <b className="text-ink">{money(invoice.amountCents)}</b>. The official invoice (PDF) is
+          issued in {CURRENCY_NAME[invoice.officialCurrency] ?? invoice.officialCurrency}, the currency our payment
+          partner keeps its books in, converted at that day&apos;s rate - the amount charged to you does not change.
+        </p>
+      )}
 
       <article className="rounded-2xl border border-line bg-white p-6 text-[13.5px] text-ink shadow-card sm:p-10 print:rounded-none print:border-0 print:p-0 print:shadow-none">
         {invoice.test && (

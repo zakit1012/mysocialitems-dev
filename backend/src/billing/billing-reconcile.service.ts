@@ -11,8 +11,9 @@ import { BillingService } from './billing.service';
 const EVERY_MS = 60 * 60 * 1000;
 
 /**
- * Hourly billing checks: overdue renewals, plans whose paid time ran out, and
- * reminders before yearly renewals. Production only (or
+ * Hourly billing checks: overdue renewals, plans whose paid time ran out,
+ * reminders before yearly renewals, and the currency each subscription is
+ * billed in. Production only (or
  * BILLING_RECONCILE=true), since it talks to Dodo Payments and emails customers.
  */
 @Injectable()
@@ -56,6 +57,7 @@ export class BillingReconcileService
       ],
       ['ended plans', () => this.billing.closeEndedPlans()],
       ['renewal reminders', () => this.billing.sendRenewalReminders()],
+      ['billed currencies', () => this.billing.settleCurrencies()],
     ];
     for (const [name, step] of steps) {
       try {
