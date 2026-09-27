@@ -41,9 +41,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.replace("/login?next=/dashboard");
+      // Back to this same page after signing in, not the dashboard's front.
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
-  }, [loading, user, router]);
+  }, [loading, user, router, pathname]);
 
   useEffect(() => {
     if (!menuOpen) return;

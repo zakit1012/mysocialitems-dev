@@ -18,6 +18,14 @@ function homePath() {
   return onAdminHost ? "/admin" : "/dashboard";
 }
 
+/**
+ * ?next= only within this site: "/billing" yes, but not "https://other.site",
+ * "//other.site" or "/\other.site" - a login link must not lead anywhere else.
+ */
+function safeNext(next: string | null) {
+  return next && /^\/(?![/\\])/.test(next) ? next : null;
+}
+
 function LoginForm() {
   const { user, login, requestLoginCode, loginWithCode } = useAuth();
   const router = useRouter();
@@ -34,13 +42,13 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
 
   function nextPath() {
-    return searchParams.get("next") || homePath();
+    return safeNext(searchParams.get("next")) || homePath();
   }
 
   // The marketing site cannot see a session on the app's host, so its
   // "Log in" also brings people who are signed in already: send them on.
   useEffect(() => {
-    if (user) router.replace(searchParams.get("next") || homePath());
+    if (user) router.replace(safeNext(searchParams.get("next")) || homePath());
   }, [user, router, searchParams]);
 
   async function onPasswordLogin(event: FormEvent) {
@@ -150,6 +158,17 @@ function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Enter your password"
           />
+          <button
+            type="button"
+            onClick={() => {
+              setMode("code");
+              setError("");
+              setInfo("Log in with a code instead, then set a new password under Account.");
+            }}
+            className="-mt-2 block text-sm font-medium text-brand hover:underline"
+          >
+            Forgot password?
+          </button>
           {error && <p className="text-sm text-coral">{error}</p>}
           <Button type="submit" loading={busy}>
             Log in

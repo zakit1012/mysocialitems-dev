@@ -33,19 +33,23 @@ export function Header() {
         <nav className="ml-auto flex items-center gap-1 text-sm font-medium lg:ml-0">
           {user ? (
             <>
-              <NavLink href={appHref("/dashboard")}>
+              {/* Phones: the avatar alone leads to the dashboard, or the row
+                  is wider than the screen. */}
+              <NavLink href={appHref("/dashboard")} className="max-sm:hidden">
                 <LayoutDashboard className="h-4 w-4" /> Dashboard
               </NavLink>
               <Link
                 href={appHref("/dashboard")}
-                className="ml-1 inline-flex items-center gap-2 rounded-full border border-line bg-card py-1.5 pl-1.5 pr-3.5 transition hover:border-brand/30 hover:shadow-card"
+                title={`${user.name} - dashboard`}
+                aria-label={`Dashboard (${user.name})`}
+                className="ml-1 inline-flex items-center gap-2 rounded-full border border-line bg-card p-1.5 transition hover:border-brand/30 hover:shadow-card sm:pr-3.5"
               >
                 <span className="grid h-7 w-7 place-items-center rounded-full bg-brand text-xs font-bold text-white">
                   {user.name.trim().charAt(0).toUpperCase() || (
                     <UserRound className="h-3.5 w-3.5" />
                   )}
                 </span>
-                <span className="max-w-24 truncate">{user.name.split(" ")[0]}</span>
+                <span className="max-w-24 truncate max-sm:hidden">{user.name.split(" ")[0]}</span>
               </Link>
               <LogoutButton
                 redirectTo="/"

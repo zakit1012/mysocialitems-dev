@@ -51,6 +51,7 @@ const KIND: Record<string, string> = {
   login: "Login code",
   signup: "Sign-up code",
   email: "Email change code",
+  password: "Password reset code",
   notice: "Notice",
   test: "Test",
 };
@@ -69,6 +70,9 @@ export default function AdminEmailsPage() {
   const [bounces, setBounces] = useState<Bounces | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
+  // The Refresh button's own load, and when the log was last read.
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [failedOnly, setFailedOnly] = useState(false);
   const [checking, setChecking] = useState(false);
   // The row whose email is open.
@@ -77,21 +81,34 @@ export default function AdminEmailsPage() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    api<{ smtp: Smtp; emails: EmailRow[]; bounces?: Bounces }>("/admin/email", { token })
-      .then((r) => {
+    Promise.all([
+      api<{ smtp: Smtp; emails: EmailRow[]; bounces?: Bounces }>("/admin/email", { token }),
+      // A reload spins for a moment at least: an instant answer looked like nothing happened.
+      reload > 0 ? new Promise((done) => setTimeout(done, 500)) : null,
+    ])
+      .then(([r]) => {
         if (cancelled) return;
         setError("");
         setSmtp(r.smtp);
         setEmails(r.emails);
         setBounces(r.bounces ?? null);
+        setLoadedAt(new Date());
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load the email log");
+      })
+      .finally(() => {
+        if (!cancelled) setRefreshing(false);
       });
     return () => {
       cancelled = true;
     };
   }, [token, reload]);
+
+  function refresh() {
+    setRefreshing(true);
+    setReload((n) => n + 1);
+  }
 
   async function checkAgain() {
     setChecking(true);
@@ -263,17 +280,25 @@ SMTP_FROM="WidgetPop <support@widgetpop.com>"`}</pre>
             if Gmail or another server refuses it after that, it turns into Bounced within a few minutes.
             {failures > 0 && <b className="text-coral"> {failures} failed or bounced.</b>}
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label className="inline-flex cursor-pointer items-center gap-2 text-[13px] font-medium">
               <input type="checkbox" checked={failedOnly} onChange={(e) => setFailedOnly(e.target.checked)} />
               Only problems
             </label>
+            {loadedAt && !refreshing && (
+              <span className={`text-[12px] ${error ? "text-coral" : "text-muted"}`} aria-live="polite">
+                {error
+                  ? "Refresh failed"
+                  : `Updated ${loadedAt.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" })}`}
+              </span>
+            )}
             <button
               type="button"
-              onClick={() => setReload((n) => n + 1)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-1.5 text-[13px] font-medium hover:text-brand"
+              onClick={refresh}
+              disabled={refreshing}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-1.5 text-[13px] font-medium transition hover:text-brand disabled:text-muted"
             >
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} /> {refreshing ? "Refreshing" : "Refresh"}
             </button>
           </div>
         </div>

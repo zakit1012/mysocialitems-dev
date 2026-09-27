@@ -42,6 +42,7 @@ type LoginPending = {
 
 const SIGNUP_TTL = 15 * 60;
 const LOGIN_TTL = 10 * 60;
+const RESET_TTL = 10 * 60;
 // A six digit code is a million guesses; without a cap the per-IP rate limit
 // alone still lets a botnet walk through it inside the ten minute window.
 const MAX_CODE_ATTEMPTS = 5;
@@ -143,6 +144,14 @@ export class AuthService {
     // out in the background, so creating the account never waits on it.
     await this.billing.subscriptionFor(user.id);
     void this.billing.welcome(user.id).catch(() => undefined);
+    void this.mail.sendTeam(
+      `New sign-up: ${user.email}`,
+      [
+        'Hi team,',
+        `${user.name} (${user.email}) just created a ${PRODUCT_NAME} account. They start on the Free plan.`,
+      ],
+      '/admin/users',
+    );
     return { user, token: this.sign(user) };
   }
 
@@ -215,7 +224,7 @@ export class AuthService {
   private sendInBackground(
     email: string,
     code: string,
-    purpose: 'signup' | 'login' | 'email',
+    purpose: 'signup' | 'login' | 'email' | 'password',
   ) {
     void this.mail
       .sendCode(email, code, purpose)
@@ -247,13 +256,17 @@ export class AuthService {
     }
   }
 
-  /** Burns the pending code after too many wrong guesses. */
+  /**
+   * Burns the pending code after too many wrong guesses. A 429, not a 401:
+   * on the account page a 401 would sign the user out.
+   */
   private async guardAttempts(codeKey: string, ttl: number) {
     const tries = await this.redis.incrWithTtl(`${codeKey}:tries`, ttl);
     if (tries > MAX_CODE_ATTEMPTS) {
       await this.redis.del(codeKey);
-      throw new UnauthorizedException(
+      throw new HttpException(
         'Too many wrong codes. Request a new one.',
+        HttpStatus.TOO_MANY_REQUESTS,
       );
     }
   }
@@ -352,6 +365,41 @@ export class AuthService {
         'Choose a new password, different from the current one.',
       );
     }
+    return this.setPassword(userId, next);
+  }
+
+  /** Forgot the current password: a code goes to the account's own email. */
+  async sendPasswordResetCode(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    await this.guardSends(user.email);
+    const code = this.makeCode();
+    await this.redis.setJson(
+      this.passwordResetKey(userId),
+      { code },
+      RESET_TTL,
+    );
+    await this.redis.del(`${this.passwordResetKey(userId)}:tries`);
+    this.sendInBackground(user.email, code, 'password');
+    return { pending: true, email: user.email };
+  }
+
+  /** The emailed code stands in for the current password. */
+  async resetPassword(userId: string, code: string, next: string) {
+    const key = this.passwordResetKey(userId);
+    await this.guardAttempts(key, RESET_TTL);
+    const pending = await this.redis.getJson<{ code: string }>(key);
+    if (!pending || pending.code !== code) {
+      throw new BadRequestException('Invalid or expired code');
+    }
+    const session = await this.setPassword(userId, next);
+    await this.redis.del(key);
+    await this.redis.del(`${key}:tries`);
+    return session;
+  }
+
+  /** Saves a new password; every other device is signed out, this one gets a new token. */
+  private async setPassword(userId: string, next: string) {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -362,7 +410,7 @@ export class AuthService {
     void this.mail.send(updated.email, 'Your password was changed', [
       `Hi ${updated.name},`,
       `The password for your ${PRODUCT_NAME} account was just changed, and every other device was signed out.`,
-      `If this was not you, sign in with "Email code" on the login page, set a new password, and write to ${SUPPORT_EMAIL}.`,
+      `If this was not you, sign in with "Email code" on the login page, choose "Forgot your current password?" under Account to set a new one, and write to ${SUPPORT_EMAIL}.`,
     ]);
     return this.issue(updated);
   }
@@ -455,6 +503,10 @@ export class AuthService {
 
   private emailChangeKey(userId: string) {
     return `email-change:${userId}`;
+  }
+
+  private passwordResetKey(userId: string) {
+    return `password-reset:${userId}`;
   }
 
   private makeCode() {

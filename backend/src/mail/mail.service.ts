@@ -5,7 +5,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { Transporter } from 'nodemailer';
 import { PRODUCT_NAME, SUPPORT_EMAIL } from '../common/product';
-import { appUrl, siteUrl } from '../common/urls';
+import { adminUrl, appUrl, siteUrl } from '../common/urls';
 import { PrismaService } from '../prisma/prisma.service';
 import { bounceHint } from './bounces';
 
@@ -163,7 +163,35 @@ function setupHint(r: Setup): string {
   return parts.join(' ');
 }
 
-type Kind = 'login' | 'signup' | 'email' | 'notice' | 'test';
+type Kind = 'login' | 'signup' | 'email' | 'password' | 'notice' | 'test';
+type CodePurpose = 'login' | 'signup' | 'email' | 'password';
+
+/** Subject, heading and first line of each code email. */
+const CODE_EMAIL: Record<
+  CodePurpose,
+  { subject: string; heading: string; lead: string }
+> = {
+  login: {
+    subject: `Your ${PRODUCT_NAME} login code`,
+    heading: 'Your login code',
+    lead: 'Enter this code to sign in to your account.',
+  },
+  signup: {
+    subject: `Verify your ${PRODUCT_NAME} account`,
+    heading: 'Verify your email',
+    lead: 'Welcome! Enter this code to verify your email and finish creating your account.',
+  },
+  email: {
+    subject: `Confirm your new email for ${PRODUCT_NAME}`,
+    heading: 'Confirm your new email',
+    lead: 'Enter this code in your account settings to confirm this as your new email address.',
+  },
+  password: {
+    subject: `Reset your ${PRODUCT_NAME} password`,
+    heading: 'Reset your password',
+    lead: 'Enter this code in your account settings to set a new password.',
+  },
+};
 type Message = { to: string; subject: string; text: string; html: string };
 
 @Injectable()
@@ -176,6 +204,7 @@ export class MailService implements OnModuleInit {
   private readonly returnPath: string;
   private readonly site: string;
   private readonly app: string;
+  private readonly admin: string;
   private readonly login: string;
   private readonly smtp: { host: string; port: number; user: string };
   /** The last word from the mail server: a check at start-up, a send, or a test. */
@@ -221,6 +250,7 @@ export class MailService implements OnModuleInit {
     }
     this.site = siteUrl(config);
     this.app = appUrl(config);
+    this.admin = adminUrl(config);
 
     if (host && user && pass) {
       if (this.from.address !== login) {
@@ -432,18 +462,8 @@ export class MailService implements OnModuleInit {
     }
   }
 
-  async sendCode(
-    email: string,
-    code: string,
-    purpose: 'login' | 'signup' | 'email',
-  ) {
-    const signup = purpose === 'signup';
-    const subject =
-      purpose === 'email'
-        ? `Confirm your new email for ${PRODUCT_NAME}`
-        : signup
-          ? `Verify your ${PRODUCT_NAME} account`
-          : `Your ${PRODUCT_NAME} login code`;
+  async sendCode(email: string, code: string, purpose: CodePurpose) {
+    const { subject, heading, lead } = CODE_EMAIL[purpose];
     const text =
       `Your ${PRODUCT_NAME} code is ${code}. It expires in 10 minutes.\n\n` +
       'If you did not ask for it, you can ignore this email - nobody can sign in without the code.';
@@ -453,13 +473,7 @@ export class MailService implements OnModuleInit {
     }
 
     const body =
-      paragraph(
-        purpose === 'email'
-          ? 'Enter this code in your account settings to confirm this as your new email address.'
-          : signup
-            ? 'Welcome! Enter this code to verify your email and finish creating your account.'
-            : 'Enter this code to sign in to your account.',
-      ) +
+      paragraph(lead) +
       `<div style="margin:24px 0;padding:20px 12px;border-radius:14px;background:${WASH};border:1px dashed #FDA4AF;text-align:center">` +
       `<div style="font:800 34px/1 'SFMono-Regular',Menlo,Consolas,monospace;letter-spacing:10px;color:${INK}">${escapeHtml(code)}</div>` +
       `<div style="margin-top:10px;font:13px/1.4 ${FONT};color:#64748B">Expires in 10 minutes</div></div>` +
@@ -475,12 +489,7 @@ export class MailService implements OnModuleInit {
       text,
       html: this.layout({
         preheader: `Your code is ${code}. It expires in 10 minutes.`,
-        heading:
-          purpose === 'email'
-            ? 'Confirm your new email'
-            : signup
-              ? 'Verify your email'
-              : 'Your login code',
+        heading,
         body,
       }),
     });
@@ -509,6 +518,17 @@ export class MailService implements OnModuleInit {
       ],
       { label: 'Log in', url: `${this.app}/login` },
     );
+  }
+
+  /**
+   * A heads-up for the team at SUPPORT_EMAIL - a new sign-up, a cancelled
+   * plan - with a link into the admin panel. Never throws, like send().
+   */
+  async sendTeam(subject: string, lines: string[], adminPath: string) {
+    await this.send(SUPPORT_EMAIL, subject, lines, {
+      label: 'Open in admin',
+      url: `${this.admin}${adminPath}`,
+    });
   }
 
   async send(

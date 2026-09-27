@@ -22,3 +22,8 @@ export function siteUrl(config: ConfigService): string {
 export function appUrl(config: ConfigService): string {
   return first(config.get<string>('APP_URL')) || siteUrl(config);
 }
+
+/** The admin panel (admin.widgetpop.com): ADMIN_URL, else the app. */
+export function adminUrl(config: ConfigService): string {
+  return first(config.get<string>('ADMIN_URL')) || appUrl(config);
+}

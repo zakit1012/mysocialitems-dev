@@ -778,6 +778,13 @@ export class BillingService {
             : '') +
           'Changed your mind? You can resume it from Billing before then.',
       );
+      await this.tellTeamCancelled(
+        userId,
+        `${plan.name} (${period}) was cancelled.`,
+        nextDate
+          ? `They keep ${plan.name} until ${nextDate}, then move to Free.`
+          : 'The account is on Free now.',
+      );
     } else if (now === 'PAST_DUE') {
       await this.notify(
         userId,
@@ -800,7 +807,30 @@ export class BillingService {
           `Your widgets keep working within Free limits (${fmtViews(free.views)} views a month, ${free.reviews} reviews each). ` +
           'You can subscribe again any time from Billing.',
       );
+      // After a cancellation the team heard already; this is one that ended at once.
+      if (was !== 'CANCELLED') {
+        await this.tellTeamCancelled(
+          userId,
+          `${plan.name} (${period}) ended` +
+            (was === 'PAST_DUE' || was === 'SUSPENDED'
+              ? ' while a renewal was unpaid.'
+              : ' - cancelled with no paid time left.'),
+          'The account is on Free now.',
+        );
+      }
     }
+  }
+
+  /** Tells the team at SUPPORT_EMAIL that a customer's paid plan stopped. */
+  private async tellTeamCancelled(userId: string, what: string, after: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return;
+    // Not awaited, like notify(): send() never throws.
+    void this.mail.sendTeam(
+      `Subscription cancelled: ${user.email}`,
+      ['Hi team,', `${user.name} (${user.email}): ${what} ${after}`],
+      '/admin/subscriptions',
+    );
   }
 
   // --------------------------------------------------------------- webhooks
@@ -1484,7 +1514,19 @@ export class BillingService {
     const sub = await this.prisma.subscription.findUnique({
       where: { userId },
     });
-    if (sub) await this.cancelNow(sub);
+    if (!sub) return;
+    const running = sub.dodoSubscriptionId && !BillingService.ended(sub);
+    await this.cancelNow(sub);
+    // Dodo's own "cancelled" news arrives after the account is gone, so
+    // announce() never sees it: tell the team here.
+    if (running) {
+      const plan = await this.plans.get(sub.plan);
+      await this.tellTeamCancelled(
+        userId,
+        `${plan?.name ?? sub.plan} was cancelled because they deleted their account.`,
+        'It was stopped at once; no further charges.',
+      );
+    }
   }
 
   /** Stops a Dodo subscription at once (support actions). */

@@ -9,6 +9,7 @@ import type { User } from "@/lib/types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Spinner } from "@/components/Spinner";
 import { Loader } from "@/components/Loader";
+import { useCooldown } from "@/lib/use-cooldown";
 
 type Session = { user: User; token: string };
 type Flash = { ok: boolean; text: string } | null;
@@ -28,7 +29,7 @@ export default function AccountPage() {
     );
   }
   return (
-    <div className="max-w-2xl">
+    <div className="mx-auto w-full max-w-2xl">
       <header className="mb-6">
         <h1 className="text-2xl font-black tracking-tight">Account</h1>
         <p className="mt-1 text-muted">Your name, email and password, and your account itself.</p>
@@ -36,7 +37,7 @@ export default function AccountPage() {
       <div className="space-y-6">
         <ProfileCard user={user} />
         <EmailCard user={user} />
-        <PasswordCard />
+        <PasswordCard email={user.email} />
         <DeleteCard isAdmin={user.role === "ADMIN"} />
       </div>
     </div>
@@ -208,12 +209,40 @@ function EmailCard({ user }: { user: User }) {
   );
 }
 
-function PasswordCard() {
+const noPasswords = { current: "", code: "", next: "", again: "" };
+
+function PasswordCard({ email }: { email: string }) {
   const { token, setSession } = useAuth();
-  const [form, setForm] = useState({ current: "", next: "", again: "" });
+  // "code" once they forgot the current password: a code to their email stands in for it.
+  const [mode, setMode] = useState<"current" | "code">("current");
+  const [form, setForm] = useState(noPasswords);
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
   const [flash, setFlash] = useState<Flash>(null);
+  // Matches the API's 30 seconds between codes to one address.
+  const [wait, startWait] = useCooldown(30);
   const mismatch = form.again.length > 0 && form.next !== form.again;
+
+  async function sendCode() {
+    setSending(true);
+    setFlash(null);
+    try {
+      await api("/account/password/code", { method: "POST", token });
+      setMode("code");
+      startWait();
+      setFlash({ ok: true, text: `We sent a 6-digit code to ${email}. Enter it with your new password.` });
+    } catch (err) {
+      setFlash({ ok: false, text: message(err, "Could not send the code") });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function cancel() {
+    setMode("current");
+    setForm(noPasswords);
+    setFlash(null);
+  }
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -221,14 +250,22 @@ function PasswordCard() {
     setBusy(true);
     setFlash(null);
     try {
-      const r = await api<Session>("/account/password", {
-        method: "POST",
-        token,
-        body: JSON.stringify({ currentPassword: form.current, newPassword: form.next }),
-      });
+      const r =
+        mode === "code"
+          ? await api<Session>("/account/password/reset", {
+              method: "POST",
+              token,
+              body: JSON.stringify({ code: form.code, newPassword: form.next }),
+            })
+          : await api<Session>("/account/password", {
+              method: "POST",
+              token,
+              body: JSON.stringify({ currentPassword: form.current, newPassword: form.next }),
+            });
       // This device keeps working with the fresh token; every other one is signed out.
       setSession(r.user, r.token);
-      setForm({ current: "", next: "", again: "" });
+      setMode("current");
+      setForm(noPasswords);
       setFlash({ ok: true, text: "Password changed. Every other device has been signed out." });
     } catch (err) {
       setFlash({ ok: false, text: message(err, "Could not change the password") });
@@ -237,13 +274,35 @@ function PasswordCard() {
     }
   }
 
+  const link = "text-[13px] font-medium text-brand hover:underline disabled:text-muted disabled:no-underline";
+
   return (
-    <Card icon={<KeyRound className="h-4.5 w-4.5" />} title="Password" hint="Changing it signs you out everywhere else.">
+    <Card
+      icon={<KeyRound className="h-4.5 w-4.5" />}
+      title="Password"
+      hint={mode === "code" ? `Forgot it? Use the code we emailed to ${email}.` : "Changing it signs you out everywhere else."}
+    >
       <form onSubmit={save} className="grid gap-3 sm:grid-cols-3">
-        <label className={label}>
-          Current password
-          <input className={field} type="password" required autoComplete="current-password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} />
-        </label>
+        {mode === "current" ? (
+          <label className={label}>
+            Current password
+            <input className={field} type="password" required autoComplete="current-password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} />
+          </label>
+        ) : (
+          <label className={label}>
+            Code from your email
+            <input
+              className={`${field} tracking-[0.3em]`}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              required
+              value={form.code}
+              onChange={(e) => setForm({ ...form, code: e.target.value.replace(/\D/g, "").slice(0, 6) })}
+              placeholder="000000"
+            />
+          </label>
+        )}
         <label className={label}>
           New password
           <input className={field} type="password" required minLength={6} maxLength={72} autoComplete="new-password" value={form.next} onChange={(e) => setForm({ ...form, next: e.target.value })} placeholder="6+ characters" />
@@ -253,10 +312,24 @@ function PasswordCard() {
           <input className={field} type="password" required autoComplete="new-password" value={form.again} onChange={(e) => setForm({ ...form, again: e.target.value })} />
         </label>
         {mismatch && <p className="text-[13px] text-coral sm:col-span-3">The new passwords do not match.</p>}
-        <div className="sm:col-span-3">
-          <button type="submit" className={primary} disabled={busy || mismatch}>
-            {busy && <Spinner />} Change password
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:col-span-3">
+          <button type="submit" className={primary} disabled={busy || mismatch || (mode === "code" && form.code.length !== 6)}>
+            {busy && <Spinner />} {mode === "code" ? "Set new password" : "Change password"}
           </button>
+          {mode === "current" ? (
+            <button type="button" onClick={() => void sendCode()} disabled={sending} className={link}>
+              {sending ? "Sending a code..." : "Forgot your current password?"}
+            </button>
+          ) : (
+            <>
+              <button type="button" onClick={() => void sendCode()} disabled={sending || wait > 0} className={link}>
+                {wait > 0 ? `Resend code in ${wait}s` : sending ? "Sending..." : "Resend code"}
+              </button>
+              <button type="button" onClick={cancel} className="text-[13px] font-medium text-muted hover:text-ink">
+                Cancel
+              </button>
+            </>
+          )}
         </div>
       </form>
       <Note flash={flash} />

@@ -16,6 +16,7 @@ import {
   ChangePasswordDto,
   DeleteAccountDto,
   ProfileDto,
+  ResetPasswordDto,
   VerifyEmailChangeDto,
 } from './dto/account.dto';
 
@@ -39,6 +40,18 @@ export class AccountController {
       dto.currentPassword,
       dto.newPassword,
     );
+  }
+
+  /** Forgot the current password: sends a code to the account's email. */
+  @Post('password/code')
+  passwordCode(@CurrentUser() user: AuthUser) {
+    return this.auth.sendPasswordResetCode(user.id);
+  }
+
+  /** The code instead of the current password; same sign-outs as a change. */
+  @Post('password/reset')
+  resetPassword(@CurrentUser() user: AuthUser, @Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(user.id, dto.code, dto.newPassword);
   }
 
   /** Sends a code to the new address; the change waits for that code. */

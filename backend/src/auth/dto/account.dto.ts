@@ -27,6 +27,18 @@ export class ChangePasswordDto {
   newPassword: string;
 }
 
+/** A new password with the emailed code instead of the current one. */
+export class ResetPasswordDto {
+  @IsString()
+  @Length(6, 6)
+  code: string;
+
+  @IsString()
+  @MinLength(6)
+  @MaxLength(72)
+  newPassword: string;
+}
+
 export class ChangeEmailDto {
   @IsEmail()
   email: string;

@@ -48,8 +48,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login?next=/admin");
-  }, [loading, user, router]);
+    if (!loading && !user) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+  }, [loading, user, router, pathname]);
 
   if (loading || !user) {
     return (

@@ -538,6 +538,9 @@ function Pricing({ plans, loggedIn, pricesReady }: { plans: PublicPlan[]; logged
   // the region and the real prices are known, a placeholder holds the place.
   const inIndia = useInIndiaOrUnknown();
   const ready = pricesReady && inIndia !== null;
+  // One currency on every card: rupees only once every paid plan has a rupee
+  // price, or a Free "₹0" would sit next to "$5".
+  const inRupees = inIndia && plans.every((p) => p.priceUsd <= 0 || p.priceInr != null);
   return (
     <section id="pricing" className="scroll-mt-20 border-t border-line/60 bg-sand">
       <div className="mx-auto max-w-6xl px-4 py-20 md:py-28">
@@ -574,7 +577,7 @@ function Pricing({ plans, loggedIn, pricesReady }: { plans: PublicPlan[]; logged
             const free = p.priceUsd <= 0;
             // The middle plan of three is the one we point people at.
             const featured = plans.length === 3 && i === 1;
-            const rupee = inIndia && (free || p.priceInr != null);
+            const rupee = inRupees;
             const fmt = rupee ? rupees : money;
             const perMonth = rupee ? (p.priceInr ?? 0) : p.priceUsd;
             const perYear = rupee

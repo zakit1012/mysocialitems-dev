@@ -317,8 +317,13 @@ function Billing() {
     ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
     : null;
   // India sees rupees, everyone else dollars. A running subscription keeps
-  // the currency it is billed in.
-  const inRupees = subscription.hasSubscription ? subscription.currency === "INR" : region === "IN";
+  // the currency it is billed in. Otherwise one currency on every card:
+  // rupees only once every paid plan has a rupee price, or a Free "₹0"
+  // would sit next to "$5".
+  const rupeesPriced = data.plans.every((p) => p.priceUsd <= 0 || p.priceInr != null);
+  const inRupees = subscription.hasSubscription
+    ? subscription.currency === "INR"
+    : region === "IN" && rupeesPriced;
   const priceNumbers = (p: PlanCard) => {
     const rupee = inRupees && (p.priceUsd <= 0 || p.priceInr != null);
     return {
@@ -423,7 +428,7 @@ function Billing() {
         </div>
 
         <div className="mt-5 grid gap-4 sm:grid-cols-3">
-          <Meter label={`Widget views (${usage.period})`} used={usage.views} limit={plan.views} />
+          <Meter label={`Widget views, ${monthName(usage.period)}`} used={usage.views} limit={plan.views} />
           <Meter label="Widgets" used={usage.widgets} limit={plan.widgets} />
           <Meter label="Domains" used={usage.sources} limit={plan.sources} />
         </div>
@@ -804,6 +809,12 @@ const CANCELLABLE = ["ACTIVE", "PAST_DUE", "SUSPENDED"];
 
 /** The backend sends Number.MAX_SAFE_INTEGER for "no limit". */
 const UNLIMITED = 1_000_000;
+
+/** "2026-09" as "September 2026"; anything else as it came. */
+const monthName = (period: string) => {
+  const d = new Date(`${period}-01T00:00:00`);
+  return Number.isNaN(d.getTime()) ? period : d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+};
 
 function Meter({ label, used, limit }: { label: string; used: number; limit: number }) {
   const unlimited = limit >= UNLIMITED;
