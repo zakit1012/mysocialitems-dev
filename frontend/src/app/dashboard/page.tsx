@@ -84,7 +84,9 @@ export default function DashboardPage() {
         ) : widgets.length === 0 && !error ? (
           <EmptyState />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
+          // grid-cols-1, not the implicit column: that one grows to fit a
+          // long place name and pushes the page wider than a phone.
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {widgets.map((widget) => (
               <WidgetCard 
                 key={widget.id} 
@@ -120,7 +122,7 @@ function WidgetCard({ widget, onDelete }: { widget: Widget; onDelete: (id: strin
   }
 
   return (
-    <article className="flex flex-col rounded-4xl border border-line/60 bg-card p-5 shadow-card transition-shadow hover:shadow-panel">
+    <article className="flex min-w-0 flex-col rounded-4xl border border-line/60 bg-card p-5 shadow-card transition-shadow hover:shadow-panel">
       <ConfirmDialog
         open={asking}
         danger
@@ -132,13 +134,14 @@ function WidgetCard({ widget, onDelete }: { widget: Widget; onDelete: (id: strin
         onConfirm={handleDelete}
       />
       {failed && <p className="mb-3 rounded-lg bg-coral/10 px-3 py-2 text-[13px] text-coral">{failed}</p>}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3 min-w-0">
+      {/* The buttons move under the name when both do not fit on one line. */}
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        <div className="flex min-w-0 flex-1 basis-40 items-start gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-brand-wash text-brand">
             <Store className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <h2 className="truncate font-semibold">{widget.placeName}</h2>
+            <h2 className="truncate font-semibold" title={widget.placeName}>{widget.placeName}</h2>
             {widget.paused && (
               <p className="mt-1 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11.5px] font-semibold text-amber-700">
                 Paused - over your plan&apos;s widget limit.{" "}

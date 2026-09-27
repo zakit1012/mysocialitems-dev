@@ -49,6 +49,12 @@ const MAX_CODE_ATTEMPTS = 5;
 // anyone could flood someone's inbox (or keep drawing fresh codes to guess).
 const CODES_PER_HOUR = 5;
 const CODE_GAP_SECONDS = 30;
+/**
+ * A bcrypt hash (same cost as real ones) of a random value nobody knows:
+ * checked when an email has no account, so login takes the same time.
+ */
+const NO_ACCOUNT_HASH =
+  '$2b$10$dvWP87O7OQKeQogxj7F8YOFUwREAJM0JDm1lE4Yrgg4ijXJqATViu';
 
 @Injectable()
 export class AuthService {
@@ -132,20 +138,36 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
     });
-    if (!user || !(await bcrypt.compare(dto.password, user.password))) {
+    // A hash is checked either way, so the answer takes as long for an
+    // unknown email as for a wrong password.
+    const ok = await bcrypt.compare(
+      dto.password,
+      user?.password ?? NO_ACCOUNT_HASH,
+    );
+    if (!user || !ok) {
       throw new UnauthorizedException('Invalid email or password');
     }
     return this.issue(user);
   }
 
+  /**
+   * The same answer whether or not the email has an account, so this form
+   * cannot be used to find out who is signed up. No account: nothing is
+   * stored or sent, and any code typed in is simply "invalid".
+   */
   async sendLoginCode(emailRaw: string) {
     const email = emailRaw.toLowerCase();
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      throw new UnauthorizedException('No account found for this email');
-    }
-
+    // Limits first, for every address alike: a 429 must not tell them apart.
     await this.guardSends(email);
+    const sent = {
+      pending: true,
+      email,
+      message:
+        'If an account exists for this email, we sent a login code to it.',
+    };
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) return sent;
+
     const code = this.makeCode();
     await this.redis.setJson(
       this.loginKey(email),
@@ -154,12 +176,7 @@ export class AuthService {
     );
     await this.redis.del(`${this.loginKey(email)}:tries`);
     this.sendInBackground(email, code, 'login');
-
-    return {
-      pending: true,
-      email,
-      message: 'We sent a login code to your email.',
-    };
+    return sent;
   }
 
   async verifyLoginCode(emailRaw: string, code: string) {
@@ -174,7 +191,8 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      throw new UnauthorizedException('No account found for this email');
+      // Deleted after the code was sent.
+      throw new UnauthorizedException('Invalid or expired login code');
     }
 
     await this.redis.del(this.loginKey(email));

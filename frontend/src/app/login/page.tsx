@@ -60,7 +60,8 @@ function LoginForm() {
     try {
       await requestLoginCode(email);
       setCodeSent(true);
-      setInfo("We sent a 6-digit login code to your email.");
+      // Same words whether or not the email has an account (the API does not say).
+      setInfo(`If an account exists for ${email.trim()}, we sent a 6-digit login code to it.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send code");
     } finally {
