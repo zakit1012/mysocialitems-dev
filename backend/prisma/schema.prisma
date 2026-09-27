@@ -362,17 +362,22 @@ model HiddenReview {
 /// whom, what it said, and what the mail server answered. Never the code
 /// itself: it is masked in the preview. Rows older than 30 days are removed.
 model EmailLog {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   to        String
   subject   String
   /// The plain-text body, codes masked. Null for rows logged before it was kept.
   preview   String?
   /// login, signup, email (change of address), notice or test
   kind      String
-  /// SENT, FAILED, or SKIPPED when SMTP is not set up
+  /// SENT, FAILED, SKIPPED when SMTP is not set up, or BOUNCED when the
+  /// receiving server (Gmail, ...) refused it after our mail server took it
   status    String
   error     String?
-  createdAt DateTime @default(now())
+  /// Our Message-ID (<wpop-...@domain>): how a bounce report finds its email.
+  messageId String?
+  bouncedAt DateTime?
+  createdAt DateTime  @default(now())
 
   @@index([createdAt])
+  @@index([messageId])
 }

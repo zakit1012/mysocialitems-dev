@@ -19,7 +19,18 @@ type Smtp = {
   error: string | null;
   hint: string | null;
   /** Why it may not be set up: setting names and the file read, never values. */
-  setup?: { envFile: string; passwordCut: boolean };
+  setup?: { envFile: string; passwordCut: boolean; fromInvalid?: boolean };
+};
+
+/** Reading the sending mailbox for "could not deliver" reports. */
+type Bounces = {
+  enabled: boolean;
+  host: string;
+  user: string;
+  ok: boolean | null;
+  at: string | null;
+  error: string | null;
+  found: number;
 };
 
 type EmailRow = {
@@ -27,8 +38,10 @@ type EmailRow = {
   to: string;
   subject: string;
   kind: string;
-  status: "SENT" | "FAILED" | "SKIPPED";
+  status: "SENT" | "FAILED" | "SKIPPED" | "BOUNCED";
   error: string | null;
+  /** The usual fix for this row's problem. */
+  hint?: string | null;
   /** What the email said, codes masked. Null for emails logged before it was kept. */
   preview: string | null;
   createdAt: string;
@@ -53,6 +66,7 @@ export default function AdminEmailsPage() {
   const { token, user } = useAuth();
   const [smtp, setSmtp] = useState<Smtp | null>(null);
   const [emails, setEmails] = useState<EmailRow[] | null>(null);
+  const [bounces, setBounces] = useState<Bounces | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
   const [failedOnly, setFailedOnly] = useState(false);
@@ -63,12 +77,13 @@ export default function AdminEmailsPage() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    api<{ smtp: Smtp; emails: EmailRow[] }>("/admin/email", { token })
+    api<{ smtp: Smtp; emails: EmailRow[]; bounces?: Bounces }>("/admin/email", { token })
       .then((r) => {
         if (cancelled) return;
         setError("");
         setSmtp(r.smtp);
         setEmails(r.emails);
+        setBounces(r.bounces ?? null);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load the email log");
@@ -83,6 +98,8 @@ export default function AdminEmailsPage() {
     setError("");
     try {
       setSmtp(await api<Smtp>("/admin/email/check", { method: "POST", token }));
+      // The check also reads the inbox for bounces: show what it found.
+      setReload((n) => n + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not check the mail server");
     } finally {
@@ -90,8 +107,8 @@ export default function AdminEmailsPage() {
     }
   }
 
-  const shown = (emails ?? []).filter((e) => !failedOnly || e.status !== "SENT");
-  const failures = (emails ?? []).filter((e) => e.status === "FAILED").length;
+  const shown = (emails ?? []).filter((e) => !failedOnly || e.status !== "SENT" || e.error);
+  const failures = (emails ?? []).filter((e) => e.status === "FAILED" || e.status === "BOUNCED").length;
 
   // One loader for the whole page: status and log come in one answer.
   if (!smtp || !emails) {
@@ -187,6 +204,14 @@ SMTP_FROM="WidgetPop <support@widgetpop.com>"`}</pre>
             )
           )}
 
+          {smtp.setup?.fromInvalid && (
+            <p className="mt-4 rounded-xl border border-amber/30 bg-amber-wash p-3 text-[13px] text-ink-soft">
+              <b className="text-ink">Check SMTP_FROM:</b> it is not a valid sender (often a missing closing quote), so
+              emails go out as {smtp.from}. Write it as SMTP_FROM=&quot;WidgetPop &lt;support@widgetpop.com&gt;&quot; or
+              leave it out.
+            </p>
+          )}
+
           {smtp.configured && smtp.setup?.passwordCut && (
             <p className="mt-4 rounded-xl border border-amber/30 bg-amber-wash p-3 text-[13px] text-ink-soft">
               <b className="text-ink">Check SMTP_PASS:</b> it has a # without quotes, so only the part before the # is
@@ -202,6 +227,30 @@ SMTP_FROM="WidgetPop <support@widgetpop.com>"`}</pre>
               <Detail label="Sent from" value={smtp.from} />
             </dl>
           )}
+
+          {bounces && smtp.configured && (
+            <div
+              className={`mt-4 rounded-xl border p-3 text-[13px] leading-relaxed ${
+                bounces.ok === false ? "border-coral/25 bg-coral/5" : "border-line bg-sand/50"
+              }`}
+            >
+              <b className="text-ink">Refusals by Gmail and others:</b>{" "}
+              {!bounces.enabled ? (
+                <span className="text-ink-soft">not checked (IMAP_BOUNCES is off).</span>
+              ) : bounces.ok === false ? (
+                <span className="text-ink-soft">
+                  could not read the {bounces.user} inbox ({bounces.host}), so refused emails cannot show as Bounced.{" "}
+                  <span className="break-words font-mono text-[12px] text-ink">{bounces.error}</span>
+                </span>
+              ) : (
+                <span className="text-ink-soft">
+                  read from the {bounces.user} inbox every few minutes
+                  {bounces.at ? `, last ${when(bounces.at)}` : ", first look shortly after start"}.
+                  {bounces.found > 0 && ` ${bounces.found} refused since the backend started.`}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </AdminCard>
 
@@ -210,8 +259,9 @@ SMTP_FROM="WidgetPop <support@widgetpop.com>"`}</pre>
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <p className="text-[13px] text-muted">
-            The last 200 emails, kept for 30 days. Open one to see what it said.
-            {failures > 0 && <b className="text-coral"> {failures} failed.</b>}
+            The last 200 emails, kept for 30 days. Open one to see what it said. Sent means our mail server took it;
+            if Gmail or another server refuses it after that, it turns into Bounced within a few minutes.
+            {failures > 0 && <b className="text-coral"> {failures} failed or bounced.</b>}
           </p>
           <div className="flex items-center gap-2">
             <label className="inline-flex cursor-pointer items-center gap-2 text-[13px] font-medium">
@@ -260,15 +310,30 @@ SMTP_FROM="WidgetPop <support@widgetpop.com>"`}</pre>
                       <span
                         className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${
                           e.status === "SENT"
-                            ? "bg-emerald-wash text-emerald-dark"
-                            : e.status === "FAILED"
+                            ? e.error
+                              ? "bg-amber-wash text-amber-700"
+                              : "bg-emerald-wash text-emerald-dark"
+                            : e.status === "FAILED" || e.status === "BOUNCED"
                               ? "bg-coral/10 text-coral"
                               : "bg-sand text-muted"
                         }`}
                       >
-                        {e.status === "SENT" ? "Sent" : e.status === "FAILED" ? "Failed" : "Not sent"}
+                        {e.status === "SENT"
+                          ? e.error
+                            ? "Delayed"
+                            : "Sent"
+                          : e.status === "FAILED"
+                            ? "Failed"
+                            : e.status === "BOUNCED"
+                              ? "Bounced"
+                              : "Not sent"}
                       </span>
                       {e.error && <p className="mt-1 break-words font-mono text-[12px] text-ink-soft">{e.error}</p>}
+                      {e.hint && (
+                        <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-soft">
+                          <b className="text-ink">Likely fix:</b> {e.hint}
+                        </p>
+                      )}
                     </td>
                   </tr>
                   {open && (
