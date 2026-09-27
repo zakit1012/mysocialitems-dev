@@ -183,6 +183,44 @@ function Billing() {
     fetchBilling().then(show).catch(failed);
   }, [token, params, router, load, fetchBilling, show, failed]);
 
+  // Set while the browser is on its way to Dodo, in case it never gets there.
+  const leaving = useRef<number | undefined>(undefined);
+
+  /**
+   * Off to Dodo's checkout or portal. The page stays covered until the
+   * browser leaves; if it is still here after 30 seconds, the page did not
+   * open, and the cover gives way to a message instead of spinning forever.
+   */
+  function leaveFor(url: string, what: string) {
+    window.location.assign(url);
+    window.clearTimeout(leaving.current);
+    leaving.current = window.setTimeout(() => {
+      setBusy("");
+      setNotice({ kind: "bad", text: `${what} did not open. Check your connection and try again.` });
+    }, 30_000);
+  }
+
+  // Back from the checkout or the portal with the browser's Back button, the
+  // browser can bring this page back exactly as it was left - "Opening
+  // secure checkout..." still spinning. Take that down, and read the plan
+  // again in case it changed meanwhile.
+  useEffect(() => {
+    const onHide = () => window.clearTimeout(leaving.current);
+    const onShow = (e: PageTransitionEvent) => {
+      window.clearTimeout(leaving.current);
+      if (!e.persisted) return;
+      setBusy("");
+      void load();
+    };
+    window.addEventListener("pagehide", onHide);
+    window.addEventListener("pageshow", onShow);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("pageshow", onShow);
+      window.clearTimeout(leaving.current);
+    };
+  }, [load]);
+
   /**
    * A new subscriber goes to checkout. Someone already paying changes plan on
    * their subscription, after saying yes to what that costs.
@@ -208,7 +246,7 @@ function Billing() {
         body: JSON.stringify({ plan, interval: every, region }),
       });
       if ("checkoutUrl" in r) {
-        window.location.assign(r.checkoutUrl);
+        leaveFor(r.checkoutUrl, "The checkout page");
         return;
       }
       const name = data?.plans.find((x) => x.id === plan)?.name ?? plan;
@@ -249,7 +287,7 @@ function Billing() {
     setNotice(null);
     try {
       const r = await api<{ url: string }>("/billing/portal", { method: "POST", token });
-      window.location.href = r.url;
+      leaveFor(r.url, "The payment settings page");
     } catch (err) {
       setNotice({ kind: "bad", text: err instanceof Error ? err.message : "Could not open the payment settings" });
       setBusy("");
