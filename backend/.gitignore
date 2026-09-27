@@ -59,3 +59,6 @@ pids
 # Test accounts (password123) for a local database only. Kept out of git so
 # nobody can run it against the live database.
 /prisma/seed.ts
+
+# Wipes every user when run; never ship it with the app.
+/reset-data.js

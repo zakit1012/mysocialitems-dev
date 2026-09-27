@@ -92,8 +92,17 @@ function Billing() {
   const router = useRouter();
   const params = useSearchParams();
   const [data, setData] = useState<Overview | null>(null);
-  const [busy, setBusy] = useState("");
-  const [notice, setNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
+  // Back from checkout, the address says how it went; read once as the page
+  // opens (the effect below confirms a payment and cleans the address).
+  const [busy, setBusy] = useState(() =>
+    params.get("checkout") === "return" && params.get("subscription_id") ? "confirm" : "",
+  );
+  const [notice, setNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(() => {
+    const status = params.get("checkout");
+    return status === "cancel" || (status === "return" && !params.get("subscription_id"))
+      ? { kind: "bad", text: "Checkout was cancelled. Nothing was charged." }
+      : null;
+  });
   const [period, setPeriod] = useState<Interval | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
@@ -107,20 +116,31 @@ function Billing() {
   // refreshed sign-in token while it is running.
   const confirmed = useRef<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    try {
-      const [overview, paid] = await Promise.all([
+  const fetchBilling = useCallback(
+    () =>
+      Promise.all([
         api<Overview>("/billing", { token }),
         // The history is extra: the page still works if it fails to load.
         api<PaymentRow[]>("/billing/payments", { token }).catch((): PaymentRow[] => []),
-      ]);
-      setData(overview);
-      setPayments(paid);
+      ]),
+    [token],
+  );
+  const show = useCallback(([overview, paid]: [Overview, PaymentRow[]]) => {
+    setData(overview);
+    setPayments(paid);
+  }, []);
+  const failed = useCallback((err: unknown) => {
+    setNotice({ kind: "bad", text: err instanceof Error ? err.message : "Could not load billing" });
+  }, []);
+  /** Plan and payments again, after a change. */
+  const load = useCallback(async () => {
+    if (!token) return;
+    try {
+      show(await fetchBilling());
     } catch (err) {
-      setNotice({ kind: "bad", text: err instanceof Error ? err.message : "Could not load billing" });
+      failed(err);
     }
-  }, [token]);
+  }, [token, fetchBilling, show, failed]);
 
   // Coming back from checkout: confirm straight away instead of waiting for the webhook.
   useEffect(() => {
@@ -128,12 +148,11 @@ function Billing() {
     const status = params.get("checkout");
     const subscriptionId = params.get("subscription_id");
     if (status === "cancel" || (status === "return" && !subscriptionId)) {
-      setNotice({ kind: "bad", text: "Checkout was cancelled. Nothing was charged." });
+      // The notice was set as the page opened.
       router.replace("/dashboard/billing");
     } else if (status === "return" && subscriptionId) {
       if (confirmed.current === subscriptionId) return;
       confirmed.current = subscriptionId;
-      setBusy("confirm");
       api<{ status: string }>("/billing/confirm", {
         method: "POST",
         token,
@@ -161,8 +180,8 @@ function Billing() {
         });
       return;
     }
-    load();
-  }, [token, params, router, load]);
+    fetchBilling().then(show).catch(failed);
+  }, [token, params, router, load, fetchBilling, show, failed]);
 
   /**
    * A new subscriber goes to checkout. Someone already paying changes plan on
@@ -189,7 +208,7 @@ function Billing() {
         body: JSON.stringify({ plan, interval: every, region }),
       });
       if ("checkoutUrl" in r) {
-        window.location.href = r.checkoutUrl;
+        window.location.assign(r.checkoutUrl);
         return;
       }
       const name = data?.plans.find((x) => x.id === plan)?.name ?? plan;

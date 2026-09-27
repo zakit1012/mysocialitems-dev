@@ -123,7 +123,12 @@ function EmailCard({ user }: { user: User }) {
       await api("/account/email", { method: "POST", token, body: JSON.stringify({ email, password }) });
       setPending(email.trim().toLowerCase());
       setPassword("");
-      setFlash({ ok: true, text: `We sent a 6-digit code to ${email.trim()}. Enter it below to confirm.` });
+      // The API answers the same for an email another account uses (and
+      // sends nothing), so this cannot be used to look up who is registered.
+      setFlash({
+        ok: true,
+        text: `We sent a 6-digit code to ${email.trim()}. Enter it below to confirm. No code? That email may already belong to another account.`,
+      });
     } catch (err) {
       setFlash({ ok: false, text: message(err, "Could not send the code") });
     } finally {

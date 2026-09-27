@@ -10,5 +10,9 @@ export const metadata: Metadata = {
 };
 
 export default function DashboardLayout({ children }: LayoutProps<"/dashboard">) {
-  return <DashboardShell>{children}</DashboardShell>;
+  return (
+    <main className="flex-1 flex flex-col">
+      <DashboardShell>{children}</DashboardShell>
+    </main>
+  );
 }

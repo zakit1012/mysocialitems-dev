@@ -32,7 +32,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!token) return;
-    setLoading(true);
     Promise.all([
       api<Widget[]>("/widgets", { token }),
       api<unknown[]>("/sources", { token }).catch(() => []),

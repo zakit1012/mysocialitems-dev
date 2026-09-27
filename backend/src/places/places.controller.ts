@@ -96,6 +96,15 @@ export class PlacesController {
     return this.places.autocomplete(query.q, query.sessionToken);
   }
 
+  /** A maps.app.goo.gl share link, opened to the Google Maps address it stands for. */
+  @Get('resolve-link')
+  resolveLink(@Query('url') url?: string) {
+    if (!url || url.length > 500) {
+      throw new BadRequestException('url is required');
+    }
+    return this.places.resolveShortLink(url);
+  }
+
   @Get('details')
   details(
     @Query('placeId') placeId: string,
