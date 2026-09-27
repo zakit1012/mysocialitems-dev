@@ -39,20 +39,28 @@ export function SubscriptionsTab({ token }: { token: string | null }) {
   // A change waiting for the admin's yes, asked in the app's own dialog.
   const [ask, setAsk] = useState<{ title: string; confirmLabel: string; danger?: boolean; run: () => void } | null>(null);
 
-  const load = useCallback(async () => {
-    const [s, p] = await Promise.all([
-      api<{ mode: string; subscriptions: Sub[]; events: Event[] }>("/admin/billing/subscriptions", { token }),
-      api<{ plans: { key: string }[] }>("/admin/billing/plans", { token }),
-    ]);
+  const fetchAll = useCallback(
+    () =>
+      Promise.all([
+        api<{ mode: string; subscriptions: Sub[]; events: Event[] }>("/admin/billing/subscriptions", { token }),
+        api<{ plans: { key: string }[] }>("/admin/billing/plans", { token }),
+      ]),
+    [token],
+  );
+  const show = useCallback(([s, p]: Awaited<ReturnType<typeof fetchAll>>) => {
     setMode(s.mode);
     setSubs(s.subscriptions);
     setEvents(s.events);
     setPlans(p.plans.map((x) => x.key));
-  }, [token]);
+  }, []);
+  /** Everything again, after a change. */
+  const load = useCallback(async () => show(await fetchAll()), [fetchAll, show]);
 
   useEffect(() => {
-    load().catch((e) => setMsg({ ok: false, text: e.message }));
-  }, [load]);
+    fetchAll()
+      .then(show)
+      .catch((e) => setMsg({ ok: false, text: e.message }));
+  }, [fetchAll, show]);
 
   async function act(label: string, fn: () => Promise<unknown>, done: string) {
     setBusy(label);

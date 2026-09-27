@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
-import { SiteChrome } from "@/components/SiteChrome";
 import { pageMetadata } from "@/lib/seo";
 import { SITE } from "@/lib/site";
 
@@ -67,7 +66,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-sand text-ink">
         <Providers>
-          <SiteChrome>{children}</SiteChrome>
+          {children}
         </Providers>
       </body>
     </html>

@@ -68,19 +68,37 @@ export class AuthService {
     private readonly billing: BillingService,
   ) {}
 
+  /**
+   * The same answer whether or not the email already has an account, so
+   * sign-up cannot be used to find out who is registered. An existing
+   * account gets an email saying so (and how to log in) instead of a code.
+   */
   async register(dto: RegisterDto) {
     const email = dto.email.toLowerCase();
+    // Limits and the hash first, for every address alike: neither a 429
+    // nor the time taken may tell the two apart.
+    await this.guardSends(email);
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const reply = {
+      pending: true,
+      email,
+      message:
+        'Check your email for a verification code. The account is not saved until you verify.',
+    };
+
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
-      throw new ConflictException('An account with this email already exists');
+      void this.mail
+        .sendAccountExists(existing.email, existing.name)
+        .catch(() => undefined);
+      return reply;
     }
 
-    await this.guardSends(email);
     const code = this.makeCode();
     const pending: SignupPending = {
       name: dto.name,
       email,
-      passwordHash: await bcrypt.hash(dto.password, 10),
+      passwordHash,
       role: dto.role ?? 'USER',
       code,
     };
@@ -90,13 +108,7 @@ export class AuthService {
     // In the background: the code screen shows at once instead of after the
     // mail server has answered. "Resend code" covers a lost email.
     this.sendInBackground(email, code, 'signup');
-
-    return {
-      pending: true,
-      email,
-      message:
-        'Check your email for a verification code. The account is not saved until you verify.',
-    };
+    return reply;
   }
 
   async verifySignup(emailRaw: string, code: string) {
@@ -366,10 +378,12 @@ export class AuthService {
     if (email === user.email) {
       throw new BadRequestException('That is already your email.');
     }
-    if (await this.prisma.user.findUnique({ where: { email } })) {
-      throw new ConflictException('An account with this email already exists');
-    }
     await this.guardSends(email);
+    // Taken by another account: the same answer and no code, so this form
+    // cannot be used to find out who is registered either.
+    if (await this.prisma.user.findUnique({ where: { email } })) {
+      return { pending: true, email };
+    }
     const code = this.makeCode();
     await this.redis.setJson(
       this.emailChangeKey(userId),

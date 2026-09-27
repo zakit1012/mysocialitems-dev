@@ -27,13 +27,32 @@ type Props = {
  */
 function extractPlaceId(raw: string): string | null {
   const text = raw.trim();
-  // The long share URL carries it as the "!19s<id>" data segment; the short
-  // form we build ourselves (maps_link in the review engine) as
-  // "q=place_id:<id>". Google's ids from the Places API start with "ChIJ".
-  const embedded = /(?:!19s|place_id:)(ChIJ[\w-]+)/.exec(text);
+  // The long share URL carries it as the "!19s<id>" data segment, a search
+  // link as "query_place_id=<id>", the short form we build ourselves
+  // (maps_link in the review engine) as "q=place_id:<id>". Google's ids from
+  // the Places API start with "ChIJ".
+  const embedded = /(?:!19s|place_id:|query_place_id=)(ChIJ[\w-]+)/.exec(text);
   if (embedded) return embedded[1];
   // The id pasted on its own, with nothing else around it.
   return /^ChIJ[\w-]{10,}$/.test(text) ? text : null;
+}
+
+/** A share link from the Google Maps app; the server opens it (see resolve-link). */
+const isShortLink = (text: string) => /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl)\//i.test(text.trim());
+
+/** The business a Google Maps link names: /maps/place/<name>/, or ?q= / ?query=. */
+function linkName(url: URL): string {
+  if (url.pathname.startsWith("/maps/place/")) {
+    const part = url.pathname.split("/")[3];
+    if (part) {
+      try {
+        return decodeURIComponent(part).replace(/\+/g, " ");
+      } catch {
+        return part.replace(/\+/g, " ");
+      }
+    }
+  }
+  return url.searchParams.get("q") || url.searchParams.get("query") || "";
 }
 
 /**
@@ -50,11 +69,7 @@ function unreadableLink(raw: string): string | null {
     return "That link looks broken. Copy it again, or type the business name.";
   }
   const host = url.hostname.replace(/^www\./, "");
-  if (host === "maps.app.goo.gl" || host === "goo.gl") {
-    return "Short share links (maps.app.goo.gl) can't be read here. Open the link, copy the full address from your browser's address bar and paste that, or just type the business name.";
-  }
-  const name = url.pathname.startsWith("/maps/place/") ? url.pathname.split("/")[3] : "";
-  if (!/(^|\.)google\.[a-z.]+$/.test(host) || !name) {
+  if (!/(^|\.)google\.[a-z.]+$/.test(host) || !linkName(url)) {
     return "That link doesn't point to one business. On Google Maps, open the business itself and copy its link, or type the business name.";
   }
   return null;
@@ -62,12 +77,9 @@ function unreadableLink(raw: string): string | null {
 
 export function PlaceAutocomplete({ onSelect }: Props) {
   const { token } = useAuth();
-  const sessionToken = useMemo(
-    () =>
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : String(Date.now()),
-    [],
+  // Made once, when the box first appears.
+  const [sessionToken] = useState(() =>
+    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
   );
   const browserSearch = useMemo(
     () => (browserPlacesEnabled ? new BrowserPlaceSearch() : null),
@@ -94,11 +106,8 @@ export function PlaceAutocomplete({ onSelect }: Props) {
       skipSearch.current = false;
       return;
     }
-    if (query.trim().length < 2) {
-      setSuggestions([]);
-      setLoading(false);
-      return;
-    }
+    // Too short to search (the list was cleared as it was typed).
+    if (query.trim().length < 2) return;
 
     // A slow answer to "ab" must not replace the answer to "abc" that came
     // back first.
@@ -108,7 +117,27 @@ export function PlaceAutocomplete({ onSelect }: Props) {
       setLoading(true);
       setError("");
 
-      const exactId = extractPlaceId(query);
+      let text = query.trim();
+      // A share link from the Maps app: the server opens it to the full
+      // Google Maps address, which names the place.
+      if (isShortLink(text)) {
+        try {
+          const resolved = await api<{ url: string }>(
+            `/places/resolve-link?url=${encodeURIComponent(text)}`,
+            { token },
+          );
+          if (stale) return;
+          text = resolved.url;
+        } catch (err) {
+          if (stale) return;
+          setSuggestions([]);
+          setNotice(err instanceof Error ? err.message : "Could not open that short link.");
+          setLoading(false);
+          return;
+        }
+      }
+
+      const exactId = extractPlaceId(text);
       if (exactId) {
         fromBrowser.current = false;
         // Skip the name search entirely - it is not needed and can only
@@ -138,7 +167,7 @@ export function PlaceAutocomplete({ onSelect }: Props) {
         return;
       }
 
-      const badLink = unreadableLink(query);
+      const badLink = unreadableLink(text);
       if (badLink) {
         setSuggestions([]);
         setNotice(badLink);
@@ -146,21 +175,8 @@ export function PlaceAutocomplete({ onSelect }: Props) {
         return;
       }
 
-      let searchQuery = query.trim();
-      if (searchQuery.startsWith("http")) {
-        try {
-          const url = new URL(searchQuery);
-          if (url.pathname.startsWith("/maps/place/")) {
-            const parts = url.pathname.split("/");
-            if (parts[3]) {
-              const placeName = decodeURIComponent(parts[3]).replace(/\+/g, " ");
-              searchQuery = placeName;
-            }
-          }
-        } catch {
-          // Ignore URL parse error
-        }
-      }
+      // A readable Google Maps link: search for the business it names.
+      const searchQuery = /^https?:\/\//i.test(text) ? linkName(new URL(text)) : text;
 
       try {
         let results: PlaceSuggestion[] | null = null;
@@ -228,6 +244,10 @@ export function PlaceAutocomplete({ onSelect }: Props) {
             // New typing: the last search's message no longer applies.
             setNotice("");
             setError("");
+            if (e.target.value.trim().length < 2) {
+              setSuggestions([]);
+              setLoading(false);
+            }
           }}
           onFocus={() => suggestions.length && setOpen(true)}
           placeholder="Search name, address, or paste a Google Maps URL"

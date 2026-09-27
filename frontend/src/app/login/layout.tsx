@@ -10,5 +10,5 @@ export const metadata: Metadata = pageMetadata({
 });
 
 export default function LoginLayout({ children }: LayoutProps<"/login">) {
-  return children;
+  return <main className="flex-1 flex flex-col">{children}</main>;
 }

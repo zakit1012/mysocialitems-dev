@@ -9,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function AdminLayout({ children }: LayoutProps<"/admin">) {
-  return <AdminShell>{children}</AdminShell>;
+  return (
+    <main className="flex-1 flex flex-col">
+      <AdminShell>{children}</AdminShell>
+    </main>
+  );
 }

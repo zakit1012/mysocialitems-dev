@@ -32,25 +32,37 @@ export default function SourcesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const fetchLists = useCallback(
+    () => Promise.all([api<Source[]>("/sources", { token }), api<Widget[]>("/widgets", { token })]),
+    [token],
+  );
+  const show = useCallback(([s, w]: [Source[], Widget[]]) => {
+    setSources(s);
+    setWidgets(w);
+  }, []);
+  const failed = useCallback((err: unknown) => {
+    setError(err instanceof Error ? err.message : "Could not load sources");
+  }, []);
+
+  /** Both lists again, after a domain is added or removed. */
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const [s, w] = await Promise.all([
-        api<Source[]>("/sources", { token }),
-        api<Widget[]>("/widgets", { token }),
-      ]);
-      setSources(s);
-      setWidgets(w);
+      show(await fetchLists());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load sources");
+      failed(err);
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, fetchLists, show, failed]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!token) return;
+    fetchLists()
+      .then(show)
+      .catch(failed)
+      .finally(() => setLoading(false));
+  }, [token, fetchLists, show, failed]);
 
   async function add(event: FormEvent) {
     event.preventDefault();

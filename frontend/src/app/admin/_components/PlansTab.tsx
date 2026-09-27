@@ -47,15 +47,22 @@ export function PlansTab({ token }: { token: string | null }) {
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const load = useCallback(async () => {
-    const r = await api<{ mode: string; plans: Plan[] }>("/admin/billing/plans", { token });
+  const fetchPlans = useCallback(
+    () => api<{ mode: string; plans: Plan[] }>("/admin/billing/plans", { token }),
+    [token],
+  );
+  const show = useCallback((r: { mode: string; plans: Plan[] }) => {
     setMode(r.mode);
     setDrafts(r.plans.map(toDraft));
-  }, [token]);
+  }, []);
+  /** The plans again, after a change. */
+  const load = useCallback(async () => show(await fetchPlans()), [fetchPlans, show]);
 
   useEffect(() => {
-    load().catch((e) => setMsg({ ok: false, text: e.message }));
-  }, [load]);
+    fetchPlans()
+      .then(show)
+      .catch((e) => setMsg({ ok: false, text: e.message }));
+  }, [fetchPlans, show]);
 
   function edit(key: string, field: keyof Draft, value: string | boolean) {
     setDrafts((all) => all.map((d) => (d.key === key ? { ...d, [field]: value } : d)));

@@ -119,6 +119,24 @@ export class MailService {
    * The first line is the greeting ("Hi Sam,"), the rest the message; the
    * subject doubles as the heading.
    */
+  /**
+   * Sent instead of a sign-up code when the email already has an account:
+   * the sign-up form itself never says so.
+   */
+  async sendAccountExists(email: string, name: string) {
+    await this.send(
+      email,
+      `You already have a ${PRODUCT_NAME} account`,
+      [
+        `Hi ${name},`,
+        `Someone, probably you, just tried to sign up for ${PRODUCT_NAME} with this email. It already has an account, so nothing was changed.`,
+        'Log in with your password, or ask for a login code by email on the log-in page.',
+        'If this was not you, you can ignore this email.',
+      ],
+      { label: 'Log in', url: `${this.app}/login` },
+    );
+  }
+
   async send(
     to: string,
     subject: string,

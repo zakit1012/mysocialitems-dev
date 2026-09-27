@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   CheckCircle2,
@@ -90,25 +90,6 @@ function WidgetStudio() {
     setSources(await api<Source[]>("/sources", { token }));
   }, [token]);
 
-  useEffect(() => {
-    if (!token || !id) return;
-    (async () => {
-      try {
-        const [w, , billing] = await Promise.all([
-          api<Widget>(`/widgets/${id}`, { token }),
-          loadSources(),
-          api<{ plan: { id: string; name: string; reviews: number } }>("/billing", { token }).catch(() => null),
-        ]);
-        setWidget(w);
-        setSaved(w.settings ?? {});
-        setDraft(w.settings ?? {});
-        if (billing) setPlan({ id: billing.plan.id, name: billing.plan.name, reviews: billing.plan.reviews });
-      } catch (err) {
-        setLoadError(err instanceof Error ? err.message : "Could not load this widget.");
-      }
-    })();
-  }, [id, token, loadSources]);
-
   // A fetch here can mean a real scrape, not just a cache read, so it must not
   // fire on every keystroke in the editor. It runs once when the widget opens
   // (using its saved order) and again only when Save actually changes the
@@ -132,13 +113,33 @@ function WidgetStudio() {
     [token],
   );
 
+  // Which widget's reviews were fetched: once per widget, not again when the
+  // sign-in token refreshes and the widget is read again.
+  const reviewsFor = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!widget) return;
-    void loadReviews(widget.id, widget.settings.sort ?? "mostRelevant");
-    // Only the widget identity should trigger this - editing draft.sort must
-    // not, see loadReviews above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [widget?.id]);
+    if (!token || !id) return;
+    (async () => {
+      try {
+        const [w, , billing] = await Promise.all([
+          api<Widget>(`/widgets/${id}`, { token }),
+          loadSources(),
+          api<{ plan: { id: string; name: string; reviews: number } }>("/billing", { token }).catch(() => null),
+        ]);
+        setWidget(w);
+        setSaved(w.settings ?? {});
+        setDraft(w.settings ?? {});
+        if (billing) setPlan({ id: billing.plan.id, name: billing.plan.name, reviews: billing.plan.reviews });
+        // With its saved order; editing draft.sort must not refetch (see loadReviews).
+        if (reviewsFor.current !== w.id) {
+          reviewsFor.current = w.id;
+          void loadReviews(w.id, w.settings?.sort ?? "mostRelevant");
+        }
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : "Could not load this widget.");
+      }
+    })();
+  }, [id, token, loadSources, loadReviews]);
 
   // Do not lose edits to a stray tab close or a click on the sidebar.
   const leaveGuard = useLeaveGuard(dirty && !saving);

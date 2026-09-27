@@ -58,7 +58,6 @@ export default function NewWidgetPage() {
   const [waitedSec, setWaitedSec] = useState(0);
   useEffect(() => {
     if (status !== "importing") return;
-    setWaitedSec(0);
     const timer = setInterval(() => setWaitedSec((s) => s + 1), 1000);
     return () => clearInterval(timer);
   }, [status]);
@@ -77,10 +76,6 @@ export default function NewWidgetPage() {
     if (status !== "importing" || !place) return;
     let cancelled = false;
     const started = Date.now();
-
-    setImportNote("This can take up to a minute the first time - pulling reviews from Google. No need to reload.");
-    setEngine(null);
-    setTookMs(null);
 
     (async () => {
       // At least 10 so a Free account sees what an upgrade would add.
@@ -233,6 +228,11 @@ export default function NewWidgetPage() {
                 setPlace(p);
                 setSessionToken(t);
                 setError("");
+                // A fresh import screen; the effect above does the fetching.
+                setImportNote("This can take up to a minute the first time - pulling reviews from Google. No need to reload.");
+                setEngine(null);
+                setTookMs(null);
+                setWaitedSec(0);
                 setStatus("importing");
               }}
             />

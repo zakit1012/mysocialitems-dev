@@ -41,28 +41,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const stored = localStorage.getItem("sd_token");
-    if (!stored) {
-      setLoading(false);
-      return;
-    }
-    setToken(stored);
     // Swap the stored token for a fresh one: every visit restarts the 7 days,
-    // so only someone away for a week has to sign in again.
-    api<{ user: User; token: string }>("/auth/refresh", { method: "POST", token: stored })
-      .then((r) => {
-        localStorage.setItem("sd_token", r.token);
-        setToken(r.token);
-        setUser(r.user);
-      })
-      .catch((err) => {
-        // Only a rejected token signs out. A server that is down for a
-        // minute must not log everyone out.
-        if (err instanceof ApiError && err.status === 401) {
-          localStorage.removeItem("sd_token");
-          setToken(null);
-        }
-      })
-      .finally(() => setLoading(false));
+    // so only someone away for a week has to sign in again. Nothing stored:
+    // signed out, settled in the same callback as the rest.
+    const settle = stored
+      ? api<{ user: User; token: string }>("/auth/refresh", { method: "POST", token: stored })
+          .then((r) => {
+            localStorage.setItem("sd_token", r.token);
+            setToken(r.token);
+            setUser(r.user);
+          })
+          .catch((err) => {
+            // Only a rejected token signs out. A server that is down for a
+            // minute must not log everyone out: keep it for the next visit.
+            if (err instanceof ApiError && err.status === 401) {
+              localStorage.removeItem("sd_token");
+            } else {
+              setToken(stored);
+            }
+          })
+      : Promise.resolve();
+    void settle.finally(() => setLoading(false));
   }, []);
 
   const persist = useCallback((nextUser: User, nextToken: string) => {

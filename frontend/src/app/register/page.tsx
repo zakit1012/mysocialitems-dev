@@ -224,6 +224,14 @@ export default function RegisterPage() {
           >
             Resend code
           </button>
+          {/* The API gives an existing account the same answer; its owner
+              gets an email saying so instead of a code. */}
+          <p className="text-center text-xs leading-relaxed text-muted">
+            Already have an account with this email? You will get an email saying so instead of a code.{" "}
+            <Link href="/login" className="font-semibold text-brand">
+              Log in
+            </Link>
+          </p>
         </form>
       )}
     </AuthShell>
