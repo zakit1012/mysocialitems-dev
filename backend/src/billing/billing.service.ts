@@ -79,6 +79,10 @@ const DAY_MS = 86_400_000;
 const CHECK_AFTER_MS = 6 * DAY_MS;
 // Yearly customers are told a week before the next charge.
 const REMIND_BEFORE_MS = 7 * DAY_MS;
+// A charge no webhook has told us about this long after it was made is
+// recorded from Dodo's own list; a newer one is left to its webhook, which
+// also sends the receipt.
+const MISSED_AFTER_MS = 10 * 60 * 1000;
 
 /** "12 Oct 2026" - the same in every email, whatever the server locale. */
 const fmtDate = (d: Date) =>
@@ -407,6 +411,7 @@ export class BillingService {
     // A developer account sees test mode (and its test products) even on a live site.
     const mode = await this.accountMode(sub);
     const enabled = await this.dodo.configured(mode);
+    const currency = await this.billedCurrency(sub);
 
     const plans = all
       .filter((p) => p.active)
@@ -440,7 +445,7 @@ export class BillingService {
         cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
         pendingPlan: sub.pendingPlan,
         interval: sub.interval,
-        currency: sub.currency,
+        currency,
         /** Billed through Dodo: can be cancelled, resumed or changed here. */
         hasSubscription: Boolean(sub.dodoSubscriptionId),
         /** Card or UPI can be updated in Dodo's customer portal. */
@@ -783,6 +788,35 @@ export class BillingService {
     });
     await this.announce(before, after, plan, isNew, opts.quiet);
     return after;
+  }
+
+  /**
+   * The currency an account is billed in, as its latest charge was made -
+   * put right as the billing page is read, so nobody waits for the hourly
+   * check. A running subscription with no charge recorded (its webhook never
+   * came) has its charges read from Dodo.
+   */
+  private async billedCurrency(sub: Subscription): Promise<string | null> {
+    const id = sub.dodoSubscriptionId;
+    if (!id) return sub.currency;
+    let currency = await this.chargedIn(id);
+    if (!currency && sub.status !== 'EXPIRED') {
+      await this.syncPayments(
+        sub.userId,
+        id,
+        await this.modeOf(sub),
+        MISSED_AFTER_MS,
+      ).catch((err: unknown) =>
+        this.log.warn(`Payment sync failed for ${sub.userId}: ${String(err)}`),
+      );
+      currency = await this.chargedIn(id);
+    }
+    if (!currency || currency === sub.currency) return sub.currency;
+    await this.prisma.subscription.update({
+      where: { id: sub.id },
+      data: { currency },
+    });
+    return currency;
   }
 
   /** The currency of a subscription's latest recorded charge, if any. */
@@ -1269,20 +1303,27 @@ export class BillingService {
 
   /**
    * Charges Dodo made on a subscription that no webhook told us about. No
-   * receipt goes out for these; they show in the payment list.
+   * receipt goes out for these; they show in the payment list. `olderThanMs`
+   * leaves newer charges to their webhook.
    */
   private async syncPayments(
     userId: string,
     subscriptionId: string,
     mode: DodoMode,
+    olderThanMs = 0,
   ) {
     const [list, remote] = await Promise.all([
       this.dodo.subscriptionPayments(subscriptionId, mode),
       this.dodo.getSubscription(subscriptionId, mode).catch(() => null),
     ]);
+    const before = Date.now() - olderThanMs;
     let added = 0;
     for (const p of list) {
       if (p.status !== 'succeeded') continue;
+      // No date: counted as old enough.
+      if (olderThanMs && p.created_at && Date.parse(p.created_at) > before) {
+        continue;
+      }
       const row = await this.recordPayment(userId, p, remote, mode);
       if (row && row !== 'duplicate') added++;
     }

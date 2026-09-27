@@ -27,7 +27,14 @@ const PRO = {
 
 type Row = Record<string, unknown>;
 
-function setup(opts: { sub?: Row; payments?: Row[]; remote?: Row } = {}) {
+function setup(
+  opts: {
+    sub?: Row;
+    payments?: Row[];
+    remote?: Row;
+    dodoPayments?: Row[];
+  } = {},
+) {
   const user = {
     id: 'u1',
     email: 'buyer@example.test',
@@ -77,12 +84,25 @@ function setup(opts: { sub?: Row; payments?: Row[]; remote?: Row } = {}) {
             where.dodoSubscriptionId.in.map(newest).filter(Boolean),
           ),
       ),
+      create: jest.fn(({ data }: { data: Row }) => {
+        const row = { id: `p${payments.length + 1}`, ...data };
+        payments.push(row);
+        return Promise.resolve(row);
+      }),
     },
+    billingEvent: {
+      create: jest.fn(() => Promise.resolve({})),
+      delete: jest.fn(() => Promise.resolve({})),
+    },
+    widget: { count: jest.fn(() => Promise.resolve(0)) },
+    source: { count: jest.fn(() => Promise.resolve(0)) },
+    usage: { findUnique: jest.fn(() => Promise.resolve(null)) },
   };
   const plans = {
     get: jest.fn((key: string) => Promise.resolve(key === 'PRO' ? PRO : FREE)),
     byDodoProduct: jest.fn(() => Promise.resolve({ plan: PRO, yearly: false })),
     free: jest.fn(() => Promise.resolve(FREE)),
+    all: jest.fn(() => Promise.resolve([FREE, PRO])),
   };
   const dodo = {
     mode: jest.fn(() => Promise.resolve('live')),
@@ -102,6 +122,9 @@ function setup(opts: { sub?: Row; payments?: Row[]; remote?: Row } = {}) {
         metadata: { user_id: 'u1' },
         ...opts.remote,
       }),
+    ),
+    subscriptionPayments: jest.fn(() =>
+      Promise.resolve(opts.dodoPayments ?? []),
     ),
   };
   const mail = { send: jest.fn(() => Promise.resolve()) };
@@ -191,5 +214,56 @@ describe('the currency an account is billed in', () => {
     prisma.subscription.update.mockClear();
     expect(await service.settleCurrencies()).toBe(0);
     expect(prisma.subscription.update).not.toHaveBeenCalled();
+  });
+
+  it('shows the charged currency as soon as the billing page opens', async () => {
+    const { service, sub } = setup({
+      sub: { plan: 'PRO', dodoSubscriptionId: 'sub_1', currency: 'USD' },
+      payments: [
+        { dodoSubscriptionId: 'sub_1', currency: 'INR', paidAt: new Date(1) },
+      ],
+    });
+    const page = await service.overview('u1');
+    expect(page.subscription.currency).toBe('INR');
+    expect(sub.currency).toBe('INR');
+  });
+
+  it("reads Dodo's charges when no webhook recorded any", async () => {
+    const { service, sub, prisma } = setup({
+      sub: { plan: 'PRO', dodoSubscriptionId: 'sub_1', currency: 'USD' },
+      dodoPayments: [
+        {
+          payment_id: 'pay_1',
+          subscription_id: 'sub_1',
+          status: 'succeeded',
+          total_amount: 29900,
+          currency: 'INR',
+          created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        },
+      ],
+    });
+    const page = await service.overview('u1');
+    expect(page.subscription.currency).toBe('INR');
+    expect(sub.currency).toBe('INR');
+    expect(prisma.payment.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a charge made moments ago to its webhook, which sends the receipt', async () => {
+    const { service, prisma } = setup({
+      sub: { plan: 'PRO', dodoSubscriptionId: 'sub_1', currency: 'INR' },
+      dodoPayments: [
+        {
+          payment_id: 'pay_1',
+          subscription_id: 'sub_1',
+          status: 'succeeded',
+          total_amount: 29900,
+          currency: 'INR',
+          created_at: new Date().toISOString(),
+        },
+      ],
+    });
+    const page = await service.overview('u1');
+    expect(page.subscription.currency).toBe('INR');
+    expect(prisma.payment.create).not.toHaveBeenCalled();
   });
 });
