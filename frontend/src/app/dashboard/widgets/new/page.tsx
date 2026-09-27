@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, ChevronLeft, Globe, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, Globe, Loader2, Lock, Sparkles } from "lucide-react";
 import { PlaceAutocomplete, type PlaceSuggestion } from "@/components/PlaceAutocomplete";
 import { Button } from "@/components/Button";
 import { WidgetEditor } from "@/components/widget/WidgetEditor";
@@ -19,6 +19,7 @@ import {
   type WidgetSettings,
 } from "@/lib/widget-settings";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Loader } from "@/components/Loader";
 import { useLeaveGuard } from "@/lib/use-leave-guard";
 
 type EngineResponse = {
@@ -44,6 +45,11 @@ export default function NewWidgetPage() {
   const [importNote, setImportNote] = useState("");
   // How many reviews a widget may show on the user's current plan.
   const [plan, setPlan] = useState({ id: "FREE", name: "Free", reviews: 3 });
+  // Widgets the account has and may have: at the limit, the page says so
+  // before a place is picked, not after its reviews are fetched.
+  // undefined while loading; null if billing did not load (the server checks anyway).
+  const [widgets, setWidgets] = useState<{ used: number; max: number } | null | undefined>(undefined);
+  const full = Boolean(widgets && widgets.used >= widgets.max);
   const [settings, setSettings] = useState<WidgetSettings>(DEFAULT_SETTINGS);
   const isPaid = plan.id !== "FREE";
   // Pro choices (designs, backgrounds, filters, more reviews) can be tried on Free, not saved.
@@ -58,13 +64,17 @@ export default function NewWidgetPage() {
 
   useEffect(() => {
     if (!token) return;
-    api<{ plan: { id: string; name: string; reviews: number } }>("/billing", { token })
+    api<{
+      plan: { id: string; name: string; reviews: number; widgets: number };
+      usage: { widgets: number };
+    }>("/billing", { token })
       .then((b) => {
         setPlan({ id: b.plan.id, name: b.plan.name, reviews: b.plan.reviews });
+        setWidgets({ used: b.usage.widgets, max: b.plan.widgets });
         // A paid account's new widget starts on Newest.
         if (b.plan.id !== "FREE") setSettings((s) => (s.sort ? s : { ...s, sort: PAID_DEFAULT_SORT }));
       })
-      .catch(() => undefined);
+      .catch(() => setWidgets(null));
   }, [token]);
 
   // Ticks while the single import request is in flight, so the spinner
@@ -184,7 +194,9 @@ export default function NewWidgetPage() {
           <div>
             <h1 className="text-xl font-extrabold tracking-tight">Create widget</h1>
             <p className="text-xs text-muted">
-              {status === "idle"
+              {full
+                ? `Your ${plan.name} plan's widgets are all in use.`
+                : status === "idle"
                 ? "Pick your business on Google."
                 : status === "importing"
                   ? "Getting your reviews..."
@@ -230,7 +242,36 @@ export default function NewWidgetPage() {
       )}
 
       <div className="mt-8">
-        {status === "idle" && (
+        {status === "idle" && widgets === undefined && <Loader label="Loading" />}
+
+        {status === "idle" && full && widgets && (
+          <div className="mx-auto max-w-lg animate-scale-in rounded-3xl border border-line/50 bg-card p-8 text-center shadow-panel">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-brand-wash">
+              <Lock className="h-6 w-6 text-brand" />
+            </div>
+            <h2 className="text-lg font-bold">You have used all your widgets</h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              Your {plan.name} plan includes {widgets.max} widget{widgets.max === 1 ? "" : "s"}, and you have{" "}
+              {widgets.used}. Upgrade to add another, or change the one{widgets.used === 1 ? "" : "s"} you have.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              <Link
+                href="/dashboard/billing"
+                className="inline-flex items-center gap-1.5 rounded-xl gradient-brand px-4 py-2 text-[13px] font-bold text-white shadow-glow transition hover:brightness-110"
+              >
+                See plans
+              </Link>
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-card px-4 py-2 text-[13px] font-semibold text-ink transition hover:bg-sand"
+              >
+                Back to widgets
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {status === "idle" && widgets !== undefined && !full && (
           <div className="mx-auto max-w-lg animate-scale-in space-y-4 rounded-3xl border border-line/50 bg-card p-8 shadow-panel">
             <div className="flex items-center gap-3">
               <Sparkles className="h-5 w-5 text-brand" />
