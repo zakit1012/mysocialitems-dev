@@ -31,9 +31,9 @@ export function widgetScript(key: string, preview = false): string {
   })();
 
   var CSS = '' +
-    '.wpop{--tint:rgba(17,24,39,.04);--bg:#f9fafb;--head:#111827;--text:#374151;--muted:#6b7280;--card:#fff;--line:#e5e7eb;--star:#f59e0b;--btn:#f43f5e;--btn-text:#fff;--r:14px;' +
+    '.wpop{--bg:#f9fafb;--head:#111827;--text:#374151;--muted:#6b7280;--card:#fff;--line:#e5e7eb;--star:#f59e0b;--btn:#f43f5e;--btn-text:#fff;--r:14px;' +
       'font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--head);background:var(--bg);border-radius:calc(var(--r) + 4px);text-align:left}' +
-    '.wpop.wpop-dark{--bg:#111827;--head:#f9fafb;--text:#d1d5db;--muted:#9ca3af;--card:#1f2937;--line:#374151;--tint:rgba(255,255,255,.06)}' +
+    '.wpop.wpop-dark{--bg:#111827;--head:#f9fafb;--text:#d1d5db;--muted:#9ca3af;--card:#1f2937;--line:#374151}' +
     // Background: the theme's panel (boxed), the site's own colour (clear) or
     // the owner's colour (--bg set inline).
     '.wpop.wpop-clear{--bg:transparent}' +
@@ -140,12 +140,6 @@ export function widgetScript(key: string, preview = false): string {
     '.wpop .wpop-pic,.wpop .wpop-pic:hover,.wpop .wpop-pic:focus{background:none!important;border:0!important;box-shadow:none!important;padding:0!important;min-width:0!important;min-height:0!important}' +
     '.wpop .wpop-btn,.wpop .wpop-btn:hover,.wpop .wpop-btn:focus,.wpop .wpop-btn:visited{color:var(--btn-text)!important;background:var(--btn)!important;text-decoration:none!important}' +
     '.wpop-open .wpop-text{display:block;-webkit-line-clamp:unset}' +
-    // The owner's reply under a review: two lines until "Read more".
-    '.wpop-reply{margin-top:10px;padding:8px 10px;border-left:3px solid var(--line);border-radius:0 min(var(--r),8px) min(var(--r),8px) 0;background:var(--tint)}' +
-    '.wpop-reply-by{font-size:11.5px;font-weight:700;color:var(--author,var(--head))}' +
-    '.wpop-reply-text{margin:2px 0 0;font-size:12.5px;line-height:1.5;color:var(--text);white-space:pre-wrap;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}' +
-    '.wpop-open .wpop-reply-text,.wpop-lines-all .wpop-reply-text{display:block;-webkit-line-clamp:unset}' +
-    '.wpop-quotes .wpop-reply,.wpop-showcase .wpop-feature .wpop-reply{order:4}' +
     '.wpop-brand{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px}' +
     '.wpop-brand svg{width:18px;height:18px;flex:none}' +
     '.wpop-hc .wpop-head{flex-direction:column;justify-content:center;text-align:center}' +
@@ -337,12 +331,6 @@ export function widgetScript(key: string, preview = false): string {
       }
       html += '</div>';
     }
-    // Older cached reviews hold the reply as plain text.
-    var reply = r.owner_response && (typeof r.owner_response === 'string' ? r.owner_response : r.owner_response.text);
-    if (s.showOwnerResponse !== false && reply) {
-      html += '<div class="wpop-reply"><div class="wpop-reply-by">Response from the owner</div>' +
-        '<p class="wpop-reply-text">' + esc(reply) + '</p></div>';
-    }
     return html + '</div>';
   }
 
@@ -354,11 +342,8 @@ export function widgetScript(key: string, preview = false): string {
       var c = cards[i];
       if (c.querySelector('.wpop-more-btn')) continue;
       var t = c.querySelector('.wpop-text');
-      var reply = c.querySelector('.wpop-reply-text');
-      var cut = function (el) { return el && el.scrollHeight > el.clientHeight + 2; };
-      // Under the review when it is cut, else under a cut owner's reply.
-      var at = cut(t) ? t : cut(reply) ? reply : null;
-      if (!at) continue;
+      var clipped = t && t.scrollHeight > t.clientHeight + 2;
+      if (!clipped || !t) continue;
       var b = document.createElement('button');
       b.type = 'button';
       b.className = 'wpop-more-btn';
@@ -369,7 +354,7 @@ export function widgetScript(key: string, preview = false): string {
           btn.textContent = open ? 'Show less' : 'Read more';
         };
       })(c, b);
-      at.parentNode.insertBefore(b, at.nextSibling);
+      t.parentNode.insertBefore(b, t.nextSibling);
     }
   }
 

@@ -59,7 +59,6 @@ const BOOL_KEYS = [
   'showAllReviewsBtn',
   'showGoogleIcon',
   'showHeaderGoogle',
-  'showOwnerResponse',
   'readMore',
   'autoplay',
   'cardBorder',

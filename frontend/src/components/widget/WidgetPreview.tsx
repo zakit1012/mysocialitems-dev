@@ -23,7 +23,6 @@ export type PreviewReview = {
   text: string;
   published_at_text: string | null;
   images?: string[];
-  owner_response?: { text: string; responded_at?: string | null } | string | null;
 };
 
 export type PreviewData = {

@@ -35,7 +35,6 @@ export type ToggleKey =
   | "showAllReviewsBtn"
   | "showGoogleIcon"
   | "showHeaderGoogle"
-  | "showOwnerResponse"
   | "readMore"
   | "autoplay"
   | "cardBorder"
@@ -84,7 +83,6 @@ export const DEFAULT_SETTINGS: WidgetSettings = {
   showAllReviewsBtn: false,
   showGoogleIcon: true,
   showHeaderGoogle: true,
-  showOwnerResponse: true,
   readMore: true,
   autoplay: true,
   cardBorder: true,
@@ -104,7 +102,6 @@ const ON_BY_DEFAULT: ToggleKey[] = [
   "showReviewPhotos",
   "showGoogleIcon",
   "showHeaderGoogle",
-  "showOwnerResponse",
   "readMore",
   "cardBorder",
 ];
