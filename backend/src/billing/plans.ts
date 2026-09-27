@@ -18,62 +18,20 @@ export type Plan = {
   sortOrder: number;
   /** Price for a year paid up front. */
   priceYearlyUsd: number;
-  /** What customers in India pay, in rupees; null when not set. */
-  priceInr: number | null;
-  priceYearlyInr: number | null;
-  /** Dodo Payments product per mode and billing period, priced in dollars. */
+  /** Dodo Payments product per mode and billing period. */
   dodoMonthlyIdTest: string | null;
   dodoMonthlyIdLive: string | null;
   dodoYearlyIdTest: string | null;
   dodoYearlyIdLive: string | null;
-  /** The same, priced in rupees: customers in India pay and are invoiced in rupees. */
-  dodoMonthlyInrIdTest: string | null;
-  dodoMonthlyInrIdLive: string | null;
-  dodoYearlyInrIdTest: string | null;
-  dodoYearlyInrIdLive: string | null;
 };
 
 export type BillingInterval = 'month' | 'year';
-
-/** The currency a Dodo product is priced in. */
-export type ProductCurrency = 'USD' | 'INR';
-
-/** The Plan fields that hold Dodo product ids. */
-type ProductField = {
-  [K in keyof Plan]: K extends `dodo${string}Id${string}` ? K : never;
-}[keyof Plan];
-
-const PRODUCT_FIELDS: Record<
-  ProductCurrency,
-  Record<BillingInterval, Record<'test' | 'live', ProductField>>
-> = {
-  USD: {
-    month: { test: 'dodoMonthlyIdTest', live: 'dodoMonthlyIdLive' },
-    year: { test: 'dodoYearlyIdTest', live: 'dodoYearlyIdLive' },
-  },
-  INR: {
-    month: { test: 'dodoMonthlyInrIdTest', live: 'dodoMonthlyInrIdLive' },
-    year: { test: 'dodoYearlyInrIdTest', live: 'dodoYearlyInrIdLive' },
-  },
-};
-
-/** The Plan field that holds the product for a mode, period and currency. */
-export function productField(
-  mode: 'test' | 'live',
-  interval: BillingInterval,
-  currency: ProductCurrency = 'USD',
-): ProductField {
-  return PRODUCT_FIELDS[currency][interval][mode];
-}
 
 /** What an admin save sends: any field, and a yearly price of null resets it. */
 export type PlanInput = Partial<Omit<Plan, 'priceYearlyUsd'>> & {
   key: string;
   priceYearlyUsd?: number | null;
 };
-
-/** Dodo takes at least ₹5 for anything billed in rupees. */
-export const MIN_INR = 5;
 
 /** Everything except Free: no "Powered by" link, and the review tools. */
 export function isPaidPlan(plan: Plan): boolean {
@@ -92,16 +50,10 @@ export const FREE_KEY = 'FREE';
 export const DEFAULT_PLANS: Omit<
   Plan,
   | 'priceYearlyUsd'
-  | 'priceInr'
-  | 'priceYearlyInr'
   | 'dodoMonthlyIdTest'
   | 'dodoMonthlyIdLive'
   | 'dodoYearlyIdTest'
   | 'dodoYearlyIdLive'
-  | 'dodoMonthlyInrIdTest'
-  | 'dodoMonthlyInrIdLive'
-  | 'dodoYearlyInrIdTest'
-  | 'dodoYearlyInrIdLive'
 >[] = [
   {
     key: 'FREE',
@@ -154,16 +106,10 @@ export const ADMIN_LIMITS: Plan = {
   active: true,
   sortOrder: 99,
   priceYearlyUsd: 0,
-  priceInr: null,
-  priceYearlyInr: null,
   dodoMonthlyIdTest: null,
   dodoMonthlyIdLive: null,
   dodoYearlyIdTest: null,
   dodoYearlyIdLive: null,
-  dodoMonthlyInrIdTest: null,
-  dodoMonthlyInrIdLive: null,
-  dodoYearlyInrIdTest: null,
-  dodoYearlyInrIdLive: null,
 };
 
 /** Plans saved before refresh hours existed, or added without one. */

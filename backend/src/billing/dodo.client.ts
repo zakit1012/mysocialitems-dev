@@ -154,26 +154,15 @@ export class DodoClient {
    */
   async createProduct(
     mode: DodoMode,
-    input: {
-      name: string;
-      /** In the currency's smallest unit (cents, paise). */
-      priceCents: number;
-      interval: 'Month' | 'Year';
-      /** USD (default) or INR: what the customer pays and is invoiced in. */
-      currency?: 'USD' | 'INR';
-    },
+    input: { name: string; priceCents: number; interval: 'Month' | 'Year' },
   ): Promise<string> {
-    const currency = input.currency ?? 'USD';
     const product = await this.request<{ product_id: string }>(
       'POST',
       '/products',
       {
         name: input.name,
         tax_category: 'saas',
-        price: this.recurringPrice(input.priceCents, input.interval, currency),
-        // A dollar product can carry a rupee price (a localized price) for
-        // subscriptions made on it before rupee products existed.
-        ...(currency === 'USD' ? { pricing_mode: 'by_currency' } : {}),
+        price: this.recurringPrice(input.priceCents, input.interval),
       },
       mode,
     );
@@ -181,51 +170,22 @@ export class DodoClient {
   }
 
   /**
-   * The exact rupee price of a product for customers billed in INR (a Dodo
-   * localized price), or none (null) - then Dodo converts the dollar price.
-   * With a rule, the customer pays exactly this; no conversion fee on top.
+   * Takes a fixed rupee price (a Dodo localized price) off a product, so
+   * customers paying in rupees get the dollar price converted by Dodo.
    */
-  async setRupeePrice(mode: DodoMode, productId: string, paise: number | null) {
+  async clearRupeePrice(mode: DodoMode, productId: string) {
     const path = `/products/${encodeURIComponent(productId)}/localized-prices`;
     const { items = [] } = await this.request<{
-      items?: {
-        id: string;
-        currency: string;
-        amount: number;
-        country_code?: string | null;
-      }[];
+      items?: { id: string; currency: string }[];
     }>('GET', path, undefined, mode);
-    const rule = items.find((r) => r.currency === 'INR' && !r.country_code);
-    if (paise === null) {
-      if (rule) {
-        await this.request(
-          'DELETE',
-          `${path}/${encodeURIComponent(rule.id)}`,
-          undefined,
-          mode,
-        );
-      }
-      return;
+    for (const rule of items.filter((r) => r.currency === 'INR')) {
+      await this.request(
+        'DELETE',
+        `${path}/${encodeURIComponent(rule.id)}`,
+        undefined,
+        mode,
+      );
     }
-    if (rule) {
-      if (rule.amount !== paise) {
-        await this.request(
-          'PATCH',
-          `${path}/${encodeURIComponent(rule.id)}`,
-          { amount: paise },
-          mode,
-        );
-      }
-      return;
-    }
-    // Products made before rupee prices existed have localized pricing off.
-    await this.request(
-      'PATCH',
-      `/products/${encodeURIComponent(productId)}`,
-      { pricing_mode: 'by_currency' },
-      mode,
-    );
-    await this.request('POST', path, { currency: 'INR', amount: paise }, mode);
   }
 
   /** New price for new subscribers. Dodo never reprices existing subscriptions. */
@@ -234,24 +194,19 @@ export class DodoClient {
     productId: string,
     priceCents: number,
     interval: 'Month' | 'Year',
-    currency: 'USD' | 'INR' = 'USD',
   ) {
     await this.request(
       'PATCH',
       `/products/${encodeURIComponent(productId)}`,
-      { price: this.recurringPrice(priceCents, interval, currency) },
+      { price: this.recurringPrice(priceCents, interval) },
       mode,
     );
   }
 
-  private recurringPrice(
-    priceCents: number,
-    interval: 'Month' | 'Year',
-    currency: 'USD' | 'INR',
-  ) {
+  private recurringPrice(priceCents: number, interval: 'Month' | 'Year') {
     return {
       type: 'recurring_price',
-      currency,
+      currency: 'USD',
       price: priceCents,
       discount: 0,
       purchasing_power_parity: false,
@@ -268,9 +223,10 @@ export class DodoClient {
   // ------------------------------------------------------------ checkout
 
   /**
-   * A hosted checkout for one plan. Customers in India are billed in rupees
-   * (on the plan's rupee product), with UPI AutoPay and Indian cards (RBI
-   * e-mandates); everyone else in US dollars with cards and wallets.
+   * A hosted checkout for one plan. Customers in India pay the dollar price
+   * in rupees - Dodo converts it (Adaptive Currency, on in its dashboard) -
+   * with UPI AutoPay and Indian cards (RBI e-mandates); everyone else in US
+   * dollars with cards and wallets.
    */
   createCheckout(input: {
     mode: DodoMode;

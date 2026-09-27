@@ -6,9 +6,9 @@ jest.mock('@nestjs/config', () => ({ ConfigService: class {} }));
 jest.mock('../mail/mail.service', () => ({ MailService: class {} }));
 
 /**
- * Customers in India pay for a plan's rupee product, so they pay, and are
- * invoiced, in rupees; everyone else pays for its dollar product. The
- * account shows the currency the customer is actually charged in.
+ * Every plan has one dollar price. Customers in India pay it in rupees
+ * (Dodo converts it) with UPI or an Indian card; the account records the
+ * currency the customer is actually charged in.
  */
 
 const FREE = { key: 'FREE', name: 'Free', active: true, priceUsd: 0 };
@@ -18,17 +18,11 @@ const PRO = {
   active: true,
   priceUsd: 5,
   priceYearlyUsd: 50,
-  priceInr: 350,
-  priceYearlyInr: 3500,
   views: 1000,
   dodoMonthlyIdTest: 'prod_test_pro',
   dodoMonthlyIdLive: 'prod_live_pro',
   dodoYearlyIdTest: null,
   dodoYearlyIdLive: null,
-  dodoMonthlyInrIdTest: 'prod_test_pro_inr',
-  dodoMonthlyInrIdLive: 'prod_live_pro_inr',
-  dodoYearlyInrIdTest: null,
-  dodoYearlyInrIdLive: null,
 };
 
 type Row = Record<string, unknown>;
@@ -41,8 +35,6 @@ function setup(
     dodoPayments?: Row[];
     /** Changes to the Pro plan. */
     pro?: Row;
-    /** The currency of the product the subscription is on now. */
-    onCurrency?: 'USD' | 'INR';
   } = {},
 ) {
   const pro: Row = { ...PRO, ...opts.pro };
@@ -114,11 +106,7 @@ function setup(
       Promise.resolve(key === 'PRO' ? { ...pro } : FREE),
     ),
     byDodoProduct: jest.fn(() =>
-      Promise.resolve({
-        plan: { ...pro },
-        yearly: false,
-        currency: opts.onCurrency ?? 'USD',
-      }),
+      Promise.resolve({ plan: { ...pro }, yearly: false }),
     ),
     free: jest.fn(() => Promise.resolve(FREE)),
     all: jest.fn(() => Promise.resolve([FREE, { ...pro }])),
@@ -151,11 +139,8 @@ function setup(
     subscriptionPayments: jest.fn(() =>
       Promise.resolve(opts.dodoPayments ?? []),
     ),
-    createProduct: jest.fn(
-      () => new Promise((done) => setTimeout(() => done('prod_new_inr'), 5)),
-    ),
     updateProductPrice: jest.fn(() => Promise.resolve()),
-    setRupeePrice: jest.fn(() => Promise.resolve()),
+    clearRupeePrice: jest.fn(() => Promise.resolve()),
     changePlan: jest.fn(() => Promise.resolve({})),
     updateSubscription: jest.fn(() => Promise.resolve({})),
   };
@@ -178,24 +163,16 @@ const checkoutOf = (dodo: ReturnType<typeof setup>['dodo']) =>
     { india: boolean; productId: string; metadata: Record<string, string> },
   ];
 
-/** The products made on Dodo. */
-const madeOf = (dodo: ReturnType<typeof setup>['dodo']) =>
-  dodo.createProduct.mock.calls as unknown as [
-    string,
-    { priceCents: number; interval: string; currency?: string },
-  ][];
-
-describe('customers in India pay for rupee products', () => {
-  it('sends a checkout from India to the rupee product', async () => {
+describe('one dollar price for everyone', () => {
+  it('sends a checkout from India to the dollar product, in rupees with UPI', async () => {
     const { service, dodo } = setup({ sub: { pendingPlan: null } });
     await service.startCheckout('u1', 'PRO', 'month', 'IN');
     const [input] = checkoutOf(dodo);
-    expect(input.productId).toBe('prod_live_pro_inr');
+    expect(input.productId).toBe('prod_live_pro');
     expect(input.india).toBe(true);
-    expect(dodo.createProduct).not.toHaveBeenCalled();
   });
 
-  it('sends everyone else to the dollar product', async () => {
+  it('sends everyone else to the same dollar product', async () => {
     const { service, dodo } = setup({ sub: { pendingPlan: null } });
     await service.startCheckout('u1', 'PRO', 'month');
     const [input] = checkoutOf(dodo);
@@ -203,63 +180,9 @@ describe('customers in India pay for rupee products', () => {
     expect(input.india).toBe(false);
   });
 
-  it('makes the rupee product on Dodo the first time it is needed', async () => {
-    const { service, dodo, plans } = setup({
-      sub: { pendingPlan: null },
-      pro: { dodoMonthlyInrIdLive: null },
-    });
-    await service.startCheckout('u1', 'PRO', 'month', 'IN');
-    expect(madeOf(dodo)).toEqual([
-      [
-        'live',
-        expect.objectContaining({
-          priceCents: 35000,
-          interval: 'Month',
-          currency: 'INR',
-        }),
-      ],
-    ]);
-    expect(plans.upsert).toHaveBeenCalledWith({
-      key: 'PRO',
-      dodoMonthlyInrIdLive: 'prod_new_inr',
-    });
-    expect(checkoutOf(dodo)[0].productId).toBe('prod_new_inr');
-  });
-
-  it('makes one rupee product for two checkouts at once', async () => {
-    const { service, dodo } = setup({
-      sub: { pendingPlan: null },
-      pro: { dodoMonthlyInrIdLive: null },
-    });
-    await Promise.all([
-      service.startCheckout('u1', 'PRO', 'month', 'IN'),
-      service.startCheckout('u1', 'PRO', 'month', 'IN'),
-    ]);
-    expect(dodo.createProduct).toHaveBeenCalledTimes(1);
-  });
-
-  it('moves a rupee subscription to the rupee product of its new plan', async () => {
+  it('moves a subscription to the dollar product of its new plan', async () => {
     const { service, dodo } = setup({
       sub: { plan: 'PRO', dodoSubscriptionId: 'sub_1', pendingPlan: null },
-      onCurrency: 'INR',
-      pro: { dodoYearlyIdLive: 'prod_live_pro_year' },
-    });
-    await service.startCheckout('u1', 'PRO', 'year');
-    expect(madeOf(dodo)[0][1]).toEqual(
-      expect.objectContaining({ priceCents: 350000, currency: 'INR' }),
-    );
-    expect(dodo.changePlan).toHaveBeenCalledWith(
-      'sub_1',
-      'prod_new_inr',
-      expect.any(Boolean),
-      'live',
-    );
-  });
-
-  it('keeps a dollar subscription on dollar products', async () => {
-    const { service, dodo } = setup({
-      sub: { plan: 'PRO', dodoSubscriptionId: 'sub_1', pendingPlan: null },
-      onCurrency: 'USD',
       pro: { dodoYearlyIdLive: 'prod_live_pro_year' },
     });
     await service.startCheckout('u1', 'PRO', 'year');
@@ -269,18 +192,15 @@ describe('customers in India pay for rupee products', () => {
       expect.any(Boolean),
       'live',
     );
-    expect(dodo.createProduct).not.toHaveBeenCalled();
   });
 
-  it('makes the missing rupee products when a plan is saved', async () => {
-    const { service, dodo } = setup({
-      pro: { dodoMonthlyInrIdTest: null, dodoMonthlyInrIdLive: null },
-    });
+  it("takes fixed rupee prices off the plan's products when it is saved", async () => {
+    const { service, dodo } = setup();
     await service.adminSavePlan({ key: 'PRO' });
-    // Monthly in both modes; there is no yearly dollar product to follow.
-    expect(madeOf(dodo).map(([mode, p]) => [mode, p.currency])).toEqual([
-      ['test', 'INR'],
-      ['live', 'INR'],
+    // The monthly products in both modes; there is no yearly one.
+    expect(dodo.clearRupeePrice.mock.calls).toEqual([
+      ['test', 'prod_test_pro'],
+      ['live', 'prod_live_pro'],
     ]);
   });
 });

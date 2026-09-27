@@ -10,7 +10,6 @@ import { Spinner } from "@/components/Spinner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Loader, LoaderMark } from "@/components/Loader";
 import { fmtCents, fmtDay, PAYMENT_STATUS, type PaymentRow } from "@/lib/payments";
-import { rupees } from "@/lib/region";
 import { siteHref } from "@/lib/site";
 
 type PlanCard = {
@@ -24,15 +23,12 @@ type PlanCard = {
   views: number;
   refreshHours: number;
   priceYearlyUsd: number;
-  /** Set in Admin -> Plans; null means India pays the dollar price in rupees. */
-  priceInr: number | null;
-  priceYearlyInr: number | null;
   available: boolean;
   availableYearly?: boolean;
 };
 
 type Interval = "month" | "year";
-/** Where the customer pays from: India gets rupees, UPI AutoPay and Indian cards. */
+/** Where the customer pays from: India pays the dollar price in rupees, with UPI AutoPay and Indian cards. */
 type Region = "IN" | "INTL";
 
 /** A first guess from the browser's time zone; the customer can switch it. */
@@ -361,26 +357,8 @@ function Billing() {
   const renews = subscription.currentPeriodEnd
     ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
     : null;
-  // India sees rupees, everyone else dollars. A running subscription keeps
-  // the currency it is billed in. Otherwise one currency on every card:
-  // rupees only once every paid plan has a rupee price, or a Free "₹0"
-  // would sit next to "$5".
-  const rupeesPriced = data.plans.every((p) => p.priceUsd <= 0 || p.priceInr != null);
-  const inRupees = subscription.hasSubscription
-    ? subscription.currency === "INR"
-    : region === "IN" && rupeesPriced;
-  const priceNumbers = (p: PlanCard) => {
-    const rupee = inRupees && (p.priceUsd <= 0 || p.priceInr != null);
-    return {
-      fmt: rupee ? rupees : money,
-      month: rupee ? (p.priceInr ?? 0) : p.priceUsd,
-      year: rupee ? (p.priceYearlyInr ?? 0) : p.priceYearlyUsd,
-    };
-  };
-  const price = (p: PlanCard, per: Interval) => {
-    const n = priceNumbers(p);
-    return n.fmt(per === "year" ? n.year : n.month);
-  };
+  // One price, in dollars, for everyone; customers in India pay it in rupees at checkout.
+  const price = (p: PlanCard, per: Interval) => money(per === "year" ? p.priceYearlyUsd : p.priceUsd);
 
   return (
     <div>
@@ -431,7 +409,7 @@ function Billing() {
               {subscription.status === "CANCELLED" && renews
                 ? `Cancelled - paid features until ${renews}`
                 : subscription.status === "PAST_DUE"
-                  ? `Payment overdue - update your ${inRupees ? "card or UPI" : "card"}; your plan returns as soon as it goes through`
+                  ? `Payment overdue - update your ${subscription.currency === "INR" ? "card or UPI" : "card"}; your plan returns as soon as it goes through`
                   : subscription.status === "SUSPENDED"
                   ? "Paused - on Free limits until it resumes"
                   : isPaid && renews
@@ -559,10 +537,9 @@ function Billing() {
               </p>
               {yearly && (
                 <p className="text-[12px] font-semibold text-emerald-dark">
-                  {(({ fmt, month, year }) =>
-                    `${fmt(Math.round((year / 12) * 100) / 100)} a month, you save ${fmt(Math.max(0, Math.round((month * 12 - year) * 100) / 100))}`)(
-                    priceNumbers(p),
-                  )}
+                  {`${money(Math.round((p.priceYearlyUsd / 12) * 100) / 100)} a month, you save ${money(
+                    Math.max(0, Math.round((p.priceUsd * 12 - p.priceYearlyUsd) * 100) / 100),
+                  )}`}
                 </p>
               )}
               <ul className="mt-4 space-y-2 text-[13px]">
@@ -625,7 +602,7 @@ function Billing() {
         <ShieldCheck className="h-4 w-4 text-emerald-dark" />
         <span>Secure checkout</span>
         <span aria-hidden>·</span>
-        <span>{inRupees ? "Pay with UPI or any Indian card" : "Pay with card, Apple Pay or Google Pay"}</span>
+        <span>{inIndia ? "Pay with UPI or any card" : "Pay with card, Apple Pay or Google Pay"}</span>
         <span aria-hidden>·</span>
         <span>Cancel any time</span>
         <span aria-hidden>·</span>

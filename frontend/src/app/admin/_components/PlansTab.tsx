@@ -20,18 +20,10 @@ type Plan = {
   active: boolean;
   sortOrder: number;
   priceYearlyUsd: number;
-  /** What customers in India pay; blank = Dodo converts the dollar price. */
-  priceInr: number | null;
-  priceYearlyInr: number | null;
   dodoMonthlyIdTest: string | null;
   dodoMonthlyIdLive: string | null;
   dodoYearlyIdTest: string | null;
   dodoYearlyIdLive: string | null;
-  /** Rupee products, for customers in India: made on save when a rupee price is set. */
-  dodoMonthlyInrIdTest: string | null;
-  dodoMonthlyInrIdLive: string | null;
-  dodoYearlyInrIdTest: string | null;
-  dodoYearlyInrIdLive: string | null;
 };
 
 /** Product id columns: [field, header]. */
@@ -40,10 +32,6 @@ const PRODUCT_FIELDS: [keyof Plan, string][] = [
   ["dodoMonthlyIdLive", "Monthly live id"],
   ["dodoYearlyIdTest", "Yearly test id"],
   ["dodoYearlyIdLive", "Yearly live id"],
-  ["dodoMonthlyInrIdTest", "Monthly ₹ test id"],
-  ["dodoMonthlyInrIdLive", "Monthly ₹ live id"],
-  ["dodoYearlyInrIdTest", "Yearly ₹ test id"],
-  ["dodoYearlyInrIdLive", "Yearly ₹ live id"],
 ];
 
 type Draft = Omit<Plan, "views"> & { views: string };
@@ -96,17 +84,10 @@ export function PlansTab({ token }: { token: string | null }) {
           sortOrder: d.sortOrder,
           // blank = 10x the monthly price
           priceYearlyUsd: String(d.priceYearlyUsd ?? "").trim() === "" ? "" : Number(d.priceYearlyUsd),
-          // blank = no rupee price; yearly blank = 10x the monthly rupee price
-          priceInr: String(d.priceInr ?? "").trim() === "" ? null : Number(d.priceInr),
-          priceYearlyInr: String(d.priceYearlyInr ?? "").trim() === "" ? null : Number(d.priceYearlyInr),
           dodoMonthlyIdTest: d.dodoMonthlyIdTest ?? "",
           dodoMonthlyIdLive: d.dodoMonthlyIdLive ?? "",
           dodoYearlyIdTest: d.dodoYearlyIdTest ?? "",
           dodoYearlyIdLive: d.dodoYearlyIdLive ?? "",
-          dodoMonthlyInrIdTest: d.dodoMonthlyInrIdTest ?? "",
-          dodoMonthlyInrIdLive: d.dodoMonthlyInrIdLive ?? "",
-          dodoYearlyInrIdTest: d.dodoYearlyInrIdTest ?? "",
-          dodoYearlyInrIdLive: d.dodoYearlyInrIdLive ?? "",
         }),
       });
       setMsg(
@@ -183,10 +164,10 @@ export function PlansTab({ token }: { token: string | null }) {
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[2240px] text-[12.5px]">
+        <table className="w-full min-w-[1400px] text-[12.5px]">
           <thead>
             <tr className="border-b border-line text-left text-[10.5px] uppercase tracking-wide text-muted">
-              {["Key", "Name", "Price $", "Yearly $", "Price ₹", "Yearly ₹", "Sources", "Widgets", "Reviews", "Views/mo", "Refresh h", "On", ...PRODUCT_FIELDS.map(([, h]) => h), ""].map((h) => (
+              {["Key", "Name", "Price $", "Yearly $", "Sources", "Widgets", "Reviews", "Views/mo", "Refresh h", "On", ...PRODUCT_FIELDS.map(([, h]) => h), ""].map((h) => (
                 <th key={h} className="px-2 py-2 font-bold">{h}</th>
               ))}
             </tr>
@@ -201,8 +182,6 @@ export function PlansTab({ token }: { token: string | null }) {
                   <td className="px-2 py-2 w-36"><input className={input} value={d.name} onChange={(e) => edit(d.key, "name", e.target.value)} /></td>
                   <td className="px-2 py-2 w-24"><input className={input} type="number" step="0.01" min={0} value={d.priceUsd} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "priceUsd", e.target.value)} /></td>
                   <td className="px-2 py-2 w-24"><input className={input} type="number" step="0.01" min={0} placeholder="10x" value={d.priceYearlyUsd ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "priceYearlyUsd", e.target.value)} /></td>
-                  <td className="px-2 py-2 w-24"><input className={input} type="number" step="1" min={5} placeholder="₹" value={d.priceInr ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "priceInr", e.target.value)} /></td>
-                  <td className="px-2 py-2 w-24"><input className={input} type="number" step="1" min={5} placeholder="10x" value={d.priceYearlyInr ?? ""} disabled={d.key === "FREE"} onChange={(e) => edit(d.key, "priceYearlyInr", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={0} value={d.sources} onChange={(e) => edit(d.key, "sources", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={0} value={d.widgets} onChange={(e) => edit(d.key, "widgets", e.target.value)} /></td>
                   <td className="px-2 py-2 w-16"><input className={input} type="number" min={1} max={50} value={d.reviews} onChange={(e) => edit(d.key, "reviews", e.target.value)} /></td>

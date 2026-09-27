@@ -322,8 +322,8 @@ model BillingPlan {
   sortOrder             Int      @default(0)
   /// Yearly billing. null price = 10x the monthly price (two months free).
   priceYearlyUsd        Float?
-  /// Prices for customers in India, in rupees (a Dodo localized price).
-  /// null = no rupee price set; yearly null = 10x the monthly rupee price.
+  /// Legacy (rupee prices, no longer used: Dodo converts the dollar price
+  /// for customers in India). Kept so existing rows are not dropped.
   priceInr              Float?
   priceYearlyInr        Float?
   /// Dodo Payments keeps each paid plan as a product: one per mode and period.
@@ -331,9 +331,8 @@ model BillingPlan {
   dodoMonthlyIdLive     String?
   dodoYearlyIdTest      String?
   dodoYearlyIdLive      String?
-  /// The same plans priced in rupees, for customers in India: they pay, and
-  /// Dodo invoices them, in rupees. Made when the plan is saved with a
-  /// rupee price.
+  /// Legacy (rupee products, no longer used). Kept so existing rows are
+  /// not dropped.
   dodoMonthlyInrIdTest  String?
   dodoMonthlyInrIdLive  String?
   dodoYearlyInrIdTest   String?

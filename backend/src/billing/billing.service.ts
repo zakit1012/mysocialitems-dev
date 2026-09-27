@@ -25,9 +25,7 @@ import {
   FREE_KEY,
   Plan,
   PlanInput,
-  ProductCurrency,
   UNLIMITED,
-  productField,
 } from './plans';
 import { PRODUCT_NAME, SUPPORT_EMAIL } from '../common/product';
 import { appUrl } from '../common/urls';
@@ -152,8 +150,6 @@ function stateFor(
 @Injectable()
 export class BillingService {
   private readonly log = new Logger(BillingService.name);
-  /** Rupee products being made on Dodo, so two checkouts at once make one. */
-  private readonly makingRupee = new Map<string, Promise<string>>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -362,50 +358,16 @@ export class BillingService {
     plan: Plan,
     mode: DodoMode,
     interval: BillingInterval,
-    currency: ProductCurrency = 'USD',
   ): string | undefined {
-    const id: string | null = plan[productField(mode, interval, currency)];
+    const id =
+      interval === 'year'
+        ? mode === 'live'
+          ? plan.dodoYearlyIdLive
+          : plan.dodoYearlyIdTest
+        : mode === 'live'
+          ? plan.dodoMonthlyIdLive
+          : plan.dodoMonthlyIdTest;
     return id ?? undefined;
-  }
-
-  /** The rupee price of a plan for a period, if it has one. */
-  private static rupeePrice(plan: Plan, interval: BillingInterval) {
-    return interval === 'year' ? plan.priceYearlyInr : plan.priceInr;
-  }
-
-  /**
-   * The plan's rupee product for a mode and period, made on Dodo the first
-   * time it is needed. None when the plan has no rupee price.
-   */
-  private async rupeeProduct(
-    plan: Plan,
-    mode: DodoMode,
-    interval: BillingInterval,
-  ): Promise<string | undefined> {
-    const rupee = BillingService.rupeePrice(plan, interval);
-    if (rupee === null) return undefined;
-    const existing = BillingService.productFor(plan, mode, interval, 'INR');
-    if (existing) return existing;
-    const field = productField(mode, interval, 'INR');
-    const key = `${plan.key}:${field}`;
-    let making = this.makingRupee.get(key);
-    if (!making) {
-      const yearly = interval === 'year';
-      making = this.dodo
-        .createProduct(mode, {
-          name: `${PRODUCT_NAME} ${plan.name}${yearly ? ' (yearly)' : ''}`,
-          priceCents: Math.round(rupee * 100),
-          interval: yearly ? 'Year' : 'Month',
-          currency: 'INR',
-        })
-        .then(async (id) => {
-          await this.plans.upsert({ key: plan.key, [field]: id });
-          return id;
-        })
-        .finally(() => this.makingRupee.delete(key));
-      this.makingRupee.set(key, making);
-    }
-    return making;
   }
 
   /** A subscription Dodo no longer bills: nothing there to cancel. */
@@ -467,8 +429,6 @@ export class BillingService {
         views: p.views,
         refreshHours: p.refreshHours,
         priceYearlyUsd: p.priceYearlyUsd,
-        priceInr: p.priceInr,
-        priceYearlyInr: p.priceYearlyInr,
         available:
           p.key === FREE_KEY ||
           (enabled && Boolean(BillingService.productFor(p, mode, 'month'))),
@@ -513,9 +473,9 @@ export class BillingService {
   // --------------------------------------------------------------- checkout
 
   /**
-   * Starts paying for a plan. A new subscriber gets a Dodo checkout: in
-   * rupees with UPI AutoPay and Indian cards for customers in India, in US
-   * dollars otherwise. Someone already paying switches plan on their
+   * Starts paying for a plan. A new subscriber gets a Dodo checkout for the
+   * plan's dollar price; customers in India see it in rupees, converted by
+   * Dodo, and can pay with UPI AutoPay or an Indian card. Someone already paying switches plan on their
    * existing subscription instead (an upgrade is charged the difference now,
    * a downgrade applies at the next billing date), and taking back a
    * cancelled plan simply undoes the cancellation.
@@ -551,24 +511,15 @@ export class BillingService {
     const mode = running
       ? await this.modeOf(sub)
       : await this.checkoutMode(userId);
-    const unavailable = () =>
-      new BadRequestException(
+    const productId = BillingService.productFor(plan, mode, interval);
+    if (!productId || !(await this.dodo.configured(mode))) {
+      throw new BadRequestException(
         `${plan.name}${interval === 'year' ? ' yearly' : ''} is not available yet.`,
       );
-    if (!(await this.dodo.configured(mode))) throw unavailable();
+    }
 
     if (running && sub.dodoSubscriptionId) {
       const id = sub.dodoSubscriptionId;
-      // A subscription stays in the currency it is billed in: rupee
-      // subscriptions move to the new plan's rupee product.
-      const onNow = await this.plans.byDodoProduct(
-        (await this.dodo.getSubscription(id, mode)).product_id,
-      );
-      const productId =
-        onNow?.currency === 'INR'
-          ? await this.rupeeProduct(plan, mode, interval)
-          : BillingService.productFor(plan, mode, interval);
-      if (!productId) throw unavailable();
       const samePlan = sub.plan === plan.key && sub.interval === interval;
       if (samePlan && sub.status === 'CANCELLED') {
         await this.resume(userId);
@@ -599,15 +550,7 @@ export class BillingService {
         : { done: 'scheduled', effectiveAt: sub.currentPeriodEnd };
     }
 
-    // Customers in India pay for the rupee product, and are invoiced in
-    // rupees; everyone else pays for the dollar one.
-    const rupees =
-      regionRaw === 'IN'
-        ? await this.rupeeProduct(plan, mode, interval)
-        : undefined;
-    const india = Boolean(rupees);
-    const productId = rupees ?? BillingService.productFor(plan, mode, interval);
-    if (!productId) throw unavailable();
+    const india = regionRaw === 'IN';
     const session = await this.dodo.createCheckout({
       mode,
       productId,
@@ -752,8 +695,6 @@ export class BillingService {
         views: p.views >= UNLIMITED ? null : p.views,
         refreshHours: p.refreshHours,
         priceYearlyUsd: p.priceYearlyUsd,
-        priceInr: p.priceInr,
-        priceYearlyInr: p.priceYearlyInr,
       }));
   }
 
@@ -2065,8 +2006,7 @@ export class BillingService {
   /**
    * Save a plan. A new price is pushed to the plan's Dodo products, so new
    * subscribers pay it. Dodo never reprices existing subscriptions: people
-   * already paying keep their price. A plan on Dodo with a rupee price gets
-   * its rupee products, for customers in India.
+   * already paying keep their price.
    */
   async adminSavePlan(input: PlanInput) {
     const before = await this.plans.get(input.key.toUpperCase());
@@ -2074,66 +2014,20 @@ export class BillingService {
     const warnings: string[] = [];
     if (!before) return { plan: saved, warnings };
 
-    // The rupee products: made where missing, repriced where the price changed.
+    // Prices are in dollars only: Dodo converts them for customers in India.
+    // A fixed rupee price left on a product from before is taken off.
     for (const mode of ['test', 'live'] as const) {
       if (!(await this.dodo.configured(mode))) continue;
       for (const interval of ['month', 'year'] as const) {
-        // Only where the plan is on Dodo already.
-        if (!BillingService.productFor(saved, mode, interval)) continue;
-        const rupee = BillingService.rupeePrice(saved, interval);
-        if (rupee === null) continue;
-        const had = BillingService.productFor(saved, mode, interval, 'INR');
+        const id = BillingService.productFor(saved, mode, interval);
+        if (!id) continue;
         try {
-          if (!had) {
-            await this.rupeeProduct(saved, mode, interval);
-          } else if (rupee !== BillingService.rupeePrice(before, interval)) {
-            await this.dodo.updateProductPrice(
-              mode,
-              had,
-              Math.round(rupee * 100),
-              interval === 'year' ? 'Year' : 'Month',
-              'INR',
-            );
-          }
+          await this.dodo.clearRupeePrice(mode, id);
         } catch (err) {
           warnings.push(
-            `${mode} (rupee product): ${err instanceof Error ? err.message : String(err)}`,
+            `${mode} (rupee price): ${err instanceof Error ? err.message : String(err)}`,
           );
         }
-      }
-    }
-
-    // Dollar products made before rupee products existed keep a rupee price
-    // (a localized price), for the subscriptions already on them.
-    const rupees: [boolean, number | null, DodoMode, string | null][] = [];
-    for (const mode of ['test', 'live'] as const) {
-      rupees.push(
-        [
-          before.priceInr !== saved.priceInr,
-          saved.priceInr,
-          mode,
-          mode === 'live' ? saved.dodoMonthlyIdLive : saved.dodoMonthlyIdTest,
-        ],
-        [
-          before.priceYearlyInr !== saved.priceYearlyInr,
-          saved.priceYearlyInr,
-          mode,
-          mode === 'live' ? saved.dodoYearlyIdLive : saved.dodoYearlyIdTest,
-        ],
-      );
-    }
-    for (const [changed, rupee, mode, id] of rupees) {
-      if (!changed || !id || !(await this.dodo.configured(mode))) continue;
-      try {
-        await this.dodo.setRupeePrice(
-          mode,
-          id,
-          rupee === null ? null : Math.round(rupee * 100),
-        );
-      } catch (err) {
-        warnings.push(
-          `${mode} (rupee price): ${err instanceof Error ? err.message : String(err)}`,
-        );
       }
     }
 
@@ -2177,7 +2071,7 @@ export class BillingService {
         );
       }
     }
-    return { plan: (await this.plans.get(saved.key)) ?? saved, warnings };
+    return { plan: saved, warnings };
   }
 
   /** Create this plan on Dodo (current or given mode, monthly or yearly) and remember the product. */
@@ -2211,13 +2105,7 @@ export class BillingService {
       : m === 'live'
         ? 'dodoMonthlyIdLive'
         : 'dodoMonthlyIdTest';
-    const saved = await this.plans.upsert({ key: plan.key, [field]: id });
-    // And its rupee product, for customers in India. Best effort: a save of
-    // the plan, or the first checkout from India, makes it otherwise.
-    await this.rupeeProduct(saved, m, interval).catch((err: unknown) =>
-      this.log.warn(`Rupee product for ${plan.key} not made: ${String(err)}`),
-    );
-    return (await this.plans.get(plan.key)) ?? saved;
+    return this.plans.upsert({ key: plan.key, [field]: id });
   }
 
   // ---- Dodo keys

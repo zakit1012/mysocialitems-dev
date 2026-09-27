@@ -40,7 +40,8 @@ export class BillingController {
     @CurrentUser() user: AuthUser,
     @Body() body: { plan: string; interval?: string; region?: string },
   ) {
-    // region "IN": billed in rupees with UPI AutoPay and Indian cards.
+    // region "IN": the dollar price in rupees (Dodo converts it), with UPI
+    // AutoPay and Indian cards.
     return this.billing.startCheckout(
       user.id,
       body?.plan,

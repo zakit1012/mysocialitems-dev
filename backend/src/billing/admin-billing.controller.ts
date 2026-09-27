@@ -94,8 +94,6 @@ export class AdminBillingController {
     // Plain strings only; anything else (objects, arrays) is ignored.
     const str = (v: unknown) =>
       typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '';
-    const rupees = (v: unknown) =>
-      v === undefined ? undefined : v === null || v === '' ? null : Number(v);
     // A product id: left alone when not sent, cleared when sent empty.
     const id = (v: unknown) => (v === undefined ? undefined : str(v) || null);
     return this.billing.adminSavePlan({
@@ -118,17 +116,10 @@ export class AdminBillingController {
         body.priceYearlyUsd === null || body.priceYearlyUsd === ''
           ? null
           : num(body.priceYearlyUsd),
-      // "" or null -> no rupee price (Dodo converts the dollar price)
-      priceInr: rupees(body.priceInr),
-      priceYearlyInr: rupees(body.priceYearlyInr),
       dodoMonthlyIdTest: id(body.dodoMonthlyIdTest),
       dodoMonthlyIdLive: id(body.dodoMonthlyIdLive),
       dodoYearlyIdTest: id(body.dodoYearlyIdTest),
       dodoYearlyIdLive: id(body.dodoYearlyIdLive),
-      dodoMonthlyInrIdTest: id(body.dodoMonthlyInrIdTest),
-      dodoMonthlyInrIdLive: id(body.dodoMonthlyInrIdLive),
-      dodoYearlyInrIdTest: id(body.dodoYearlyInrIdTest),
-      dodoYearlyInrIdLive: id(body.dodoYearlyInrIdLive),
     });
   }
 

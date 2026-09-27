@@ -10,12 +10,9 @@ import {
   FREE_KEY,
   Plan,
   PlanInput,
-  ProductCurrency,
   UNLIMITED,
-  productField,
   defaultRefreshHours,
   defaultYearlyPrice,
-  MIN_INR,
 } from './plans';
 
 @Injectable()
@@ -38,18 +35,10 @@ export class PlansService {
       active: row.active,
       sortOrder: row.sortOrder,
       priceYearlyUsd: row.priceYearlyUsd ?? defaultYearlyPrice(row.priceUsd),
-      priceInr: row.priceInr ?? null,
-      priceYearlyInr:
-        row.priceYearlyInr ??
-        (row.priceInr != null ? defaultYearlyPrice(row.priceInr) : null),
       dodoMonthlyIdTest: row.dodoMonthlyIdTest,
       dodoMonthlyIdLive: row.dodoMonthlyIdLive,
       dodoYearlyIdTest: row.dodoYearlyIdTest,
       dodoYearlyIdLive: row.dodoYearlyIdLive,
-      dodoMonthlyInrIdTest: row.dodoMonthlyInrIdTest,
-      dodoMonthlyInrIdLive: row.dodoMonthlyInrIdLive,
-      dodoYearlyInrIdTest: row.dodoYearlyInrIdTest,
-      dodoYearlyInrIdLive: row.dodoYearlyInrIdLive,
     };
   }
 
@@ -92,20 +81,13 @@ export class PlansService {
    */
   async byDodoProduct(
     productId: string | undefined,
-  ): Promise<
-    { plan: Plan; yearly: boolean; currency: ProductCurrency } | undefined
-  > {
+  ): Promise<{ plan: Plan; yearly: boolean } | undefined> {
     if (!productId) return undefined;
     for (const plan of await this.all()) {
-      for (const mode of ['test', 'live'] as const) {
-        for (const interval of ['month', 'year'] as const) {
-          for (const currency of ['USD', 'INR'] as const) {
-            if (plan[productField(mode, interval, currency)] === productId) {
-              return { plan, yearly: interval === 'year', currency };
-            }
-          }
-        }
-      }
+      if ([plan.dodoMonthlyIdTest, plan.dodoMonthlyIdLive].includes(productId))
+        return { plan, yearly: false };
+      if ([plan.dodoYearlyIdTest, plan.dodoYearlyIdLive].includes(productId))
+        return { plan, yearly: true };
     }
     return undefined;
   }
@@ -150,20 +132,6 @@ export class PlansService {
     whole(input.widgets, 'Widgets', 10_000);
     // The review engine serves at most 50 reviews per call.
     whole(input.reviews, 'Reviews per widget', 50);
-    for (const [label, value] of [
-      ['Rupee price', input.priceInr],
-      ['Yearly rupee price', input.priceYearlyInr],
-    ] as const) {
-      if (
-        value !== undefined &&
-        value !== null &&
-        !(Number.isFinite(value) && value >= MIN_INR)
-      ) {
-        throw new BadRequestException(
-          `${label} must be at least ₹${MIN_INR}, or blank.`,
-        );
-      }
-    }
     // The review engine refreshes at most every 2 hours and keeps a cache 7 days.
     const hours = input.refreshHours;
     if (
@@ -209,23 +177,10 @@ export class PlansService {
         input.priceYearlyUsd === undefined || input.priceYearlyUsd === null
           ? input.priceYearlyUsd
           : Math.round(input.priceYearlyUsd * 100) / 100,
-      // null clears the rupee price
-      priceInr:
-        input.priceInr === undefined || input.priceInr === null
-          ? input.priceInr
-          : Math.round(input.priceInr * 100) / 100,
-      priceYearlyInr:
-        input.priceYearlyInr === undefined || input.priceYearlyInr === null
-          ? input.priceYearlyInr
-          : Math.round(input.priceYearlyInr * 100) / 100,
       dodoMonthlyIdTest: input.dodoMonthlyIdTest,
       dodoMonthlyIdLive: input.dodoMonthlyIdLive,
       dodoYearlyIdTest: input.dodoYearlyIdTest,
       dodoYearlyIdLive: input.dodoYearlyIdLive,
-      dodoMonthlyInrIdTest: input.dodoMonthlyInrIdTest,
-      dodoMonthlyInrIdLive: input.dodoMonthlyInrIdLive,
-      dodoYearlyInrIdTest: input.dodoYearlyInrIdTest,
-      dodoYearlyInrIdLive: input.dodoYearlyInrIdLive,
     };
     // undefined means "leave as is"
     for (const k of Object.keys(data) as (keyof typeof data)[]) {
