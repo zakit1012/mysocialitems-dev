@@ -151,6 +151,12 @@ function WidgetStudio() {
     () => ({ ...draft, reviewCount: Math.min(draft.reviewCount ?? plan.reviews, previewMax) }),
     [draft, plan.reviews, previewMax],
   );
+  // "How it looks now" on the Install tab: exactly what the site shows, so
+  // never more reviews than the plan allows.
+  const siteSettings = useMemo(
+    () => ({ ...saved, reviewCount: Math.min(saved.reviewCount ?? plan.reviews, plan.reviews) }),
+    [saved, plan.reviews],
+  );
   // Pro choices (a design, a background, an order, filters, more reviews)
   // need a paid plan. One saved before a downgrade can stay (the site shows
   // the free look) while other things are edited.
@@ -320,7 +326,7 @@ function WidgetStudio() {
           preview={
             <WidgetPreview
               data={preview}
-              settings={saved}
+              settings={siteSettings}
               busy={reviewsBusy}
               note={reviewsNote}
               title="How it looks now"
