@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { CheckCircle2, CircleHelp, RefreshCw, Send, XCircle } from "lucide-react";
+import { FormEvent, Fragment, useEffect, useState } from "react";
+import { CheckCircle2, ChevronDown, CircleHelp, RefreshCw, Send, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
@@ -18,6 +18,8 @@ type Smtp = {
   at: string | null;
   error: string | null;
   hint: string | null;
+  /** Why it may not be set up: setting names and the file read, never values. */
+  setup?: { envFile: string; passwordCut: boolean };
 };
 
 type EmailRow = {
@@ -27,6 +29,8 @@ type EmailRow = {
   kind: string;
   status: "SENT" | "FAILED" | "SKIPPED";
   error: string | null;
+  /** What the email said, codes masked. Null for emails logged before it was kept. */
+  preview: string | null;
   createdAt: string;
 };
 
@@ -53,6 +57,8 @@ export default function AdminEmailsPage() {
   const [reload, setReload] = useState(0);
   const [failedOnly, setFailedOnly] = useState(false);
   const [checking, setChecking] = useState(false);
+  // The row whose email is open.
+  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -60,6 +66,7 @@ export default function AdminEmailsPage() {
     api<{ smtp: Smtp; emails: EmailRow[] }>("/admin/email", { token })
       .then((r) => {
         if (cancelled) return;
+        setError("");
         setSmtp(r.smtp);
         setEmails(r.emails);
       })
@@ -86,75 +93,125 @@ export default function AdminEmailsPage() {
   const shown = (emails ?? []).filter((e) => !failedOnly || e.status !== "SENT");
   const failures = (emails ?? []).filter((e) => e.status === "FAILED").length;
 
+  // One loader for the whole page: status and log come in one answer.
+  if (!smtp || !emails) {
+    return error ? (
+      <div className="rounded-2xl border border-coral/25 bg-coral/5 p-5">
+        <p className="font-bold text-coral">The email page could not load</p>
+        <p className="mt-1 break-words font-mono text-[12.5px] text-ink">{error}</p>
+        <p className="mt-2 text-[13px] text-ink-soft">
+          If the backend was just updated, run <code className="font-mono">npx prisma db push</code> and restart it.
+        </p>
+        <button
+          type="button"
+          onClick={() => setReload((n) => n + 1)}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-line bg-card px-3.5 py-2 text-[13px] font-semibold hover:text-brand"
+        >
+          <RefreshCw className="h-4 w-4" /> Try again
+        </button>
+      </div>
+    ) : (
+      <Loader label="Loading emails" />
+    );
+  }
+
+  const state = !smtp.configured ? "unset" : smtp.ok === true ? "ok" : smtp.ok === false ? "bad" : "unknown";
+
   return (
     <div className="space-y-5">
       {error && <p className="rounded-xl bg-coral/10 px-4 py-2.5 text-coral">{error}</p>}
 
-      {!smtp ? (
-        <Loader label="Checking email" />
-      ) : (
-        <>
-          <AdminCard>
-            <div className="p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  {smtp.ok === true ? (
-                    <CheckCircle2 className="h-8 w-8 shrink-0 text-emerald" />
-                  ) : smtp.ok === false ? (
-                    <XCircle className="h-8 w-8 shrink-0 text-coral" />
-                  ) : (
-                    <CircleHelp className="h-8 w-8 shrink-0 text-hint" />
-                  )}
-                  <div>
-                    <p className="text-lg font-black tracking-tight">
-                      {smtp.ok === true
-                        ? "Email is working"
-                        : smtp.ok === false
-                          ? "Email is not working"
-                          : "Not checked yet"}
-                    </p>
-                    <p className="text-[12.5px] text-muted">Last checked {when(smtp.at)}</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void checkAgain()}
-                  disabled={checking}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-card px-3.5 py-2 text-[13px] font-semibold transition hover:border-brand/40 hover:text-brand disabled:opacity-60"
-                >
-                  {checking ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />} Check again
-                </button>
-              </div>
-
-              {smtp.ok === false && (
-                <div className="mt-4 rounded-xl border border-coral/25 bg-coral/5 p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-wide text-coral">What the mail server said</p>
-                  <p className="mt-1 break-words font-mono text-[12.5px] text-ink">{smtp.error}</p>
-                  {smtp.hint && (
-                    <p className="mt-3 text-[13px] leading-relaxed text-ink-soft">
-                      <b className="text-ink">Likely fix:</b> {smtp.hint}
-                    </p>
-                  )}
-                </div>
+      <AdminCard>
+        <div className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              {state === "ok" ? (
+                <CheckCircle2 className="h-8 w-8 shrink-0 text-emerald" />
+              ) : state === "unknown" ? (
+                <CircleHelp className="h-8 w-8 shrink-0 text-hint" />
+              ) : (
+                <XCircle className="h-8 w-8 shrink-0 text-coral" />
               )}
-
-              <dl className="mt-4 grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2">
-                <Detail label="Server" value={smtp.configured ? `${smtp.host}:${smtp.port}` : "Not set up"} />
-                <Detail label="Security" value={smtp.port === 465 ? "SSL" : smtp.port === 587 ? "STARTTLS" : "-"} />
-                <Detail label="Login" value={smtp.user || "-"} />
-                <Detail label="Sent from" value={smtp.from} />
-              </dl>
+              <div>
+                <p className="text-lg font-black tracking-tight">
+                  {state === "unset"
+                    ? "SMTP is not set up"
+                    : state === "ok"
+                      ? "Email is working"
+                      : state === "bad"
+                        ? "Email is not working"
+                        : "Not checked yet"}
+                </p>
+                <p className="text-[12.5px] text-muted">
+                  {state === "unset" ? "No email is being sent." : `Last checked ${when(smtp.at)}`}
+                </p>
+              </div>
             </div>
-          </AdminCard>
+            <button
+              type="button"
+              onClick={() => void checkAgain()}
+              disabled={checking}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-card px-3.5 py-2 text-[13px] font-semibold transition hover:border-brand/40 hover:text-brand disabled:opacity-60"
+            >
+              {checking ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />} Check again
+            </button>
+          </div>
 
-          <TestEmail token={token} defaultTo={user?.email ?? ""} onSent={() => setReload((n) => n + 1)} />
-        </>
-      )}
+          {state === "unset" ? (
+            <div className="mt-4 rounded-xl border border-amber/30 bg-amber-wash p-4 text-[13px] leading-relaxed text-ink-soft">
+              {smtp.hint && (
+                <p className="mb-3 break-words">
+                  <b className="text-ink">What is wrong:</b> {smtp.hint}
+                </p>
+              )}
+              Put exactly these lines in{" "}
+              <code className="break-all font-mono">{smtp.setup?.envFile ?? "backend/.env"}</code> (the password in
+              quotes), then restart the backend:
+              <pre className="mt-2 overflow-x-auto rounded-lg bg-card p-3 font-mono text-[12px] text-ink">{`SMTP_HOST=mail.widgetpop.com
+SMTP_PORT=587
+SMTP_USER=support@widgetpop.com
+SMTP_PASS="your mailbox password"
+SMTP_FROM="WidgetPop <support@widgetpop.com>"`}</pre>
+            </div>
+          ) : (
+            state === "bad" && (
+              <div className="mt-4 rounded-xl border border-coral/25 bg-coral/5 p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-coral">What the mail server said</p>
+                <p className="mt-1 break-words font-mono text-[12.5px] text-ink">{smtp.error}</p>
+                {smtp.hint && (
+                  <p className="mt-3 text-[13px] leading-relaxed text-ink-soft">
+                    <b className="text-ink">Likely fix:</b> {smtp.hint}
+                  </p>
+                )}
+              </div>
+            )
+          )}
+
+          {smtp.configured && smtp.setup?.passwordCut && (
+            <p className="mt-4 rounded-xl border border-amber/30 bg-amber-wash p-3 text-[13px] text-ink-soft">
+              <b className="text-ink">Check SMTP_PASS:</b> it has a # without quotes, so only the part before the # is
+              read. Put the password in double quotes: SMTP_PASS=&quot;your#password&quot;.
+            </p>
+          )}
+
+          {smtp.configured && (
+            <dl className="mt-4 grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2">
+              <Detail label="Server" value={`${smtp.host}:${smtp.port}`} />
+              <Detail label="Security" value={smtp.port === 465 ? "SSL" : smtp.port === 587 ? "STARTTLS" : "-"} />
+              <Detail label="Login" value={smtp.user || "-"} />
+              <Detail label="Sent from" value={smtp.from} />
+            </dl>
+          )}
+        </div>
+      </AdminCard>
+
+      <TestEmail token={token} defaultTo={user?.email ?? ""} onSent={() => setReload((n) => n + 1)} />
 
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <p className="text-[13px] text-muted">
-            The last 200 emails, kept for 30 days.{failures > 0 && <b className="text-coral"> {failures} failed.</b>}
+            The last 200 emails, kept for 30 days. Open one to see what it said.
+            {failures > 0 && <b className="text-coral"> {failures} failed.</b>}
           </p>
           <div className="flex items-center gap-2">
             <label className="inline-flex cursor-pointer items-center gap-2 text-[13px] font-medium">
@@ -170,34 +227,65 @@ export default function AdminEmailsPage() {
             </button>
           </div>
         </div>
-        {!emails ? (
-          <Loader label="Loading emails" />
+        {shown.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-line bg-card px-4 py-10 text-center text-[13px] text-muted">
+            {emails.length === 0 ? "No emails yet. Send a test above, or ask for a login code." : "No problems. Every email was sent."}
+          </div>
         ) : (
-          <AdminTable head={["When", "To", "Email", "Result"]} empty={shown.length === 0}>
-            {shown.map((e) => (
-              <tr key={e.id} className="border-b border-line/60 align-top last:border-0 hover:bg-sand/50">
-                <td className="whitespace-nowrap px-4 py-3 text-muted">{when(e.createdAt)}</td>
-                <td className="px-4 py-3">{e.to}</td>
-                <td className="px-4 py-3">
-                  <p className="font-medium">{e.subject}</p>
-                  <p className="text-[12px] text-muted">{KIND[e.kind] ?? e.kind}</p>
-                </td>
-                <td className="max-w-[420px] px-4 py-3">
-                  <span
-                    className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                      e.status === "SENT"
-                        ? "bg-emerald-wash text-emerald-dark"
-                        : e.status === "FAILED"
-                          ? "bg-coral/10 text-coral"
-                          : "bg-sand text-muted"
-                    }`}
+          <AdminTable head={["When", "To", "Email", "Result"]}>
+            {shown.map((e) => {
+              const open = openId === e.id;
+              return (
+                <Fragment key={e.id}>
+                  <tr
+                    onClick={() => setOpenId(open ? null : e.id)}
+                    className="cursor-pointer border-b border-line/60 align-top last:border-0 hover:bg-sand/50"
                   >
-                    {e.status === "SENT" ? "Sent" : e.status === "FAILED" ? "Failed" : "Not sent"}
-                  </span>
-                  {e.error && <p className="mt-1 break-words font-mono text-[12px] text-ink-soft">{e.error}</p>}
-                </td>
-              </tr>
-            ))}
+                    <td className="whitespace-nowrap px-4 py-3 text-muted">{when(e.createdAt)}</td>
+                    <td className="px-4 py-3">{e.to}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        className="flex items-start gap-1.5 text-left"
+                      >
+                        <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-muted transition ${open ? "rotate-180" : ""}`} />
+                        <span>
+                          <span className="block font-medium">{e.subject}</span>
+                          <span className="block text-[12px] text-muted">{KIND[e.kind] ?? e.kind}</span>
+                        </span>
+                      </button>
+                    </td>
+                    <td className="max-w-[420px] px-4 py-3">
+                      <span
+                        className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                          e.status === "SENT"
+                            ? "bg-emerald-wash text-emerald-dark"
+                            : e.status === "FAILED"
+                              ? "bg-coral/10 text-coral"
+                              : "bg-sand text-muted"
+                        }`}
+                      >
+                        {e.status === "SENT" ? "Sent" : e.status === "FAILED" ? "Failed" : "Not sent"}
+                      </span>
+                      {e.error && <p className="mt-1 break-words font-mono text-[12px] text-ink-soft">{e.error}</p>}
+                    </td>
+                  </tr>
+                  {open && (
+                    <tr className="border-b border-line/60 bg-sand/40">
+                      <td colSpan={4} className="px-4 py-3">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-muted">What the email said</p>
+                        {e.preview ? (
+                          <p className="mt-1.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink">{e.preview}</p>
+                        ) : (
+                          <p className="mt-1.5 text-[13px] text-muted">Not kept for emails sent before this was added.</p>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </AdminTable>
         )}
       </div>
