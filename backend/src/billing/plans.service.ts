@@ -10,7 +10,9 @@ import {
   FREE_KEY,
   Plan,
   PlanInput,
+  ProductCurrency,
   UNLIMITED,
+  productField,
   defaultRefreshHours,
   defaultYearlyPrice,
   MIN_INR,
@@ -44,6 +46,10 @@ export class PlansService {
       dodoMonthlyIdLive: row.dodoMonthlyIdLive,
       dodoYearlyIdTest: row.dodoYearlyIdTest,
       dodoYearlyIdLive: row.dodoYearlyIdLive,
+      dodoMonthlyInrIdTest: row.dodoMonthlyInrIdTest,
+      dodoMonthlyInrIdLive: row.dodoMonthlyInrIdLive,
+      dodoYearlyInrIdTest: row.dodoYearlyInrIdTest,
+      dodoYearlyInrIdLive: row.dodoYearlyInrIdLive,
     };
   }
 
@@ -86,13 +92,20 @@ export class PlansService {
    */
   async byDodoProduct(
     productId: string | undefined,
-  ): Promise<{ plan: Plan; yearly: boolean } | undefined> {
+  ): Promise<
+    { plan: Plan; yearly: boolean; currency: ProductCurrency } | undefined
+  > {
     if (!productId) return undefined;
     for (const plan of await this.all()) {
-      if ([plan.dodoMonthlyIdTest, plan.dodoMonthlyIdLive].includes(productId))
-        return { plan, yearly: false };
-      if ([plan.dodoYearlyIdTest, plan.dodoYearlyIdLive].includes(productId))
-        return { plan, yearly: true };
+      for (const mode of ['test', 'live'] as const) {
+        for (const interval of ['month', 'year'] as const) {
+          for (const currency of ['USD', 'INR'] as const) {
+            if (plan[productField(mode, interval, currency)] === productId) {
+              return { plan, yearly: interval === 'year', currency };
+            }
+          }
+        }
+      }
     }
     return undefined;
   }
@@ -209,6 +222,10 @@ export class PlansService {
       dodoMonthlyIdLive: input.dodoMonthlyIdLive,
       dodoYearlyIdTest: input.dodoYearlyIdTest,
       dodoYearlyIdLive: input.dodoYearlyIdLive,
+      dodoMonthlyInrIdTest: input.dodoMonthlyInrIdTest,
+      dodoMonthlyInrIdLive: input.dodoMonthlyInrIdLive,
+      dodoYearlyInrIdTest: input.dodoYearlyInrIdTest,
+      dodoYearlyInrIdLive: input.dodoYearlyInrIdLive,
     };
     // undefined means "leave as is"
     for (const k of Object.keys(data) as (keyof typeof data)[]) {

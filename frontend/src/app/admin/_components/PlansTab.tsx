@@ -27,6 +27,11 @@ type Plan = {
   dodoMonthlyIdLive: string | null;
   dodoYearlyIdTest: string | null;
   dodoYearlyIdLive: string | null;
+  /** Rupee products, for customers in India: made on save when a rupee price is set. */
+  dodoMonthlyInrIdTest: string | null;
+  dodoMonthlyInrIdLive: string | null;
+  dodoYearlyInrIdTest: string | null;
+  dodoYearlyInrIdLive: string | null;
 };
 
 /** Product id columns: [field, header]. */
@@ -35,6 +40,10 @@ const PRODUCT_FIELDS: [keyof Plan, string][] = [
   ["dodoMonthlyIdLive", "Monthly live id"],
   ["dodoYearlyIdTest", "Yearly test id"],
   ["dodoYearlyIdLive", "Yearly live id"],
+  ["dodoMonthlyInrIdTest", "Monthly ₹ test id"],
+  ["dodoMonthlyInrIdLive", "Monthly ₹ live id"],
+  ["dodoYearlyInrIdTest", "Yearly ₹ test id"],
+  ["dodoYearlyInrIdLive", "Yearly ₹ live id"],
 ];
 
 type Draft = Omit<Plan, "views"> & { views: string };
@@ -94,6 +103,10 @@ export function PlansTab({ token }: { token: string | null }) {
           dodoMonthlyIdLive: d.dodoMonthlyIdLive ?? "",
           dodoYearlyIdTest: d.dodoYearlyIdTest ?? "",
           dodoYearlyIdLive: d.dodoYearlyIdLive ?? "",
+          dodoMonthlyInrIdTest: d.dodoMonthlyInrIdTest ?? "",
+          dodoMonthlyInrIdLive: d.dodoMonthlyInrIdLive ?? "",
+          dodoYearlyInrIdTest: d.dodoYearlyInrIdTest ?? "",
+          dodoYearlyInrIdLive: d.dodoYearlyInrIdLive ?? "",
         }),
       });
       setMsg(
@@ -170,7 +183,7 @@ export function PlansTab({ token }: { token: string | null }) {
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1600px] text-[12.5px]">
+        <table className="w-full min-w-[2240px] text-[12.5px]">
           <thead>
             <tr className="border-b border-line text-left text-[10.5px] uppercase tracking-wide text-muted">
               {["Key", "Name", "Price $", "Yearly $", "Price ₹", "Yearly ₹", "Sources", "Widgets", "Reviews", "Views/mo", "Refresh h", "On", ...PRODUCT_FIELDS.map(([, h]) => h), ""].map((h) => (

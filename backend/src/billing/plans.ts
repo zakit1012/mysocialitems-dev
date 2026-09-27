@@ -21,14 +21,50 @@ export type Plan = {
   /** What customers in India pay, in rupees; null when not set. */
   priceInr: number | null;
   priceYearlyInr: number | null;
-  /** Dodo Payments product per mode and billing period. */
+  /** Dodo Payments product per mode and billing period, priced in dollars. */
   dodoMonthlyIdTest: string | null;
   dodoMonthlyIdLive: string | null;
   dodoYearlyIdTest: string | null;
   dodoYearlyIdLive: string | null;
+  /** The same, priced in rupees: customers in India pay and are invoiced in rupees. */
+  dodoMonthlyInrIdTest: string | null;
+  dodoMonthlyInrIdLive: string | null;
+  dodoYearlyInrIdTest: string | null;
+  dodoYearlyInrIdLive: string | null;
 };
 
 export type BillingInterval = 'month' | 'year';
+
+/** The currency a Dodo product is priced in. */
+export type ProductCurrency = 'USD' | 'INR';
+
+/** The Plan fields that hold Dodo product ids. */
+type ProductField = {
+  [K in keyof Plan]: K extends `dodo${string}Id${string}` ? K : never;
+}[keyof Plan];
+
+const PRODUCT_FIELDS: Record<
+  ProductCurrency,
+  Record<BillingInterval, Record<'test' | 'live', ProductField>>
+> = {
+  USD: {
+    month: { test: 'dodoMonthlyIdTest', live: 'dodoMonthlyIdLive' },
+    year: { test: 'dodoYearlyIdTest', live: 'dodoYearlyIdLive' },
+  },
+  INR: {
+    month: { test: 'dodoMonthlyInrIdTest', live: 'dodoMonthlyInrIdLive' },
+    year: { test: 'dodoYearlyInrIdTest', live: 'dodoYearlyInrIdLive' },
+  },
+};
+
+/** The Plan field that holds the product for a mode, period and currency. */
+export function productField(
+  mode: 'test' | 'live',
+  interval: BillingInterval,
+  currency: ProductCurrency = 'USD',
+): ProductField {
+  return PRODUCT_FIELDS[currency][interval][mode];
+}
 
 /** What an admin save sends: any field, and a yearly price of null resets it. */
 export type PlanInput = Partial<Omit<Plan, 'priceYearlyUsd'>> & {
@@ -62,6 +98,10 @@ export const DEFAULT_PLANS: Omit<
   | 'dodoMonthlyIdLive'
   | 'dodoYearlyIdTest'
   | 'dodoYearlyIdLive'
+  | 'dodoMonthlyInrIdTest'
+  | 'dodoMonthlyInrIdLive'
+  | 'dodoYearlyInrIdTest'
+  | 'dodoYearlyInrIdLive'
 >[] = [
   {
     key: 'FREE',
@@ -120,6 +160,10 @@ export const ADMIN_LIMITS: Plan = {
   dodoMonthlyIdLive: null,
   dodoYearlyIdTest: null,
   dodoYearlyIdLive: null,
+  dodoMonthlyInrIdTest: null,
+  dodoMonthlyInrIdLive: null,
+  dodoYearlyInrIdTest: null,
+  dodoYearlyInrIdLive: null,
 };
 
 /** Plans saved before refresh hours existed, or added without one. */

@@ -331,6 +331,13 @@ model BillingPlan {
   dodoMonthlyIdLive     String?
   dodoYearlyIdTest      String?
   dodoYearlyIdLive      String?
+  /// The same plans priced in rupees, for customers in India: they pay, and
+  /// Dodo invoices them, in rupees. Made when the plan is saved with a
+  /// rupee price.
+  dodoMonthlyInrIdTest  String?
+  dodoMonthlyInrIdLive  String?
+  dodoYearlyInrIdTest   String?
+  dodoYearlyInrIdLive   String?
   /// Legacy (PayPal, no longer used). Kept so existing rows are not dropped.
   paypalPlanIdSandbox   String?
   paypalPlanIdLive      String?

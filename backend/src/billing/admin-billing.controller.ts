@@ -125,6 +125,10 @@ export class AdminBillingController {
       dodoMonthlyIdLive: id(body.dodoMonthlyIdLive),
       dodoYearlyIdTest: id(body.dodoYearlyIdTest),
       dodoYearlyIdLive: id(body.dodoYearlyIdLive),
+      dodoMonthlyInrIdTest: id(body.dodoMonthlyInrIdTest),
+      dodoMonthlyInrIdLive: id(body.dodoMonthlyInrIdLive),
+      dodoYearlyInrIdTest: id(body.dodoYearlyInrIdTest),
+      dodoYearlyInrIdLive: id(body.dodoYearlyInrIdLive),
     });
   }
 

@@ -165,10 +165,15 @@ function Billing() {
               : r.status === "PENDING"
                 ? {
                     kind: "ok",
-                    text: "Your payment is being processed. UPI and Indian cards can take a few minutes; we will email you as soon as your plan is active.",
+                    text: inIndia
+                      ? "Your payment is being processed. UPI and Indian cards can take a few minutes; we will email you as soon as your plan is active."
+                      : "Your payment is being processed. It can take a few minutes; we will email you as soon as your plan is active.",
                   }
                 : r.status === "FAILED"
-                  ? { kind: "bad", text: "The payment did not go through, so nothing was charged. Please try again, or use another card or UPI." }
+                  ? {
+                      kind: "bad",
+                      text: `The payment did not go through, so nothing was charged. Please try again, or use another ${inIndia ? "card or UPI" : "card"}.`,
+                    }
                   : { kind: "bad", text: `Your subscription is ${r.status.toLowerCase()}. It may take a minute to update.` },
           ),
         )
@@ -181,7 +186,7 @@ function Billing() {
       return;
     }
     fetchBilling().then(show).catch(failed);
-  }, [token, params, router, load, fetchBilling, show, failed]);
+  }, [token, params, router, load, fetchBilling, show, failed, inIndia]);
 
   // Set while the browser is on its way to Dodo, in case it never gets there.
   const leaving = useRef<number | undefined>(undefined);
@@ -256,7 +261,9 @@ function Billing() {
           r.done === "resumed"
             ? "Welcome back - your plan continues."
             : r.done === "upgraded"
-              ? `Moving you to ${name}. The difference is charged to your saved card or UPI, and the new limits switch on as soon as it goes through (Indian cards and UPI can take up to 2 days).`
+              ? data?.subscription.currency === "INR"
+                ? `Moving you to ${name}. The difference is charged to your saved card or UPI, and the new limits switch on as soon as it goes through (this can take up to 2 days).`
+                : `Moving you to ${name}. The difference is charged to your saved card, and the new limits switch on as soon as it goes through.`
               : `Done - you move to ${name}${"effectiveAt" in r && r.effectiveAt ? ` on ${fmtDay(r.effectiveAt)}` : " at your next billing date"}. Until then you keep your current plan.`,
       });
       await load();
@@ -424,7 +431,7 @@ function Billing() {
               {subscription.status === "CANCELLED" && renews
                 ? `Cancelled - paid features until ${renews}`
                 : subscription.status === "PAST_DUE"
-                  ? "Payment overdue - update your card or UPI; your plan returns as soon as it goes through"
+                  ? `Payment overdue - update your ${inRupees ? "card or UPI" : "card"}; your plan returns as soon as it goes through`
                   : subscription.status === "SUSPENDED"
                   ? "Paused - on Free limits until it resumes"
                   : isPaid && renews
@@ -685,7 +692,7 @@ function PaymentHistory({ payments }: { payments: PaymentRow[] }) {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <a
-                        href={`/invoice/${p.id}`}
+                        href={p.invoiceUrl ?? `/invoice/${p.id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 font-semibold text-brand hover:underline"
