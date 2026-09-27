@@ -10,6 +10,7 @@ import { Button } from "@/components/Button";
 import { PasswordField } from "@/components/PasswordField";
 import { TextField } from "@/components/TextField";
 import { Loader } from "@/components/Loader";
+import { useCooldown } from "@/lib/use-cooldown";
 
 /** Where signing in leads: the admin panel on its own host, else the dashboard. */
 function homePath() {
@@ -26,6 +27,8 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
+  // Matches the API's 30 seconds between codes to one address.
+  const [wait, startWait] = useCooldown(30);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
@@ -60,6 +63,7 @@ function LoginForm() {
     try {
       await requestLoginCode(email);
       setCodeSent(true);
+      startWait();
       // Same words whether or not the email has an account (the API does not say).
       setInfo(`If an account exists for ${email.trim()}, we sent a 6-digit login code to it.`);
     } catch (err) {
@@ -191,11 +195,11 @@ function LoginForm() {
           {codeSent && (
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || wait > 0}
               onClick={() => void sendCode()}
-              className="w-full text-sm font-medium text-brand disabled:opacity-50"
+              className="w-full text-sm font-medium text-brand disabled:text-muted disabled:opacity-70"
             >
-              Resend code
+              {wait > 0 ? `Resend code in ${wait}s` : "Resend code"}
             </button>
           )}
         </form>

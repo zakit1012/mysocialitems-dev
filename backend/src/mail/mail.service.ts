@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { Transporter } from 'nodemailer';
-import { DEFAULT_FROM, PRODUCT_NAME, SUPPORT_EMAIL } from '../common/product';
+import { PRODUCT_NAME, SUPPORT_EMAIL } from '../common/product';
 import { appUrl, siteUrl } from '../common/urls';
+import { PrismaService } from '../prisma/prisma.service';
 
 // Brand colours, the same as the website.
 const BRAND = '#E8446D';
@@ -14,28 +15,102 @@ const WASH = '#FFF1F2';
 const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
+/** The address inside "Name <address>", lower case. */
+const addressOf = (from: string) =>
+  (/<([^>]+)>/.exec(from)?.[1] ?? from).trim().toLowerCase();
+
+type SmtpError = { code?: string; responseCode?: number; message?: string };
+
+/** What the mail server said, as one line for the log. */
+function describe(err: unknown): string {
+  const e = (err ?? {}) as SmtpError;
+  const text = e.message ?? String(err);
+  return (
+    e.code && !text.startsWith(e.code) ? `${e.code}: ${text}` : text
+  ).slice(0, 500);
+}
+
+/** The usual fix for the usual SMTP errors, in plain words. */
+function hintFor(err: unknown): string | null {
+  const e = (err ?? {}) as SmtpError;
+  const text = (e.message ?? '').toLowerCase();
+  if (e.code === 'EAUTH' || e.responseCode === 535) {
+    return "The mail server refused the login. Check SMTP_USER (the full email address) and SMTP_PASS (that mailbox's password).";
+  }
+  if (/certificate|altnames|self[- ]signed/.test(text)) {
+    return "The mail server's SSL certificate does not match SMTP_HOST. Use the host name on its certificate (your mail hosting shows it) as SMTP_HOST, or fix the certificate.";
+  }
+  if (e.code === 'EDNS' || /enotfound|getaddrinfo/.test(text)) {
+    return 'SMTP_HOST does not resolve. Check the DNS record for the mail host name.';
+  }
+  if (
+    e.code === 'ETIMEDOUT' ||
+    e.code === 'ECONNECTION' ||
+    /timeout|timed out|econnrefused|econnreset/.test(text)
+  ) {
+    return 'The mail server could not be reached. Many VPS hosts block outgoing mail ports by default: ask them to open port 587 (or try 465), and check SMTP_HOST.';
+  }
+  if (e.code === 'EENVELOPE' || /sender|not owned|relay|553/.test(text)) {
+    return 'The mail server refused the sender. SMTP_FROM must be the same address as SMTP_USER (or leave SMTP_FROM out).';
+  }
+  if (/tls|ssl/.test(text)) {
+    return 'The secure connection failed. Port 587 needs STARTTLS on the server; port 465 needs SSL.';
+  }
+  return null;
+}
+
+type Kind = 'login' | 'signup' | 'email' | 'notice' | 'test';
+type Message = { to: string; subject: string; text: string; html: string };
+
 @Injectable()
-export class MailService {
+export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
   private readonly transporter: Transporter | null;
   private readonly from: string;
   private readonly site: string;
   private readonly app: string;
+  private readonly login: string;
+  private readonly smtp: { host: string; port: number; user: string };
+  /** The last word from the mail server: a check at start-up, a send, or a test. */
+  private state: {
+    ok: boolean | null;
+    at: Date | null;
+    error: string | null;
+    hint: string | null;
+  } = { ok: null, at: null, error: null, hint: null };
+  private prunedAt = 0;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {
     const host = config.get<string>('SMTP_HOST');
     const port = Number(config.get<string>('SMTP_PORT') ?? 587);
     const user = config.get<string>('SMTP_USER');
     const pass = config.get<string>('SMTP_PASS');
-    this.from = config.get<string>('SMTP_FROM') ?? DEFAULT_FROM;
+    this.login = `${host ?? ''}:${port} as ${user ?? ''}`;
+    this.smtp = { host: host ?? '', port, user: user ?? '' };
+    // Most mail servers only send from the mailbox that logs in, so that is
+    // the sender unless SMTP_FROM names another one.
+    this.from =
+      config.get<string>('SMTP_FROM') ||
+      `${PRODUCT_NAME} <${user?.includes('@') ? user : SUPPORT_EMAIL}>`;
     this.site = siteUrl(config);
     this.app = appUrl(config);
 
     if (host && user && pass) {
+      if (user.includes('@') && addressOf(this.from) !== user.toLowerCase()) {
+        this.logger.warn(
+          `SMTP_FROM (${addressOf(this.from)}) is not the SMTP login (${user}). ` +
+            'Many mail servers refuse that; if emails do not arrive, set SMTP_FROM to the same address.',
+        );
+      }
       this.transporter = nodemailer.createTransport({
         host,
         port,
+        // 465 is TLS from the start; 587 must upgrade with STARTTLS.
         secure: port === 465,
+        requireTLS: port === 587,
         auth: { user, pass },
         // Keeps the connection open between emails instead of a new
         // connect + TLS + login each time.
@@ -51,6 +126,144 @@ export class MailService {
       this.logger.warn(
         'SMTP is not fully configured. Codes will be logged until you set SMTP_HOST, SMTP_USER and SMTP_PASS.',
       );
+    }
+  }
+
+  /**
+   * Logs in to the mail server once at start-up, so a wrong password, a
+   * blocked port or a bad certificate shows up in the server log straight
+   * away instead of as codes that silently never arrive.
+   */
+  onModuleInit() {
+    void this.check();
+  }
+
+  /** Log in to the mail server now; the admin panel's "Check again". */
+  async check() {
+    if (!this.transporter) {
+      this.state = {
+        ok: false,
+        at: new Date(),
+        error: 'SMTP is not set up.',
+        hint: 'Set SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASS in backend/.env, then restart the backend.',
+      };
+      return this.status();
+    }
+    try {
+      await this.transporter.verify();
+      this.state = { ok: true, at: new Date(), error: null, hint: null };
+      this.logger.log(`SMTP ready (${this.login}).`);
+    } catch (err) {
+      this.state = {
+        ok: false,
+        at: new Date(),
+        error: describe(err),
+        hint: hintFor(err),
+      };
+      this.logger.error(
+        `SMTP check failed (${this.login}): ${describe(err)}. Codes and emails will not be delivered until this is fixed.`,
+      );
+    }
+    return this.status();
+  }
+
+  /** For the admin panel: how mail is set up and whether it works. */
+  status() {
+    return {
+      configured: Boolean(this.transporter),
+      ...this.smtp,
+      from: this.from,
+      ...this.state,
+    };
+  }
+
+  /** The admin panel's email log: the latest attempts, newest first. */
+  async overview() {
+    const emails = await this.prisma.emailLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return { smtp: this.status(), emails };
+  }
+
+  /** A test email from the admin panel, with the mail server's answer. */
+  async sendTest(to: string) {
+    const subject = `Test email from ${PRODUCT_NAME}`;
+    const line = `If you can read this, ${PRODUCT_NAME} can send email (sent from ${this.from} through ${this.smtp.host}:${this.smtp.port}).`;
+    try {
+      const sent = await this.deliver('test', {
+        to,
+        subject,
+        text: line,
+        html: this.layout({
+          preheader: line,
+          heading: subject,
+          body: paragraph(line),
+        }),
+      });
+      return sent
+        ? { ok: true, error: null, hint: null }
+        : {
+            ok: false,
+            error: 'SMTP is not set up.',
+            hint: this.state.hint,
+          };
+    } catch (err) {
+      return { ok: false, error: describe(err), hint: hintFor(err) };
+    }
+  }
+
+  /**
+   * Every email goes out here, and every try is logged for the admin panel:
+   * sent, failed with the server's answer, or skipped when SMTP is not set
+   * up. A failure is thrown on for the caller to handle.
+   */
+  private async deliver(kind: Kind, message: Message): Promise<boolean> {
+    if (!this.transporter) {
+      void this.record(kind, message, 'SKIPPED', 'SMTP is not set up.');
+      return false;
+    }
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        // A customer's reply reaches support, whoever the sender is.
+        replyTo: SUPPORT_EMAIL,
+        ...message,
+      });
+      this.state = { ok: true, at: new Date(), error: null, hint: null };
+      void this.record(kind, message, 'SENT', null);
+      return true;
+    } catch (err) {
+      this.state = {
+        ok: false,
+        at: new Date(),
+        error: describe(err),
+        hint: hintFor(err),
+      };
+      void this.record(kind, message, 'FAILED', describe(err));
+      throw err;
+    }
+  }
+
+  private async record(
+    kind: Kind,
+    message: Message,
+    status: 'SENT' | 'FAILED' | 'SKIPPED',
+    error: string | null,
+  ) {
+    try {
+      await this.prisma.emailLog.create({
+        data: { to: message.to, subject: message.subject, kind, status, error },
+      });
+      // Thirty days is plenty to see what went wrong; checked once an hour.
+      if (Date.now() - this.prunedAt > 3_600_000) {
+        this.prunedAt = Date.now();
+        await this.prisma.emailLog.deleteMany({
+          where: { createdAt: { lt: new Date(Date.now() - 30 * 86_400_000) } },
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Email log not saved: ${describe(err)}`);
     }
   }
 
@@ -72,7 +285,6 @@ export class MailService {
 
     if (!this.transporter) {
       this.logger.warn(`DEV CODE for ${email} (${purpose}): ${code}`);
-      return;
     }
 
     const body =
@@ -92,10 +304,7 @@ export class MailService {
         13,
       );
 
-    await this.transporter.sendMail({
-      from: this.from,
-      // The sender is noreply; a customer's reply reaches support.
-      replyTo: SUPPORT_EMAIL,
+    await this.deliver(purpose, {
       to: email,
       subject,
       text,
@@ -150,7 +359,6 @@ export class MailService {
 
     if (!this.transporter) {
       this.logger.warn(`DEV MAIL to ${to}: ${subject}`);
-      return;
     }
 
     const body =
@@ -163,18 +371,9 @@ export class MailService {
     });
 
     try {
-      await this.transporter.sendMail({
-        from: this.from,
-        replyTo: SUPPORT_EMAIL,
-        to,
-        subject,
-        text,
-        html,
-      });
+      await this.deliver('notice', { to, subject, text, html });
     } catch (err) {
-      this.logger.error(
-        `Mail to ${to} failed: ${err instanceof Error ? err.message : err}`,
-      );
+      this.logger.error(`Mail to ${to} failed: ${describe(err)}`);
     }
   }
 

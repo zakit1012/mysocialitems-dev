@@ -40,8 +40,17 @@ SITE_URL=https://widgetpop.com
 APP_URL=https://app.widgetpop.com
 ADMIN_URL=https://admin.widgetpop.com
 PUBLIC_API_URL=https://api.widgetpop.com
-SMTP_FROM=WidgetPop <noreply@widgetpop.com>
+SMTP_HOST=mail.widgetpop.com
+SMTP_PORT=587
+SMTP_USER=support@widgetpop.com
+SMTP_PASS=<the mailbox password>
+SMTP_FROM=WidgetPop <support@widgetpop.com>
 ```
+
+`SMTP_FROM` must be the same mailbox as `SMTP_USER`: most mail servers refuse
+to send as any other address. After `pm2 restart`, the backend log says
+`SMTP ready` or `SMTP check failed: <reason>`. **Admin → Emails** shows the
+same, every email sent with the mail server's answer, and a test-email button.
 
 `frontend/.env`:
 
