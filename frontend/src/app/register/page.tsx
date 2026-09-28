@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { AuthShell } from "@/components/AuthShell";
+import { Loader } from "@/components/Loader";
 import { Button } from "@/components/Button";
 import { PasswordField } from "@/components/PasswordField";
 import { TextField } from "@/components/TextField";
@@ -13,8 +14,14 @@ import { siteHref } from "@/lib/site";
 import { useCooldown } from "@/lib/use-cooldown";
 
 export default function RegisterPage() {
-  const { requestSignup, verifySignup } = useAuth();
+  const { user, loading, requestSignup, verifySignup } = useAuth();
   const router = useRouter();
+
+  // "Join free" on the marketing site also brings people who are signed in
+  // already (it cannot always tell): send them to their dashboard.
+  useEffect(() => {
+    if (user) router.replace("/dashboard");
+  }, [user, router]);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -94,6 +101,9 @@ export default function RegisterPage() {
       setBusy(false);
     }
   }
+
+  // Signed in already, or not known yet: no form to flash before the dashboard.
+  if (loading || user) return <Loader full />;
 
   return (
     <AuthShell

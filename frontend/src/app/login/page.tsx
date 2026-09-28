@@ -27,7 +27,7 @@ function safeNext(next: string | null) {
 }
 
 function LoginForm() {
-  const { user, login, requestLoginCode, loginWithCode } = useAuth();
+  const { user, loading, login, requestLoginCode, loginWithCode } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<"password" | "code">("password");
@@ -93,6 +93,9 @@ function LoginForm() {
       setBusy(false);
     }
   }
+
+  // Signed in already, or not known yet: no form to flash before the dashboard.
+  if (loading || user) return <Loader full />;
 
   return (
     <AuthShell
