@@ -14,6 +14,7 @@ import {
   LayoutGrid,
   MousePointerClick,
   Palette,
+  QrCode,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -156,6 +157,7 @@ export default function HomePage() {
       <LiveDemo />
       <HowItWorks />
       <Spotlights />
+      <GetMoreReviews />
       <FeatureGrid />
       <Pricing plans={plans} loggedIn={loggedIn} pricesReady={pricesReady} />
       <Faq plans={plans} />
@@ -499,6 +501,74 @@ function Spotlights() {
   );
 }
 
+/* ─────────────────────────────── review tools */
+
+/** The review link and QR poster (Pro and Business), shown with a drawn poster rather than a screenshot. */
+function GetMoreReviews() {
+  return (
+    <section id="get-reviews" className="scroll-mt-20 border-t border-line/60 bg-card">
+      <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-20 md:py-28 lg:grid-cols-2 lg:gap-16">
+        <div>
+          <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-brand">
+            Get more reviews
+            <span className="rounded-full bg-brand-wash px-2 py-0.5 text-[10px] tracking-wide">Pro</span>
+          </p>
+          <h3 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Turn happy customers into new reviews</h3>
+          <p className="mt-4 text-lg leading-relaxed text-muted">
+            A review link and a printable QR code poster, so a happy customer can leave you a Google review in seconds,
+            right there at your counter.
+          </p>
+          <ul className="mt-6 space-y-3">
+            {[
+              "Your review link, one tap to send on WhatsApp, email or SMS",
+              "A QR code poster with your logo, for the counter, tables and receipts",
+              "See how many people scanned your poster or opened your link",
+              "Your colours, your headline, print-ready on A4",
+            ].map((p) => (
+              <li key={p} className="flex items-start gap-3 text-[15px] text-ink-soft">
+                <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-wash text-brand">
+                  <Check className="h-3 w-3" strokeWidth={3} />
+                </span>
+                {p}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-6 text-sm text-muted">Included in Pro and Business.</p>
+        </div>
+
+        {/* A drawn poster: the real one is made from the owner's own business. */}
+        <div className="relative mx-auto w-full max-w-sm" aria-hidden>
+          <div className="overflow-hidden rounded-3xl border border-line bg-white shadow-panel">
+            <div className="gradient-brand px-6 py-5 text-center text-white">
+              <p className="text-lg font-black tracking-tight">Bella Vista Café</p>
+            </div>
+            <div className="px-6 pb-7 pt-6 text-center">
+              <p className="text-2xl font-black tracking-tight text-ink">Enjoyed your visit?</p>
+              <p className="mt-2 flex justify-center gap-1 text-amber">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <Star key={i} className="h-5 w-5 fill-current" />
+                ))}
+              </p>
+              <p className="mx-auto mt-2 max-w-60 text-sm text-muted">Leave us a review on Google. It only takes a minute.</p>
+              <div className="mx-auto mt-5 grid h-40 w-40 place-items-center rounded-2xl border border-line bg-sand">
+                <QrCode className="h-32 w-32 text-ink" strokeWidth={1.1} />
+              </div>
+              <p className="mt-4 text-xs font-semibold text-muted">Scan with your phone camera</p>
+            </div>
+          </div>
+          <span className="absolute -right-3 top-24 rounded-2xl border border-line bg-card px-3.5 py-2 text-left shadow-card sm:-right-8">
+            <span className="block text-xl font-black leading-none tabular-nums text-ink">38</span>
+            <span className="text-[11px] font-medium text-muted">scans this month</span>
+          </span>
+          <span className="absolute -left-3 bottom-10 rounded-full border border-line bg-card px-3.5 py-1.5 font-mono text-[11.5px] text-ink shadow-card sm:-left-8">
+            {SITE.domain}/r/bella24
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ─────────────────────────────── feature grid */
 
 function FeatureGrid() {
@@ -606,7 +676,7 @@ function Pricing({ plans, loggedIn, pricesReady }: { plans: PublicPlan[]; logged
                       : [
                           "All 6 designs, transparent or custom background",
                           "No “Powered by” link",
-                          "Review QR code poster and share link",
+                          "Review QR poster and link, with scan counts",
                         ]),
                   ].map((f) => (
                     <li key={f} className="flex items-center gap-2.5">

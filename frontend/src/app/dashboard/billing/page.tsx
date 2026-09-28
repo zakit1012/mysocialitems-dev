@@ -604,7 +604,7 @@ function Billing() {
                   <>
                     <Feature>All 6 designs, transparent or custom background</Feature>
                     <Feature>No &quot;Powered by&quot; link</Feature>
-                    <Feature>Review QR code poster and share link</Feature>
+                    <Feature>Review QR poster and link, with scan counts</Feature>
                   </>
                 )}
               </ul>

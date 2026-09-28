@@ -7,6 +7,7 @@ import { RedisModule } from './redis/redis.module';
 import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
 import { WidgetsModule } from './widgets/widgets.module';
+import { BusinessesModule } from './businesses/businesses.module';
 import { SourcesModule } from './sources/sources.module';
 import { PublicModule } from './public/public.module';
 import { AdminModule } from './admin/admin.module';
@@ -33,6 +34,7 @@ import { AppService } from './app.service';
     AuthModule,
     PlacesModule,
     WidgetsModule,
+    BusinessesModule,
     SourcesModule,
     PublicModule,
     AdminModule,

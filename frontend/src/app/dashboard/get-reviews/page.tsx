@@ -18,7 +18,6 @@ import {
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
-import { writeReviewUrl } from "@/lib/widget-settings";
 import {
   DEFAULT_POSTER_COLOR,
   POSTER_COLORS,
@@ -29,8 +28,19 @@ import {
 } from "@/lib/review-poster";
 import { Loader } from "@/components/Loader";
 
-type Widget = { id: string; placeId: string; placeName: string };
-type WidgetWithLogo = Widget & { logo: string | null };
+/** A business the account's widgets show, with what these tools keep for it. */
+type Business = {
+  id: string;
+  placeId: string;
+  placeName: string;
+  placeAddress: string | null;
+  logo: string | null;
+  posterColor: string | null;
+  /** The short review link (widgetpop.com/r/...): opens Google's review form and is counted. */
+  link: string;
+  opens30: number;
+  opensTotal: number;
+};
 
 const DEFAULT_HEADLINE = "Enjoyed your visit?";
 const DEFAULT_SUBTEXT = "Leave us a review on Google. It only takes a minute.";
@@ -38,18 +48,18 @@ const DEFAULT_SUBTEXT = "Leave us a review on Google. It only takes a minute.";
 export default function GetReviewsPage() {
   const { token } = useAuth();
   const [planId, setPlanId] = useState<string | null>(null);
-  const [widgets, setWidgets] = useState<Widget[] | null>(null);
+  const [businesses, setBusinesses] = useState<Business[] | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!token) return;
     Promise.all([
       api<{ plan: { id: string } }>("/billing", { token }),
-      api<Widget[]>("/widgets", { token }),
+      api<Business[]>("/businesses", { token }),
     ])
       .then(([billing, list]) => {
         setPlanId(billing.plan.id);
-        setWidgets(list);
+        setBusinesses(list);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load"));
   }, [token]);
@@ -66,13 +76,13 @@ export default function GetReviewsPage() {
 
       {error && <p className="mt-6 rounded-2xl bg-coral/10 px-4 py-3 text-sm text-coral">{error}</p>}
 
-      {!widgets || !planId ? (
+      {!businesses || !planId ? (
         !error && (
           <Loader label="Loading" />
         )
       ) : planId === "FREE" ? (
         <Locked />
-      ) : widgets.length === 0 ? (
+      ) : businesses.length === 0 ? (
         <div className="mt-8 rounded-2xl border border-dashed border-line bg-card p-10 text-center">
           <p className="font-semibold">Create a widget first</p>
           <p className="mt-1 text-sm text-muted">The review link and QR code are made for the business your widget shows.</p>
@@ -81,7 +91,7 @@ export default function GetReviewsPage() {
           </Link>
         </div>
       ) : (
-        <Tools widgets={widgets} token={token} />
+        <Tools businesses={businesses} setBusinesses={setBusinesses} token={token} />
       )}
     </div>
   );
@@ -102,6 +112,7 @@ function Locked() {
               "One tap to send it on WhatsApp, email or SMS",
               "A printable QR code poster with your logo and business name",
               "Your logo in the middle of the QR code",
+              "See how many people scan your poster or open your link",
             ].map((t) => (
               <li key={t} className="flex items-start gap-2.5">
                 <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-wash text-emerald">
@@ -136,68 +147,66 @@ function Locked() {
   );
 }
 
-function savedColor(key: string): string {
-  try {
-    const saved = localStorage.getItem(key);
-    if (saved && /^#[0-9a-f]{6}$/i.test(saved)) return saved;
-  } catch {
-    // storage blocked: the default colour is fine
-  }
-  return DEFAULT_POSTER_COLOR;
-}
-
-function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) {
-  const [widgetId, setWidgetId] = useState(widgets[0].id);
-  const [widget, setWidget] = useState<WidgetWithLogo | null>(null);
+function Tools({
+  businesses,
+  setBusinesses,
+  token,
+}: {
+  businesses: Business[];
+  setBusinesses: (next: Business[]) => void;
+  token: string | null;
+}) {
+  const [businessId, setBusinessId] = useState(businesses[0].id);
+  const business = businesses.find((b) => b.id === businessId) ?? businesses[0];
   const [logoImg, setLogoImg] = useState<HTMLImageElement | null>(null);
   const [logoInQr, setLogoInQr] = useState(true);
   const [headline, setHeadline] = useState(DEFAULT_HEADLINE);
   const [subtext, setSubtext] = useState(DEFAULT_SUBTEXT);
-  const [picked, setPicked] = useState<{ key: string; color: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const poster = useRef<HTMLCanvasElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  // The poster colour is remembered per business, in this browser only.
-  const colorKey = `poster-color:${widgetId}`;
-  const color = picked?.key === colorKey ? picked.color : savedColor(colorKey);
+  /** Changes one business in the list the page holds. */
+  const patch = useCallback(
+    (id: string, change: Partial<Business>) =>
+      setBusinesses(businesses.map((b) => (b.id === id ? { ...b, ...change } : b))),
+    [businesses, setBusinesses],
+  );
 
+  // The poster colour is kept with the business, on every device.
+  const color = business.posterColor ?? DEFAULT_POSTER_COLOR;
   function pickColor(next: string) {
-    setPicked({ key: colorKey, color: next });
-    try {
-      localStorage.setItem(colorKey, next);
-    } catch {
-      // not remembered, still used
-    }
+    patch(business.id, { posterColor: next });
+    api(`/businesses/${business.id}/poster-color`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify({ color: next }),
+    }).catch((err) =>
+      setNote({ ok: false, text: err instanceof Error ? err.message : "Could not save the colour" }),
+    );
   }
 
-  // The chosen business, with its saved logo.
+  // The chosen business's logo, ready to draw.
   useEffect(() => {
     let cancelled = false;
-    const base = widgets.find((w) => w.id === widgetId);
-    api<{ logo: string | null }>(`/widgets/${widgetId}/logo`, { token })
-      .catch(() => ({ logo: null }))
-      .then(async ({ logo }) => {
-        if (cancelled || !base) return;
-        const img = logo ? await loadImage(logo).catch(() => null) : null;
-        if (cancelled) return;
-        setWidget({ ...base, logo });
-        setLogoImg(img);
-      });
+    const logo = business.logo;
+    (logo ? loadImage(logo).catch(() => null) : Promise.resolve(null)).then((img) => {
+      if (!cancelled) setLogoImg(img);
+    });
     return () => {
       cancelled = true;
     };
-  }, [widgetId, token, widgets]);
+  }, [business.logo]);
 
-  const link = widget ? writeReviewUrl(widget.placeId) : "";
-  const name = widget?.placeName ?? "";
+  const link = business.link;
+  const name = business.placeName;
   const message = `Thank you for choosing ${name}! If you have a minute, a Google review would mean a lot to us: ${link}`;
 
   // Redraw the poster whenever what is on it changes.
   useEffect(() => {
-    if (!widget || !poster.current) return;
+    if (!poster.current) return;
     void drawPoster(poster.current, {
       color,
       businessName: name,
@@ -207,17 +216,15 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
       logo: logoImg,
       logoInQr,
     });
-  }, [widget, name, headline, subtext, link, logoImg, logoInQr, color]);
+  }, [name, headline, subtext, link, logoImg, logoInQr, color]);
 
   const saveLogo = useCallback(
     async (logo: string | null) => {
-      if (!widget) return;
       setUploading(true);
       setNote(null);
       try {
-        await api(`/widgets/${widget.id}/logo`, { method: "PUT", token, body: JSON.stringify({ logo }) });
-        setWidget({ ...widget, logo });
-        setLogoImg(logo ? await loadImage(logo) : null);
+        await api(`/businesses/${business.id}/logo`, { method: "PUT", token, body: JSON.stringify({ logo }) });
+        patch(business.id, { logo });
         setNote({ ok: true, text: logo ? "Logo saved." : "Logo removed." });
       } catch (err) {
         setNote({ ok: false, text: err instanceof Error ? err.message : "Could not save the logo" });
@@ -225,7 +232,7 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
         setUploading(false);
       }
     },
-    [widget, token],
+    [business.id, token, patch],
   );
 
   async function onFile(file: File | undefined) {
@@ -282,17 +289,21 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
   return (
     <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
       <div className="space-y-5">
-        {widgets.length > 1 && (
+        {businesses.length > 1 && (
           <label className="block">
             <span className="text-sm font-semibold">Business</span>
             <select
-              value={widgetId}
-              onChange={(e) => setWidgetId(e.target.value)}
+              value={business.id}
+              onChange={(e) => {
+                setBusinessId(e.target.value);
+                setNote(null);
+              }}
               className="mt-1.5 w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm outline-none focus:border-brand"
             >
-              {widgets.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.placeName}
+              {businesses.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.placeName}
+                  {b.placeAddress ? ` - ${b.placeAddress}` : ""}
                 </option>
               ))}
             </select>
@@ -300,8 +311,16 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
         )}
 
         <section className="rounded-2xl border border-line bg-card p-5 shadow-card">
-          <h2 className="font-bold">Your review link</h2>
-          <p className="text-sm text-muted">Opens the Google review form for {name || "your business"} straight away.</p>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="font-bold">Your review link</h2>
+              <p className="text-sm text-muted">Opens the Google review form for {name} straight away.</p>
+            </div>
+            <div className="shrink-0 rounded-xl bg-sand px-3 py-2 text-right">
+              <p className="text-lg font-black leading-none tabular-nums">{business.opens30.toLocaleString()}</p>
+              <p className="mt-1 text-[11px] font-medium text-muted">opens in 30 days</p>
+            </div>
+          </div>
           <div className="mt-3 flex gap-2">
             <input
               readOnly
@@ -340,6 +359,11 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
               <Smartphone className="h-4 w-4" /> SMS
             </a>
           </div>
+          <p className="mt-3 text-xs leading-relaxed text-hint">
+            Every time someone opens this link or scans the QR code below, it counts ({business.opensTotal.toLocaleString()}{" "}
+            in all). Posters printed before these counts began still work, but go straight to Google - print a new one to
+            count its scans.
+          </p>
         </section>
 
         <section className="rounded-2xl border border-line bg-card p-5 shadow-card">
@@ -348,10 +372,10 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
 
           <div className="mt-4 flex flex-wrap items-center gap-4">
             <span className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl border border-line bg-sand">
-              {widget?.logo ? (
+              {business.logo ? (
                 // A data URL the browser already has; next/image adds nothing here.
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={widget.logo} alt="Your logo" className="h-full w-full object-contain p-1.5" />
+                <img src={business.logo} alt="Your logo" className="h-full w-full object-contain p-1.5" />
               ) : (
                 <ImagePlus className="h-6 w-6 text-hint" />
               )}
@@ -359,9 +383,9 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
             <div className="flex flex-wrap gap-2">
               <button type="button" className={btn} disabled={uploading} onClick={() => fileInput.current?.click()}>
                 {uploading ? <Spinner /> : <ImagePlus className="h-4 w-4" />}
-                {widget?.logo ? "Change logo" : "Upload your logo"}
+                {business.logo ? "Change logo" : "Upload your logo"}
               </button>
-              {widget?.logo && (
+              {business.logo && (
                 <button type="button" className={btn} disabled={uploading} onClick={() => saveLogo(null)}>
                   <Trash2 className="h-4 w-4" /> Remove
                 </button>
@@ -477,15 +501,11 @@ function Tools({ widgets, token }: { widgets: Widget[]; token: string | null }) 
       <div className="lg:sticky lg:top-6">
         <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted">Poster preview (A4)</p>
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-panel">
-          {widget ? (
-            <canvas
-              ref={poster}
-              aria-label={`Review poster for ${name} with a QR code`}
-              className="block h-auto w-full"
-            />
-          ) : (
-            <Loader label="Drawing your poster" className="py-40" />
-          )}
+          <canvas
+            ref={poster}
+            aria-label={`Review poster for ${name} with a QR code`}
+            className="block h-auto w-full"
+          />
         </div>
       </div>
     </div>

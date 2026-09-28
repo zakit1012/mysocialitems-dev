@@ -3,7 +3,6 @@ import {
   Controller,
   Get,
   Post,
-  Put,
   Patch,
   Delete,
   Param,
@@ -87,20 +86,6 @@ export class WidgetsController {
           },
         });
     return { ...result, reviews };
-  }
-
-  @Get(':id/logo')
-  getLogo(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.widgets.getLogo(user.id, id);
-  }
-
-  @Put(':id/logo')
-  setLogo(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body() body: { logo?: unknown },
-  ) {
-    return this.widgets.setLogo(user.id, id, body?.logo ?? null);
   }
 
   @Get()

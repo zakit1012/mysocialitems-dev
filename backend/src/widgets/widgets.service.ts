@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
 import {
-  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -118,46 +117,6 @@ export class WidgetsService {
         data: { placeName: name },
       })
       .catch(() => undefined);
-  }
-
-  /** The poster logo, kept off every other widget read because of its size. */
-  async getLogo(userId: string, id: string) {
-    const widget = await this.prisma.widget.findUnique({
-      where: { id, userId },
-      select: { logo: true },
-    });
-    if (!widget) throw new NotFoundException('Widget not found.');
-    return { logo: widget.logo };
-  }
-
-  /**
-   * The business logo for the review QR poster (Pro and Business). A small
-   * image data URL, already resized in the browser; null removes it.
-   */
-  async setLogo(userId: string, id: string, logo: unknown) {
-    const plan = await this.billing.planFor(userId);
-    if (!isPaidPlan(plan)) {
-      throw new ForbiddenException(
-        'The review tools are part of the Pro and Business plans.',
-      );
-    }
-    if (logo !== null) {
-      if (
-        typeof logo !== 'string' ||
-        !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(logo)
-      ) {
-        throw new BadRequestException('Upload a PNG, JPG or WebP image.');
-      }
-      if (logo.length > 400_000) {
-        throw new BadRequestException('That logo is too large.');
-      }
-    }
-    const { count } = await this.prisma.widget.updateMany({
-      where: { id, userId },
-      data: { logo: logo },
-    });
-    if (!count) throw new NotFoundException('Widget not found.');
-    return { logo };
   }
 
   async get(userId: string, id: string) {

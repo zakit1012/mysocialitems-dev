@@ -33,6 +33,7 @@ model User {
   vouchers     Voucher[]
   reviews      Review[]
   widgets      Widget[]
+  businesses   Business[]
   sources      Source[]
   subscription Subscription?
   usage        Usage[]
@@ -137,8 +138,8 @@ model Widget {
   /// Shown to the owner as "installed and live".
   lastSeenAt   DateTime?
   lastSeenHost String?
-  /// Business logo for the review QR poster: a small image data URL, resized
-  /// in the browser before upload. Never sent to the public embed.
+  /// Legacy (the poster logo now lives on Business, copied from here when
+  /// the business is first listed). Kept so existing rows are not dropped.
   logo         String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -393,4 +394,40 @@ model EmailLog {
 
   @@index([createdAt])
   @@index([messageId])
+}
+
+/// A Google business an account shows reviews for - one row however many of
+/// its widgets show it. It keeps what the review tools (Get reviews) need:
+/// the poster logo and colour, and the short review link printed in QR codes.
+model Business {
+  id          String   @id @default(cuid())
+  userId      String
+  placeId     String
+  placeName   String
+  /// Poster logo: a small image data URL, resized in the browser.
+  logo        String?
+  /// Poster colour, e.g. #e8446d; null = the default.
+  posterColor String?
+  /// widgetpop.com/r/<slug> opens the business's Google review form. It is
+  /// printed in QR codes, so it never changes.
+  slug        String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opens ReviewLinkOpen[]
+
+  @@unique([userId, placeId])
+}
+
+/// How often a business's short review link was opened, per day (UTC,
+/// "2026-09-28", as WidgetStat keeps it).
+model ReviewLinkOpen {
+  businessId String
+  day        String
+  opens      Int    @default(0)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@id([businessId, day])
 }
