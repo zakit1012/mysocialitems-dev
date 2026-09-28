@@ -12,15 +12,16 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { AuthService } from './auth.service';
 import {
-  ChangeEmailDto,
   ChangePasswordDto,
   DeleteAccountDto,
   ProfileDto,
   ResetPasswordDto,
-  VerifyEmailChangeDto,
 } from './dto/account.dto';
 
-/** The signed-in user's own account: name, email, password, deletion. */
+/**
+ * The signed-in user's own account: name, password, deletion. The email is
+ * fixed for good - it is who the account (and its billing) belongs to.
+ */
 @Controller('account')
 @UseGuards(JwtAuthGuard)
 @Throttle({ default: { ttl: 60_000, limit: 10 } })
@@ -52,20 +53,6 @@ export class AccountController {
   @Post('password/reset')
   resetPassword(@CurrentUser() user: AuthUser, @Body() dto: ResetPasswordDto) {
     return this.auth.resetPassword(user.id, dto.code, dto.newPassword);
-  }
-
-  /** Sends a code to the new address; the change waits for that code. */
-  @Post('email')
-  email(@CurrentUser() user: AuthUser, @Body() dto: ChangeEmailDto) {
-    return this.auth.requestEmailChange(user.id, dto.email, dto.password);
-  }
-
-  @Post('email/verify')
-  verifyEmail(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: VerifyEmailChangeDto,
-  ) {
-    return this.auth.verifyEmailChange(user.id, dto.code);
   }
 
   @Delete()

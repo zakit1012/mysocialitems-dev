@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, Mail, Trash2, UserRound } from "lucide-react";
+import { KeyRound, Trash2, UserRound } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { User } from "@/lib/types";
@@ -20,7 +20,10 @@ const label = "block text-[12.5px] font-semibold text-muted";
 const primary =
   "inline-flex items-center gap-2 rounded-lg gradient-brand px-4 py-2 text-[13px] font-semibold text-white transition hover:shadow-glow disabled:opacity-50";
 
-/** The signed-in user's own account: name, email, password, and deleting it. */
+/**
+ * The signed-in user's own account: name, password, and deleting it. The
+ * email is shown, never changed: the account and its billing belong to it.
+ */
 export default function AccountPage() {
   const { user } = useAuth();
   if (!user) {
@@ -32,11 +35,10 @@ export default function AccountPage() {
     <div className="mx-auto w-full max-w-2xl">
       <header className="mb-6">
         <h1 className="text-2xl font-black tracking-tight">Account</h1>
-        <p className="mt-1 text-muted">Your name, email and password, and your account itself.</p>
+        <p className="mt-1 text-muted">Your name and password, and your account itself.</p>
       </header>
       <div className="space-y-6">
         <ProfileCard user={user} />
-        <EmailCard user={user} />
         <PasswordCard email={user.email} />
         <DeleteCard isAdmin={user.role === "ADMIN"} />
       </div>
@@ -93,6 +95,11 @@ function ProfileCard({ user }: { user: User }) {
 
   return (
     <Card icon={<UserRound className="h-4.5 w-4.5" />} title="Profile" hint="The name on your emails and receipts.">
+      <div className="mb-4">
+        <p className={label}>Email</p>
+        <p className="mt-1 text-[13.5px] font-medium text-ink">{user.email}</p>
+        <p className="mt-0.5 text-[12px] text-muted">You sign in with this email. It cannot be changed.</p>
+      </div>
       <form onSubmit={save} className="flex flex-wrap items-end gap-3">
         <label className={`${label} min-w-[220px] flex-1`}>
           Name
@@ -102,108 +109,6 @@ function ProfileCard({ user }: { user: User }) {
           {busy && <Spinner />} Save
         </button>
       </form>
-      <Note flash={flash} />
-    </Card>
-  );
-}
-
-function EmailCard({ user }: { user: User }) {
-  const { token, setSession } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [pending, setPending] = useState("");
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [flash, setFlash] = useState<Flash>(null);
-
-  async function request(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setFlash(null);
-    try {
-      await api("/account/email", { method: "POST", token, body: JSON.stringify({ email, password }) });
-      setPending(email.trim().toLowerCase());
-      setPassword("");
-      // The API answers the same for an email another account uses (and
-      // sends nothing), so this cannot be used to look up who is registered.
-      setFlash({
-        ok: true,
-        text: `We sent a 6-digit code to ${email.trim()}. Enter it below to confirm. No code? That email may already belong to another account.`,
-      });
-    } catch (err) {
-      setFlash({ ok: false, text: message(err, "Could not send the code") });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function verify(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setFlash(null);
-    try {
-      const r = await api<Session>("/account/email/verify", { method: "POST", token, body: JSON.stringify({ code }) });
-      setSession(r.user, r.token);
-      setPending("");
-      setEmail("");
-      setCode("");
-      setFlash({ ok: true, text: `Done - your email is now ${r.user.email}. Other devices were signed out.` });
-    } catch (err) {
-      setFlash({ ok: false, text: message(err, "Could not confirm") });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Card icon={<Mail className="h-4.5 w-4.5" />} title="Email" hint={`You sign in with ${user.email}.`}>
-      {!pending ? (
-        <form onSubmit={request} className="grid gap-3 sm:grid-cols-2">
-          <label className={label}>
-            New email
-            <input className={field} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
-          </label>
-          <label className={label}>
-            Your password
-            <input className={field} type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </label>
-          <div className="sm:col-span-2">
-            <button type="submit" className={primary} disabled={busy}>
-              {busy && <Spinner />} Send confirmation code
-            </button>
-          </div>
-        </form>
-      ) : (
-        <form onSubmit={verify} className="flex flex-wrap items-end gap-3">
-          <label className={`${label} w-44`}>
-            Code sent to {pending}
-            <input
-              className={`${field} tracking-[0.3em]`}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              required
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="000000"
-            />
-          </label>
-          <button type="submit" className={primary} disabled={busy || code.length !== 6}>
-            {busy && <Spinner />} Confirm new email
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setPending("");
-              setCode("");
-              setFlash(null);
-            }}
-            className="rounded-lg px-3 py-2 text-[13px] font-medium text-muted hover:text-ink"
-          >
-            Cancel
-          </button>
-        </form>
-      )}
       <Note flash={flash} />
     </Card>
   );

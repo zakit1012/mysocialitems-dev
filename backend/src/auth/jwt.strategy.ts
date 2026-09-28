@@ -37,7 +37,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       where: { id: payload.sub },
       select: { id: true, email: true, role: true, tokenVersion: true },
     });
-    // Gone, or signed out by a password or email change since this token.
+    // Gone, or signed out by a password change since this token.
     if (!user || (payload.v ?? 0) !== user.tokenVersion) {
       throw new UnauthorizedException();
     }

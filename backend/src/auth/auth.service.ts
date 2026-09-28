@@ -224,7 +224,7 @@ export class AuthService {
   private sendInBackground(
     email: string,
     code: string,
-    purpose: 'signup' | 'login' | 'email' | 'password',
+    purpose: 'signup' | 'login' | 'password',
   ) {
     void this.mail
       .sendCode(email, code, purpose)
@@ -332,7 +332,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
-      // A password or email change bumps this, signing out older tokens.
+      // A password change bumps this, signing out older tokens.
       v: user.tokenVersion ?? 0,
       // Admins only: the authenticator-app check passed, good until then.
       ...(mfaUntil ? { mfa: mfaUntil } : {}),
@@ -415,66 +415,6 @@ export class AuthService {
     return this.issue(updated);
   }
 
-  /** Step 1 of an email change: a code goes to the new address. */
-  async requestEmailChange(userId: string, emailRaw: string, password: string) {
-    const email = emailRaw.trim().toLowerCase();
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new UnauthorizedException();
-    if (!(await bcrypt.compare(password, user.password))) {
-      throw new BadRequestException('Your password is not right.');
-    }
-    if (email === user.email) {
-      throw new BadRequestException('That is already your email.');
-    }
-    await this.guardSends(email);
-    // Taken by another account: the same answer and no code, so this form
-    // cannot be used to find out who is registered either.
-    if (await this.prisma.user.findUnique({ where: { email } })) {
-      return { pending: true, email };
-    }
-    const code = this.makeCode();
-    await this.redis.setJson(
-      this.emailChangeKey(userId),
-      { email, code },
-      SIGNUP_TTL,
-    );
-    await this.redis.del(`${this.emailChangeKey(userId)}:tries`);
-    this.sendInBackground(email, code, 'email');
-    return { pending: true, email };
-  }
-
-  /** Step 2: the code proves the new address is theirs. */
-  async verifyEmailChange(userId: string, code: string) {
-    const key = this.emailChangeKey(userId);
-    await this.guardAttempts(key, SIGNUP_TTL);
-    const pending = await this.redis.getJson<{ email: string; code: string }>(
-      key,
-    );
-    if (!pending || pending.code !== code) {
-      throw new BadRequestException('Invalid or expired code');
-    }
-    if (
-      await this.prisma.user.findUnique({ where: { email: pending.email } })
-    ) {
-      await this.redis.del(key);
-      throw new ConflictException('An account with this email already exists');
-    }
-    const before = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!before) throw new UnauthorizedException();
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: { email: pending.email, tokenVersion: { increment: 1 } },
-    });
-    await this.redis.del(key);
-    await this.redis.del(`${key}:tries`);
-    // The old address hears about it, in case this was not its owner.
-    void this.mail.send(before.email, 'Your email was changed', [
-      `Hi ${updated.name},`,
-      `The email for your ${PRODUCT_NAME} account is now ${updated.email}. If this was not you, write to ${SUPPORT_EMAIL} straight away.`,
-    ]);
-    return this.issue(updated);
-  }
-
   /**
    * Deletes the account and everything in it (widgets, domains, settings).
    * A running subscription is cancelled first, so nothing is charged again;
@@ -499,10 +439,6 @@ export class AuthService {
       `Thank you for trying ${PRODUCT_NAME}.`,
     ]);
     return { ok: true };
-  }
-
-  private emailChangeKey(userId: string) {
-    return `email-change:${userId}`;
   }
 
   private passwordResetKey(userId: string) {

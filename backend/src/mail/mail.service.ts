@@ -163,8 +163,8 @@ function setupHint(r: Setup): string {
   return parts.join(' ');
 }
 
-type Kind = 'login' | 'signup' | 'email' | 'password' | 'notice' | 'test';
-type CodePurpose = 'login' | 'signup' | 'email' | 'password';
+type Kind = 'login' | 'signup' | 'password' | 'notice' | 'test';
+type CodePurpose = 'login' | 'signup' | 'password';
 
 /** Subject, heading and first line of each code email. */
 const CODE_EMAIL: Record<
@@ -180,11 +180,6 @@ const CODE_EMAIL: Record<
     subject: `Verify your ${PRODUCT_NAME} account`,
     heading: 'Verify your email',
     lead: 'Welcome! Enter this code to verify your email and finish creating your account.',
-  },
-  email: {
-    subject: `Confirm your new email for ${PRODUCT_NAME}`,
-    heading: 'Confirm your new email',
-    lead: 'Enter this code in your account settings to confirm this as your new email address.',
   },
   password: {
     subject: `Reset your ${PRODUCT_NAME} password`,

@@ -27,7 +27,7 @@ type AuthContextValue = {
     role?: "USER";
   }) => Promise<void>;
   verifySignup: (email: string, code: string) => Promise<User>;
-  /** A fresh sign-in from the server (after a password or email change). */
+  /** A fresh sign-in from the server (after a password change). */
   setSession: (user: User, token: string) => void;
   /** The same sign-in, with new profile details. */
   updateUser: (user: User) => void;

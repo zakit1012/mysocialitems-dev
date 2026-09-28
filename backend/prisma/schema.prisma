@@ -14,7 +14,7 @@ model User {
   name          String
   role          String    @default("USER")
   city          String?
-  /// Bumped when the password or email changes: older sign-ins stop working.
+  /// Bumped when the password changes: older sign-ins stop working.
   tokenVersion  Int       @default(0)
   /// Admin 2-step sign-in (authenticator app): the secret, encrypted with
   /// SETTINGS_SECRET. Pending until totpEnabledAt is set.
