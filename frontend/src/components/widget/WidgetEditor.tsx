@@ -41,7 +41,7 @@ const TABS = [
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
-const SWATCHES = ["#e8446d", "#f43f5e", "#f59e0b", "#10b981", "#0ea5e9", "#6366f1", "#1e293b", "#ffffff"];
+const SWATCHES = ["#0096D6", "#f43f5e", "#f59e0b", "#10b981", "#0ea5e9", "#6366f1", "#1e293b", "#ffffff"];
 
 /** Small drawings of each layout, so the choice is visual. */
 function LayoutSketch({ id }: { id: Layout }) {

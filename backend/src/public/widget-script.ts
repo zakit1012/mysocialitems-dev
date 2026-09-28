@@ -31,7 +31,7 @@ export function widgetScript(key: string, preview = false): string {
   })();
 
   var CSS = '' +
-    '.wpop{--bg:#f9fafb;--head:#111827;--text:#374151;--muted:#6b7280;--card:#fff;--line:#e5e7eb;--star:#f59e0b;--btn:#f43f5e;--btn-text:#fff;--r:14px;' +
+    '.wpop{--bg:#f9fafb;--head:#111827;--text:#374151;--muted:#6b7280;--card:#fff;--line:#e5e7eb;--star:#f59e0b;--btn:#0096d6;--btn-text:#fff;--r:14px;' +
       'font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--head);background:var(--bg);border-radius:calc(var(--r) + 4px);text-align:left}' +
     '.wpop.wpop-dark{--bg:#111827;--head:#f9fafb;--text:#d1d5db;--muted:#9ca3af;--card:#1f2937;--line:#374151}' +
     // Background: the theme's panel (boxed), the site's own colour (clear) or

@@ -418,7 +418,7 @@ model Business {
   placeName   String
   /// Poster logo: a small image data URL, resized in the browser.
   logo        String?
-  /// Poster colour, e.g. #e8446d; null = the default.
+  /// Poster colour, e.g. #0096d6; null = the default.
   posterColor String?
   /// widgetpop.com/r/<slug> opens the business's Google review form. It is
   /// printed in QR codes, so it never changes.

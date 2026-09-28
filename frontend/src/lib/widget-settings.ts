@@ -155,7 +155,7 @@ export function themeColor(key: ColorKey, theme: "light" | "dark" = "light"): st
     case "starColor":
       return "#f59e0b";
     case "buttonBgColor":
-      return "#f43f5e";
+      return "#0096d6";
     case "buttonTextColor":
       return "#ffffff";
   }

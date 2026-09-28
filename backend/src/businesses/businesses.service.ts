@@ -186,14 +186,14 @@ export class BusinessesService {
     return { logo };
   }
 
-  /** The poster colour, like #e8446d; null goes back to the default. */
+  /** The poster colour, like #0096D6; null goes back to the default. */
   async setPosterColor(userId: string, id: string, color: unknown) {
     await this.owned(userId, id);
     if (
       color !== null &&
       !(typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color))
     ) {
-      throw new BadRequestException('Pick a colour like #e8446d.');
+      throw new BadRequestException('Pick a colour like #0096D6.');
     }
     await this.prisma.business.update({
       where: { id },

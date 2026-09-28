@@ -172,7 +172,7 @@ function PrimaryCta({ loggedIn, label = "Create your free widget" }: { loggedIn:
   return (
     <Link
       href={appHref(loggedIn ? "/dashboard" : "/register")}
-      className="group inline-flex items-center justify-center gap-2 rounded-full gradient-brand px-7 py-3.5 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_32px_rgba(232,68,109,0.4)]"
+      className="group inline-flex items-center justify-center gap-2 rounded-full gradient-brand px-7 py-3.5 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_32px_rgba(0, 150, 214,0.4)]"
     >
       {loggedIn ? (
         <>
@@ -691,7 +691,7 @@ function Pricing({ plans, loggedIn, pricesReady }: { plans: PublicPlan[]; logged
                   href={appHref(loggedIn ? "/dashboard/billing" : "/register")}
                   className={`mt-8 block rounded-full py-3 text-center text-sm font-bold transition ${
                     featured
-                      ? "gradient-brand text-white shadow-glow hover:shadow-[0_0_32px_rgba(232,68,109,0.35)]"
+                      ? "gradient-brand text-white shadow-glow hover:shadow-[0_0_32px_rgba(0, 150, 214,0.35)]"
                       : "border border-line bg-sand text-ink hover:border-brand/40 hover:bg-brand-wash hover:text-brand-dark"
                   }`}
                 >

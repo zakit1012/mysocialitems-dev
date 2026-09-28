@@ -12,11 +12,11 @@
   --color-muted: #64748B;
   --color-hint: #94A3B8;
 
-  /* ─── Brand (vibrant rose) ─── */
-  --color-brand: #E8446D;
-  --color-brand-dark: #D6336C;
-  --color-brand-light: #FDA4AF;
-  --color-brand-wash: #FFF1F2;
+  /* ─── Brand (HP blue) ─── */
+  --color-brand: #0096D6;
+  --color-brand-dark: #0073A8;
+  --color-brand-light: #7DD3FC;
+  --color-brand-wash: #E6F4FB;
 
   /* ─── Coral (discount badges) ─── */
   --color-coral: #F43F5E;
@@ -51,7 +51,7 @@
   --shadow-card-hover: 0 4px 6px rgba(0, 0, 0, 0.05), 0 20px 40px -8px rgba(0, 0, 0, 0.14);
   --shadow-panel: 0 4px 6px rgba(0, 0, 0, 0.04), 0 24px 48px -12px rgba(0, 0, 0, 0.12);
   --shadow-header: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-glow: 0 0 24px rgba(232, 68, 109, 0.25);
+  --shadow-glow: 0 0 24px rgba(0, 150, 214, 0.25);
 
   --radius-4xl: 1.5rem;
   --radius-5xl: 2rem;
@@ -102,11 +102,11 @@ button:disabled {
 
 /* ─── Gradient utilities ─── */
 .gradient-brand {
-  background: linear-gradient(135deg, #FF6B6B 0%, #E8446D 100%);
+  background: linear-gradient(135deg, #38BDF8 0%, #0096D6 100%);
 }
 
 .gradient-brand-text {
-  background: linear-gradient(135deg, #FF6B6B 0%, #E8446D 100%);
+  background: linear-gradient(135deg, #38BDF8 0%, #0096D6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -117,7 +117,7 @@ button:disabled {
 }
 
 .gradient-subtle {
-  background: linear-gradient(135deg, #FFF1F2 0%, #EEF2FF 50%, #ECFDF5 100%);
+  background: linear-gradient(135deg, #E6F4FB 0%, #EEF2FF 50%, #ECFDF5 100%);
 }
 
 /* ─── Keyframe animations ─── */
@@ -137,8 +137,8 @@ button:disabled {
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 68, 109, 0.3); }
-  50% { box-shadow: 0 0 20px 4px rgba(232, 68, 109, 0.15); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 150, 214, 0.3); }
+  50% { box-shadow: 0 0 20px 4px rgba(0, 150, 214, 0.15); }
 }
 
 /* A bar with no known end time (fetching reviews of unknown duration). */
@@ -210,12 +210,12 @@ button:disabled {
 .gradient-mesh {
   background: 
     radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 20%, rgba(232, 68, 109, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(0, 150, 214, 0.06) 0%, transparent 50%),
     radial-gradient(ellipse at 50% 80%, rgba(245, 158, 11, 0.05) 0%, transparent 50%);
 }
 
 .gradient-cta {
-  background: linear-gradient(135deg, #E8446D 0%, #6366F1 100%);
+  background: linear-gradient(135deg, #0096D6 0%, #6366F1 100%);
 }
 
 /* ─── Extra keyframes ─── */
@@ -284,7 +284,7 @@ button:disabled {
 .feature-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.12);
-  border-color: rgba(232, 68, 109, 0.3);
+  border-color: rgba(0, 150, 214, 0.3);
 }
 
 /* ─── Star rating color ─── */

@@ -21,7 +21,7 @@ const HOME_TITLE = `Free ${SITE.tagline} | ${SITE.name}`;
 const cards = pageMetadata({ title: HOME_TITLE, description: SITE.description, path: "/", absolute: true });
 
 export const viewport: Viewport = {
-  themeColor: "#E8446D",
+  themeColor: "#0096D6",
 };
 
 export const metadata: Metadata = {

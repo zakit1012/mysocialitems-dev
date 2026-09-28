@@ -10,12 +10,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { bounceHint } from './bounces';
 
 // Brand colours, the same as the website.
-const BRAND = '#E8446D';
-const BRAND_FROM = '#FF6B6B';
+const BRAND = '#0096D6';
+const BRAND_FROM = '#38BDF8';
 const INK = '#1E293B';
 const TEXT = '#334155';
 const MUTED = '#94A3B8';
-const WASH = '#FFF1F2';
+const WASH = '#E6F4FB';
 const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
@@ -482,7 +482,7 @@ export class MailService implements OnModuleInit {
 
     const body =
       paragraph(lead) +
-      `<div style="margin:24px 0;padding:20px 12px;border-radius:14px;background:${WASH};border:1px dashed #FDA4AF;text-align:center">` +
+      `<div style="margin:24px 0;padding:20px 12px;border-radius:14px;background:${WASH};border:1px dashed #7DD3FC;text-align:center">` +
       `<div style="font:800 34px/1 'SFMono-Regular',Menlo,Consolas,monospace;letter-spacing:10px;color:${INK}">${escapeHtml(code)}</div>` +
       `<div style="margin-top:10px;font:13px/1.4 ${FONT};color:#64748B">Expires in 10 minutes</div></div>` +
       paragraph(ignore, MUTED, 13);

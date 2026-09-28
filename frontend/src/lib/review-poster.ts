@@ -115,10 +115,10 @@ export async function drawQr(canvas: HTMLCanvasElement, link: string, size: numb
   drawContained(ctx, logo, x + pad, x + pad, tile - pad * 2);
 }
 
-export const DEFAULT_POSTER_COLOR = "#E8446D";
+export const DEFAULT_POSTER_COLOR = "#0096D6";
 
 /** Ready-made colours for the poster band; any other comes from the picker. */
-export const POSTER_COLORS = ["#E8446D", "#DC2626", "#EA580C", "#CA8A04", "#059669", "#0891B2", "#2563EB", "#7C3AED", "#111827"];
+export const POSTER_COLORS = ["#0096D6", "#DC2626", "#EA580C", "#CA8A04", "#059669", "#0891B2", "#2563EB", "#7C3AED", "#111827"];
 
 const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 

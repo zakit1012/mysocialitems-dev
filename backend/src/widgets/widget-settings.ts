@@ -88,7 +88,7 @@ const RENAMED: Record<string, string> = {
 /** The swatch ids the first builder stored instead of colors. */
 const SWATCHES: Record<string, string> = {
   amber: '#f59e0b',
-  brand: '#e8446d',
+  brand: '#0096D6',
   emerald: '#10b981',
   indigo: '#6366f1',
   coral: '#f43f5e',
