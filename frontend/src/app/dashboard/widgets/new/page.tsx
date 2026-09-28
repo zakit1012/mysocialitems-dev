@@ -41,8 +41,8 @@ export default function NewWidgetPage() {
 
   const [status, setStatus] = useState<"idle" | "importing" | "preview" | "saving">("idle");
   const [engine, setEngine] = useState<EngineResponse | null>(null);
-  const [tookMs, setTookMs] = useState<number | null>(null);
-  const [importNote, setImportNote] = useState("");
+  // What went wrong fetching the reviews, if anything.
+  const [importError, setImportError] = useState("");
   // How many reviews a widget may show on the user's current plan.
   const [plan, setPlan] = useState({ id: "FREE", name: "Free", reviews: 3 });
   // Widgets the account has and may have: at the limit, the page says so
@@ -100,7 +100,6 @@ export default function NewWidgetPage() {
   useEffect(() => {
     if (status !== "importing" || !place) return;
     let cancelled = false;
-    const started = Date.now();
 
     (async () => {
       // At least 10 so a Free account sees what an upgrade would add.
@@ -113,13 +112,12 @@ export default function NewWidgetPage() {
         );
         if (cancelled) return;
         setEngine(data);
-        setImportNote(data.error ?? "");
-        setTookMs(Date.now() - started);
+        setImportError(data.error ?? "");
         setStatus("preview");
       } catch (err) {
         if (cancelled) return;
         // Let them carry on; the widget fills in once the engine has the data.
-        setImportNote(err instanceof Error ? err.message : "Could not reach the review engine");
+        setImportError(err instanceof Error ? err.message : "Could not reach the review engine");
         setStatus("preview");
       }
     })();
@@ -173,11 +171,17 @@ export default function NewWidgetPage() {
     [settings, plan.reviews, previewMax],
   );
 
+  // Said as news, not as a log line: what the widget will show, and what more a plan adds.
   const fetched = engine?.reviews.length ?? 0;
-  const note =
-    fetched > plan.reviews
-      ? `Your ${plan.name} plan shows ${plan.reviews} reviews per widget. Upgrade in Billing to show up to ${fetched} or more.`
-      : importNote || (tookMs !== null ? `${fetched} reviews loaded in ${(tookMs / 1000).toFixed(1)}s.` : "");
+  const note = importError
+    ? importError
+    : !engine
+      ? ""
+      : fetched === 0
+        ? "No 5-star reviews with text yet. Your widget fills in as soon as this business has some."
+        : fetched > plan.reviews
+          ? `Your widget shows your best ${plan.reviews}. Upgrade to show up to ${fetched}.`
+          : `${fetched} five-star review${fetched === 1 ? "" : "s"} ready.`;
 
   return (
     <div className="animate-fade-in-up">
@@ -286,9 +290,8 @@ export default function NewWidgetPage() {
                 setSessionToken(t);
                 setError("");
                 // A fresh import screen; the effect above does the fetching.
-                setImportNote("This can take up to a minute the first time - pulling reviews from Google. No need to reload.");
+                setImportError("");
                 setEngine(null);
-                setTookMs(null);
                 setWaitedSec(0);
                 setStatus("importing");
               }}
@@ -301,17 +304,21 @@ export default function NewWidgetPage() {
             <div className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-full bg-brand-wash">
               <Loader2 className="h-8 w-8 animate-spin text-brand" />
             </div>
-            <h2 className="text-lg font-bold">Fetching reviews…</h2>
+            <h2 className="text-lg font-bold">Getting your reviews from Google</h2>
             <p className="mt-2 text-sm text-muted">
-              Getting reviews for <span className="font-semibold text-ink">{place?.name}</span>
+              For <span className="font-semibold text-ink">{place?.name}</span>
             </p>
             {/* No % shown - a new place can take anywhere from a few seconds to
                 a minute or two, so a fake progress number would just be a lie. */}
-            <div className="mx-auto mt-10 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-sand-deep">
+            <div className="mx-auto mt-8 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-sand-deep">
               <div className="h-full w-1/3 animate-[indeterminate_1.2s_ease-in-out_infinite] rounded-full gradient-brand" />
             </div>
-            {importNote && <p className="mt-4 text-xs text-muted">{importNote}</p>}
-            <p className="mt-2 text-[11px] font-medium tabular-nums text-hint">Still working... {waitedSec}s</p>
+            <p className="mt-6 text-[13px] leading-relaxed text-muted">
+              {waitedSec < 40
+                ? "The first time takes a minute or two. After that, your widget loads instantly."
+                : "Still working - businesses with many reviews take a little longer. Please keep this page open."}
+            </p>
+            <p className="mt-2 text-[11px] font-medium tabular-nums text-hint">{waitedSec}s</p>
           </div>
         )}
 
@@ -333,7 +340,13 @@ export default function NewWidgetPage() {
               }
             />
             <div className="min-w-0">
-              <WidgetPreview data={preview} settings={previewSettings} note={note} branding={plan.id === "FREE"} />
+              <WidgetPreview
+                data={preview}
+                settings={previewSettings}
+                note={note}
+                noteTone={importError ? "problem" : "info"}
+                branding={plan.id === "FREE"}
+              />
             </div>
           </div>
         )}

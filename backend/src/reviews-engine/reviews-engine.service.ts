@@ -53,6 +53,10 @@ const EMBED_CACHE_SECONDS = 300;
 /** The hours the engine refreshes a place at, written by EngineSyncService. */
 export const placeHoursKey = (placeId: string) => `engine:every:${placeId}`;
 
+/** What the owner reads when the engine cannot be reached; the details go to the log. */
+const UNREACHABLE =
+  'Could not get the reviews right now. Please try again in a minute - reviews already on your site keep showing.';
+
 @Injectable()
 export class ReviewsEngineService {
   private readonly log = new Logger(ReviewsEngineService.name);
@@ -107,7 +111,7 @@ export class ReviewsEngineService {
 
       if (!res.ok) {
         this.log.warn(`Review engine returned ${res.status} for ${placeId}`);
-        return empty(`Review engine returned ${res.status}`);
+        return empty(UNREACHABLE);
       }
 
       const data = (await res.json()) as Omit<EngineResult, 'took_ms'> & {
@@ -127,7 +131,7 @@ export class ReviewsEngineService {
       }
       const reason = err instanceof Error ? err.message : String(err);
       this.log.error(`Review engine failed for ${placeId}: ${reason}`);
-      return empty(reason);
+      return empty(UNREACHABLE);
     }
   }
 

@@ -79,6 +79,7 @@ export function WidgetPreview({
   settings,
   busy,
   note,
+  noteTone = "info",
   title = "Live preview",
   branding = false,
 }: {
@@ -86,6 +87,8 @@ export function WidgetPreview({
   settings: WidgetSettings;
   busy?: boolean;
   note?: string;
+  /** "problem" when the note says something went wrong. */
+  noteTone?: "info" | "problem";
   title?: string;
   /** Show the "Powered by" link a Free plan widget carries. */
   branding?: boolean;
@@ -198,7 +201,13 @@ export function WidgetPreview({
         style={backdrop ? { backgroundColor: backdrop } : DOTS}
       >
         {note && (
-          <p className="mb-3 rounded-xl border border-brand/20 bg-brand-wash px-3.5 py-2.5 text-[12.5px] text-ink-soft">
+          <p
+            className={`mb-3 rounded-xl border px-3.5 py-2.5 text-[12.5px] ${
+              noteTone === "problem"
+                ? "border-amber-200 bg-amber-50 text-amber-800"
+                : "border-line bg-card text-ink-soft"
+            }`}
+          >
             {note}
           </p>
         )}

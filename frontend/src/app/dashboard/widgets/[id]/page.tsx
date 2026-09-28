@@ -80,6 +80,8 @@ function WidgetStudio() {
   const [engine, setEngine] = useState<EngineResult | null>(null);
   const [reviewsBusy, setReviewsBusy] = useState(true);
   const [reviewsNote, setReviewsNote] = useState("");
+  // The note says something went wrong (not just "loading").
+  const [reviewsProblem, setReviewsProblem] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null);
@@ -99,13 +101,16 @@ function WidgetStudio() {
     async (widgetId: string, sortToUse: string) => {
       if (!token) return;
       setReviewsBusy(true);
-      setReviewsNote("This can take up to a minute the first time - pulling reviews from Google.");
+      setReviewsProblem(false);
+      setReviewsNote("Getting your reviews from Google. The first time takes a minute or two.");
       try {
         const r = await api<EngineResult>(`/widgets/${widgetId}/reviews?sort=${sortToUse}`, { token });
         setEngine(r);
         setReviewsNote(r.error ?? "");
+        setReviewsProblem(Boolean(r.error));
       } catch (err) {
         setReviewsNote(err instanceof Error ? err.message : "Could not load reviews");
+        setReviewsProblem(true);
       } finally {
         setReviewsBusy(false);
       }
@@ -313,7 +318,7 @@ function WidgetStudio() {
             canUsePro={isPaid || plan.id === ""}
           />
           <div className="min-w-0">
-            <WidgetPreview data={preview} settings={previewSettings} busy={reviewsBusy} note={reviewsNote} branding={plan.id === "FREE"} />
+            <WidgetPreview data={preview} settings={previewSettings} busy={reviewsBusy} note={reviewsNote} noteTone={reviewsProblem ? "problem" : "info"} branding={plan.id === "FREE"} />
           </div>
         </div>
       ) : (
@@ -328,7 +333,7 @@ function WidgetStudio() {
               data={preview}
               settings={siteSettings}
               busy={reviewsBusy}
-              note={reviewsNote}
+              note={reviewsNote} noteTone={reviewsProblem ? "problem" : "info"}
               title="How it looks now"
               branding={plan.id === "FREE"}
             />

@@ -85,13 +85,17 @@ export class PlacesController {
     // be used on the public embed.
     const wanted = Math.min(Math.max(Number(count) || 6, 1), max);
     // Free: the highest-rated reviews. Paid: the order asked for, topped up
-    // from the highest-rated ones when it has too few 5-star reviews.
+    // from the highest-rated ones when it has too few 5-star reviews. For a
+    // new place neither list exists yet, so both are fetched now, side by
+    // side, and the preview shows what the widget will.
     const order = widgetOrder(paid, {}, sort);
-    const result = await this.engine.fetchAndWait(
-      placeId,
-      MAX_REVIEW_COUNT,
-      order,
-    );
+    const topUp = paid && order !== HIGHEST_RATED;
+    const [result, best] = await Promise.all([
+      this.engine.fetchAndWait(placeId, MAX_REVIEW_COUNT, order),
+      topUp
+        ? this.engine.fetchAndWait(placeId, MAX_REVIEW_COUNT, HIGHEST_RATED)
+        : null,
+    ]);
     const reviews = result.error
       ? []
       : await pickReviews({
@@ -101,16 +105,8 @@ export class PlacesController {
           settings: {},
           want: wanted,
           hide: (list) => this.hidden.filter(placeId, list),
-          highestRated: async () => {
-            const more = await this.engine.fetch(
-              placeId,
-              MAX_REVIEW_COUNT,
-              HIGHEST_RATED,
-            );
-            return more.served !== 'fetching' && !more.error
-              ? more.reviews
-              : [];
-          },
+          highestRated: () =>
+            Promise.resolve(best && !best.error ? best.reviews : []),
         });
     return { ...result, reviews };
   }

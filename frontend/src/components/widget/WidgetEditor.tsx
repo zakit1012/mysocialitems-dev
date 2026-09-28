@@ -282,16 +282,29 @@ export function WidgetEditor({
                 </select>
               </Section>
             ) : (
+              // The same choices a paid plan has, locked: nothing on Free to
+              // look for later that Pro does not offer.
               <Section title="Order">
-                <p className="rounded-xl border border-line px-3 py-2.5 text-[13px] font-medium text-ink">
-                  Highest rated
-                </p>
+                <div className="grid gap-1.5">
+                  {SORT_OPTIONS.map((o) => (
+                    <div
+                      key={o.value}
+                      aria-disabled
+                      className="flex items-center justify-between rounded-xl border border-line px-3 py-2.5 text-[13px] font-medium text-muted"
+                    >
+                      {o.label}
+                      <span className="rounded bg-amber-100 px-1.5 text-[9.5px] font-bold uppercase leading-4 tracking-wide text-amber-700">
+                        Pro
+                      </span>
+                    </div>
+                  ))}
+                </div>
                 <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800">
-                  Free widgets show your highest-rated 5-star reviews. Newest first and Most relevant are part of
-                  Pro.{" "}
+                  Free shows your best reviews.{" "}
                   <Link href="/dashboard/billing" className="font-semibold underline">
                     Upgrade
-                  </Link>
+                  </Link>{" "}
+                  to choose Newest or Most relevant.
                 </p>
               </Section>
             )}
