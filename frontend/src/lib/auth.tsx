@@ -7,8 +7,10 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { api, ApiError } from "./api";
+import { noteSignedIn, noteSignedOut, readSignedIn, subscribeSignedIn } from "./signed-in";
 import type { User } from "./types";
 
 type AuthContextValue = {
@@ -50,17 +52,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.setItem("sd_token", r.token);
             setToken(r.token);
             setUser(r.user);
+            noteSignedIn(r.user.name);
           })
           .catch((err) => {
             // Only a rejected token signs out. A server that is down for a
             // minute must not log everyone out: keep it for the next visit.
             if (err instanceof ApiError && err.status === 401) {
               localStorage.removeItem("sd_token");
+              noteSignedOut();
             } else {
               setToken(stored);
             }
           })
-      : Promise.resolve();
+      : Promise.resolve().then(noteSignedOut);
     void settle.finally(() => setLoading(false));
   }, []);
 
@@ -68,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("sd_token", nextToken);
     setUser(nextUser);
     setToken(nextToken);
+    noteSignedIn(nextUser.name);
   }, []);
 
   const login = useCallback(
@@ -136,12 +141,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateUser = useCallback((next: User) => {
     setUser((current) => (current ? { ...current, ...next } : next));
+    if (next.name) noteSignedIn(next.name);
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem("sd_token");
     setUser(null);
     setToken(null);
+    noteSignedOut();
   }, []);
 
   const value = useMemo(
@@ -182,4 +189,19 @@ export function useAuth() {
     throw new Error("useAuth must be used inside AuthProvider");
   }
   return context;
+}
+
+/**
+ * Whether someone is signed in, and their first name - on any host,
+ * including the marketing site, which cannot see the sign-in itself (see
+ * signed-in.ts). `known` is false until that can be told (on the server,
+ * and while the sign-in is checked), so nobody signed in sees "Log in" first.
+ */
+export function useSignedIn(): { known: boolean; name: string | null } {
+  const { user, loading } = useAuth();
+  const noted = useSyncExternalStore<string | null | undefined>(subscribeSignedIn, readSignedIn, () => undefined);
+  if (user) return { known: true, name: user.name.trim().split(/\s+/)[0] || user.name };
+  if (noted === undefined) return { known: false, name: null };
+  if (noted) return { known: true, name: noted };
+  return { known: !loading, name: null };
 }

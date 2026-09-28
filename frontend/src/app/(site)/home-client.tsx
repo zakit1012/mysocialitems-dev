@@ -22,7 +22,7 @@ import {
   Star,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { useSignedIn } from "@/lib/auth";
 import { WidgetPreview } from "@/components/widget/WidgetPreview";
 import { DEFAULT_SETTINGS, type Layout, type WidgetSettings } from "@/lib/widget-settings";
 import { DEMO_REVIEW_COUNT, demoData } from "@/lib/demo-data";
@@ -127,7 +127,7 @@ const DEMO_LAYOUTS: { id: Layout; label: string }[] = [
 const APP_DOMAIN = HOSTS.app || SITE.domain;
 
 export default function HomePage() {
-  const { user } = useAuth();
+  const { name } = useSignedIn();
   const [plans, setPlans] = useState<PublicPlan[]>(DEFAULT_PLANS);
   // Prices show once the real ones are in (or the call failed), so the
   // built-in defaults never flash a different price first.
@@ -148,7 +148,7 @@ export default function HomePage() {
     };
   }, []);
 
-  const loggedIn = Boolean(user);
+  const loggedIn = Boolean(name);
   return (
     <div>
       <Hero loggedIn={loggedIn} />
