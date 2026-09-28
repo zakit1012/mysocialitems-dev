@@ -225,6 +225,11 @@ model Subscription {
   upgradeFrom          String?
   upgradeAt            DateTime?
   upgradeUnpaid        Boolean   @default(false)
+  /// A change waiting for the next billing date (a cheaper plan, or the same
+  /// plan billed monthly/yearly): what it moves to. Cleared once it applies
+  /// or is taken back.
+  scheduledPlan        String?
+  scheduledInterval    String?
   /// month | year
   interval             String    @default("month")
   /// Printed on invoices under "Billed to" (all optional).

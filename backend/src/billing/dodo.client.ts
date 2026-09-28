@@ -316,6 +316,16 @@ export class DodoClient {
     );
   }
 
+  /** Drops a plan change waiting for the next billing date. */
+  cancelScheduledChange(id: string, mode?: DodoMode) {
+    return this.request<unknown>(
+      'DELETE',
+      `/subscriptions/${encodeURIComponent(id)}/change-plan/scheduled`,
+      undefined,
+      mode,
+    );
+  }
+
   async subscriptionPayments(id: string, mode?: DodoMode) {
     const res = await this.request<{ items?: DodoPayment[] }>(
       'GET',

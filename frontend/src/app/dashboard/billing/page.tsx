@@ -49,7 +49,7 @@ const isUpgrade = (from: PlanCard, to: PlanCard) => to.priceUsd > from.priceUsd;
 
 type CheckoutResult =
   | { checkoutUrl: string }
-  | { done: "resumed" | "upgraded" }
+  | { done: "resumed" | "upgraded" | "kept" }
   | { done: "scheduled"; effectiveAt: string | null };
 
 const money = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
@@ -67,6 +67,9 @@ type Overview = {
     /** An upgrade's difference did not go through: upgradeFrom's limits apply until it does. */
     upgradeUnpaid?: boolean;
     upgradeFrom?: string | null;
+    /** A change waiting for the next billing date. */
+    scheduledPlan?: string | null;
+    scheduledInterval?: Interval | null;
     /** Billed through Dodo: can be cancelled, resumed or changed here. */
     hasSubscription?: boolean;
     /** Card or UPI can be updated in Dodo's customer portal. */
@@ -297,6 +300,8 @@ function Billing() {
       setBusy("");
       if (r.done === "resumed") {
         announce({ kind: "ok", text: "Welcome back - your plan continues." });
+      } else if (r.done === "kept") {
+        announce({ kind: "ok", text: `You keep ${name}. The change you had scheduled is cancelled.` });
       } else if (r.done === "upgraded" && overview.subscription.plan === plan) {
         announce({ kind: "ok", text: `You are on ${name} now. Its limits apply straight away.` });
       } else if (r.done === "upgraded") {
@@ -401,6 +406,10 @@ function Billing() {
   const planName = data.plans.find((p) => p.id === subscription.plan)?.name ?? plan.name;
   const subscribedTo =
     subscription.hasSubscription && subscription.status !== "EXPIRED" ? subscription.plan : plan.id;
+  // A cheaper plan, or another billing period, waiting for the next billing date.
+  const scheduled = subscription.scheduledPlan
+    ? (data.plans.find((p) => p.id === subscription.scheduledPlan) ?? null)
+    : null;
   const renews = subscription.currentPeriodEnd
     ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
     : null;
@@ -467,6 +476,23 @@ function Billing() {
                         ? "Active"
                         : "Free forever"}
             </p>
+            {scheduled && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px]">
+                <span className="rounded-full bg-sand px-2.5 py-1 font-semibold text-ink">
+                  Moves to {scheduled.name}
+                  {subscription.scheduledInterval === "year" ? " yearly" : ""}
+                  {renews ? ` on ${renews}` : " at your next billing date"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void checkout(subscription.plan, subscription.interval ?? "month")}
+                  disabled={Boolean(busy)}
+                  className="font-semibold text-brand hover:underline disabled:opacity-50"
+                >
+                  {busy === subscription.plan ? <Spinner /> : null} Keep {planName}
+                </button>
+              </div>
+            )}
             {subscription.upgradeUnpaid && (
               <p className="mt-2 max-w-xl rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] leading-relaxed text-amber-800">
                 The payment for {planName} did not go through, so you have {plan.name} - what you paid for - until it
@@ -637,6 +663,10 @@ function Billing() {
                 ) : current ? (
                   <p className="rounded-lg bg-sand py-2 text-center text-[13px] font-semibold text-muted">
                     Current plan
+                  </p>
+                ) : scheduled?.id === p.id && (subscription.scheduledInterval ?? "month") === every ? (
+                  <p className="rounded-lg bg-sand py-2 text-center text-[13px] font-semibold text-muted">
+                    Starts {renews ?? "at your next billing date"}
                   </p>
                 ) : free ? null : (
                   <button

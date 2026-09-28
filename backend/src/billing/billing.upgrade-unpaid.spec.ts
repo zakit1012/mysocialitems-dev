@@ -21,6 +21,7 @@ const PRO = {
   priceUsd: 5,
   priceYearlyUsd: 50,
   dodoMonthlyIdLive: 'prod_pro',
+  dodoYearlyIdLive: 'prod_pro_year',
 };
 const BUSINESS = {
   key: 'BUSINESS',
@@ -50,10 +51,15 @@ function setup(sub: Row = {}) {
     upgradeFrom: null,
     upgradeAt: null,
     upgradeUnpaid: false,
+    scheduledPlan: null,
+    scheduledInterval: null,
     ...sub,
   };
-  // Dodo's side: the product the subscription is on.
+  // Dodo's side: the product the subscription is on, a change waiting for
+  // the next billing date, and the subscription's status.
   let product = row.plan === 'BUSINESS' ? 'prod_biz' : 'prod_pro';
+  let scheduled: string | null = null;
+  let status = 'active';
   const payments: Row[] = [];
   const events = new Set<string>();
   const prisma = {
@@ -109,7 +115,7 @@ function setup(sub: Row = {}) {
     byDodoProduct: jest.fn((id: string) =>
       Promise.resolve({
         plan: id === 'prod_biz' ? BUSINESS : PRO,
-        yearly: false,
+        yearly: id === 'prod_pro_year',
       }),
     ),
   };
@@ -117,14 +123,29 @@ function setup(sub: Row = {}) {
     mode: jest.fn(() => Promise.resolve('live')),
     configured: jest.fn(() => Promise.resolve(true)),
     verifyWebhook: jest.fn(() => Promise.resolve('live')),
-    changePlan: jest.fn((_id: string, productId: string) => {
-      product = productId;
+    changePlan: jest.fn((_id: string, productId: string, upgrade: boolean) => {
+      if (scheduled) {
+        return Promise.reject(
+          new Error(
+            'Payment service 400: A pending plan change already exists for this subscription (PendingPlanChangeExists).',
+          ),
+        );
+      }
+      if (upgrade) product = productId;
+      else scheduled = productId;
+      return Promise.resolve({});
+    }),
+    cancelScheduledChange: jest.fn(() => {
+      if (!scheduled) {
+        return Promise.reject(new Error('Payment service 404: not found'));
+      }
+      scheduled = null;
       return Promise.resolve({});
     }),
     getSubscription: jest.fn((id: string) =>
       Promise.resolve({
         subscription_id: id,
-        status: 'active',
+        status,
         product_id: product,
         customer: { customer_id: 'cus_1' },
         next_billing_date: (row.currentPeriodEnd as Date).toISOString(),
@@ -170,7 +191,33 @@ function setup(sub: Row = {}) {
     });
   const subjects = () =>
     (mail.send.mock.calls as unknown as [string, string][]).map((c) => c[1]);
-  return { service, row, webhook, charge, subjects, dodo };
+  /** Dodo tells of a change to the subscription (renewal, hold). */
+  const subscriptionNews = (
+    type: string,
+    next: { status?: string; product?: string },
+  ) => {
+    if (next.status) status = next.status;
+    if (next.product) product = next.product;
+    return webhook(type, {
+      subscription_id: 'sub_1',
+      status,
+      product_id: product,
+      customer: { customer_id: 'cus_1' },
+      next_billing_date: (row.currentPeriodEnd as Date).toISOString(),
+      payment_frequency_interval: 'Month',
+    });
+  };
+  const scheduledOnDodo = () => scheduled;
+  return {
+    service,
+    row,
+    webhook,
+    charge,
+    subjects,
+    dodo,
+    subscriptionNews,
+    scheduledOnDodo,
+  };
 }
 
 const planOf = async (service: BillingService) =>
@@ -252,5 +299,72 @@ describe('an upgrade whose difference is not paid', () => {
     const { service, row } = setup({ plan: 'BUSINESS' });
     await service.startCheckout('u1', 'PRO', 'month');
     expect(row.upgradeFrom).toBeNull();
+  });
+});
+
+describe('Dodo putting an unpaid upgrade on hold', () => {
+  it('keeps the plan paid for, with one email about the upgrade', async () => {
+    const { service, subscriptionNews, charge, subjects } = setup();
+    await service.startCheckout('u1', 'BUSINESS', 'month');
+    await subscriptionNews('subscription.on_hold', { status: 'on_hold' });
+    expect(await planOf(service)).toBe('PRO');
+    await charge('failed', 0);
+    const about = subjects().filter((t) =>
+      /did not go through|overdue/i.test(t),
+    );
+    expect(about).toEqual(['The payment for Business did not go through']);
+  });
+
+  it('still treats a missed renewal as overdue, on Free limits', async () => {
+    const { service, subscriptionNews, subjects } = setup();
+    await subscriptionNews('subscription.on_hold', { status: 'on_hold' });
+    expect(await planOf(service)).toBe('FREE');
+    expect(subjects()).toContain('Your payment is overdue');
+  });
+});
+
+describe('a change waiting for the next billing date', () => {
+  it('is remembered and shown', async () => {
+    const { service, row } = setup({ plan: 'BUSINESS' });
+    await service.startCheckout('u1', 'PRO', 'month');
+    expect([row.scheduledPlan, row.scheduledInterval]).toEqual([
+      'PRO',
+      'month',
+    ]);
+    const page = await service.overview('u1');
+    expect(page.subscription.scheduledPlan).toBe('PRO');
+    expect(await planOf(service)).toBe('BUSINESS');
+  });
+
+  it('can be taken back by choosing the plan they are on', async () => {
+    const { service, row, scheduledOnDodo } = setup({ plan: 'BUSINESS' });
+    await service.startCheckout('u1', 'PRO', 'month');
+    const r = await service.startCheckout('u1', 'BUSINESS', 'month');
+    expect(r).toEqual({ done: 'kept' });
+    expect(scheduledOnDodo()).toBeNull();
+    expect(row.scheduledPlan).toBeNull();
+  });
+
+  it('says "already on" when nothing is waiting', async () => {
+    const { service } = setup({ plan: 'BUSINESS' });
+    await expect(
+      service.startCheckout('u1', 'BUSINESS', 'month'),
+    ).rejects.toThrow(/already on Business/);
+  });
+
+  it('is replaced by a new choice instead of blocking it', async () => {
+    const { service, row, dodo } = setup({ plan: 'BUSINESS' });
+    await service.startCheckout('u1', 'PRO', 'month');
+    await service.startCheckout('u1', 'PRO', 'year');
+    expect(dodo.cancelScheduledChange).toHaveBeenCalledTimes(1);
+    expect([row.scheduledPlan, row.scheduledInterval]).toEqual(['PRO', 'year']);
+  });
+
+  it('is cleared once it applies', async () => {
+    const { service, row, subscriptionNews } = setup({ plan: 'BUSINESS' });
+    await service.startCheckout('u1', 'PRO', 'month');
+    await subscriptionNews('subscription.renewed', { product: 'prod_pro' });
+    expect(row.plan).toBe('PRO');
+    expect(row.scheduledPlan).toBeNull();
   });
 });

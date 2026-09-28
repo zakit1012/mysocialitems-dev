@@ -109,6 +109,22 @@ const UPGRADE_SETTLED = {
   upgradeAt: null,
   upgradeUnpaid: false,
 } as const;
+/** No change waiting for the next billing date. */
+const NOTHING_SCHEDULED = {
+  scheduledPlan: null,
+  scheduledInterval: null,
+} as const;
+
+/** An upgrade made lately, whose charge a failure now would be. */
+const recentUpgrade = (sub: Subscription) =>
+  Boolean(sub.upgradeFrom && sub.upgradeAt) &&
+  Date.now() - (sub.upgradeAt as Date).getTime() <= UPGRADE_CHARGE_WINDOW_MS;
+
+/** Dodo refuses a plan change while another is scheduled. */
+const pendingChange = (err: unknown) =>
+  /PendingPlanChangeExists|pending plan change/i.test(
+    err instanceof Error ? err.message : String(err),
+  );
 
 /** A charge made at or after `since` (with a minute for clocks that differ); undated counts. */
 const madeSince = (payment: DodoPayment, since: Date | null) =>
@@ -228,11 +244,18 @@ export class BillingService {
           !sub.currentPeriodEnd ||
           paidThrough)) ||
       (sub.status === 'CANCELLED' && paidThrough);
-    const plan = live ? await this.plans.get(sub.plan) : undefined;
-    // An upgrade whose difference did not go through: the plan paid for.
-    if (plan && sub.upgradeUnpaid && sub.upgradeFrom) {
-      return (await this.plans.get(sub.upgradeFrom)) ?? plan;
+    // An upgrade whose difference did not go through: the plan paid for -
+    // also when Dodo puts the subscription on hold over it, for as long as
+    // the period that was paid lasts.
+    if (
+      sub.upgradeUnpaid &&
+      sub.upgradeFrom &&
+      (sub.status === 'ACTIVE' || (sub.status === 'PAST_DUE' && paidThrough))
+    ) {
+      const paid = await this.plans.get(sub.upgradeFrom);
+      if (paid) return paid;
     }
+    const plan = live ? await this.plans.get(sub.plan) : undefined;
     return plan ?? (await this.plans.free());
   }
 
@@ -474,6 +497,9 @@ export class BillingService {
         /** An upgrade's difference did not go through: the plan it came from applies. */
         upgradeUnpaid: sub.upgradeUnpaid && Boolean(sub.upgradeFrom),
         upgradeFrom: sub.upgradeFrom,
+        /** A change waiting for the next billing date. */
+        scheduledPlan: sub.scheduledPlan,
+        scheduledInterval: sub.scheduledInterval,
         /** Billed through Dodo: can be cancelled, resumed or changed here. */
         hasSubscription: Boolean(sub.dodoSubscriptionId),
         /** Card or UPI can be updated in Dodo's customer portal. */
@@ -513,7 +539,7 @@ export class BillingService {
     regionRaw?: string,
   ): Promise<
     | { checkoutUrl: string }
-    | { done: 'resumed' | 'upgraded' }
+    | { done: 'resumed' | 'upgraded' | 'kept' }
     | { done: 'scheduled'; effectiveAt: Date | null }
   > {
     const plan = await this.plans.get(String(planKey ?? ''));
@@ -552,9 +578,20 @@ export class BillingService {
         return { done: 'resumed' };
       }
       if (samePlan) {
-        throw new BadRequestException(
-          `You are already on ${plan.name}${interval === 'year' ? ' yearly' : ''}.`,
-        );
+        // Their own plan again, with a change scheduled (here or in the
+        // customer portal): keep it - the change is dropped.
+        try {
+          await this.dodo.cancelScheduledChange(id, mode);
+        } catch {
+          throw new BadRequestException(
+            `You are already on ${plan.name}${interval === 'year' ? ' yearly' : ''}.`,
+          );
+        }
+        await this.prisma.subscription.update({
+          where: { userId },
+          data: NOTHING_SCHEDULED,
+        });
+        return { done: 'kept' };
       }
       const current = (await this.plans.get(sub.plan)) ?? plan;
       if (sub.status === 'CANCELLED') {
@@ -566,9 +603,23 @@ export class BillingService {
         );
       }
       const upgrade = isUpgrade(current, plan);
-      await this.dodo.changePlan(id, productId, upgrade, mode);
+      try {
+        await this.dodo.changePlan(id, productId, upgrade, mode);
+      } catch (err) {
+        if (!pendingChange(err)) throw err;
+        // A change is scheduled already: this one replaces it.
+        await this.dodo.cancelScheduledChange(id, mode);
+        await this.dodo.changePlan(id, productId, upgrade, mode);
+      }
       await this.sync(userId, await this.dodo.getSubscription(id, mode), {
         mode,
+      });
+      // Only the latest choice is waiting now.
+      await this.prisma.subscription.update({
+        where: { userId },
+        data: upgrade
+          ? NOTHING_SCHEDULED
+          : { scheduledPlan: plan.key, scheduledInterval: interval },
       });
       // It starts now; its difference is charged alongside. Remember what it
       // came from, in case that charge fails.
@@ -806,6 +857,17 @@ export class BillingService {
       (isNew ? checkoutCurrency(remote.metadata) : before.currency) ??
       remote.currency ??
       null;
+    // A scheduled change has applied once Dodo bills the plan it moved to.
+    const scheduledDone =
+      before.scheduledPlan === plan.key &&
+      (before.scheduledInterval ?? interval) === interval;
+    // Dodo may put the subscription on hold when an upgrade's difference
+    // fails: that is the upgrade's charge, not a missed renewal.
+    const upgradeOnHold =
+      !isNew &&
+      next.status === 'PAST_DUE' &&
+      before.status !== 'PAST_DUE' &&
+      recentUpgrade(before);
     const after = await this.prisma.subscription.update({
       where: { userId },
       data: {
@@ -822,6 +884,10 @@ export class BillingService {
           : before.currentPeriodEnd,
         pendingPlan: null,
         ...(isNew ? UPGRADE_SETTLED : {}),
+        ...(isNew || scheduledDone || next.status === 'EXPIRED'
+          ? NOTHING_SCHEDULED
+          : {}),
+        ...(upgradeOnHold ? { upgradeUnpaid: true } : {}),
       },
     });
     await this.announce(before, after, plan, isNew, opts.quiet);
@@ -991,6 +1057,8 @@ export class BillingService {
           ? `They keep ${plan.name} until ${nextDate}, then move to Free.`
           : 'The account is on Free now.',
       );
+    } else if (now === 'PAST_DUE' && after.upgradeUnpaid) {
+      if (!before.upgradeUnpaid) await this.tellUpgradeUnpaid(after);
     } else if (now === 'PAST_DUE') {
       await this.notify(
         userId,
@@ -1300,10 +1368,16 @@ export class BillingService {
     ) {
       return;
     }
-    await this.prisma.subscription.update({
+    const after = await this.prisma.subscription.update({
       where: { userId },
       data: { upgradeUnpaid: true },
     });
+    await this.tellUpgradeUnpaid(after);
+  }
+
+  /** The one email for an upgrade whose difference did not go through. */
+  private async tellUpgradeUnpaid(sub: Subscription) {
+    if (!sub.upgradeFrom) return;
     const [to, from] = await Promise.all([
       this.plans.get(sub.plan),
       this.plans.get(sub.upgradeFrom),
@@ -1311,7 +1385,7 @@ export class BillingService {
     const toName = to?.name ?? sub.plan;
     const fromName = from?.name ?? sub.upgradeFrom;
     await this.notify(
-      userId,
+      sub.userId,
       `The payment for ${toName} did not go through`,
       `We could not collect the difference for your move to ${toName}, so your account has ${fromName} for now - what you had paid for. ` +
         `Update your ${payMethod(sub)} from Billing ("Update payment method"); ${toName} switches back on as soon as a payment goes through. ` +
@@ -1877,6 +1951,7 @@ export class BillingService {
         dodoMode: switching ? null : sub.dodoMode,
         currentPeriodEnd: endsAt,
         ...UPGRADE_SETTLED,
+        ...NOTHING_SCHEDULED,
       },
     });
     if (switching || sub.status !== 'ACTIVE') {
@@ -1906,6 +1981,7 @@ export class BillingService {
         cancelAtPeriodEnd: false,
         currentPeriodEnd: null,
         ...UPGRADE_SETTLED,
+        ...NOTHING_SCHEDULED,
       },
     });
     if (sub.plan !== FREE_KEY && sub.status !== 'EXPIRED') {
