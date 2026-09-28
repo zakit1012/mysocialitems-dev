@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   BarChart3,
@@ -199,7 +199,20 @@ function SectionHead({ eyebrow, title, text }: { eyebrow: string; title: React.R
 }
 
 /** A screenshot in a light browser window. */
-function BrowserFrame({ src, alt, url, priority }: { src: string; alt: string; url: string; priority?: boolean }) {
+function BrowserFrame({
+  src,
+  alt,
+  url,
+  priority,
+  video,
+}: {
+  src: string;
+  alt: string;
+  url: string;
+  priority?: boolean;
+  /** A short looping clip played in place of the picture; `src` is its poster. */
+  video?: string;
+}) {
   return (
     <div className="overflow-hidden rounded-2xl border border-line bg-card shadow-[0_30px_80px_-20px_rgba(15,23,42,0.35)]">
       <div className="flex items-center gap-3 border-b border-line bg-sand px-4 py-2.5">
@@ -210,8 +223,47 @@ function BrowserFrame({ src, alt, url, priority }: { src: string; alt: string; u
         </span>
         <span className="min-w-0 flex-1 truncate rounded-md bg-card px-3 py-1 text-center text-[11px] text-hint">{url}</span>
       </div>
-      <Image src={src} alt={alt} width={2880} height={1800} priority={priority} sizes="(min-width: 1024px) 640px, 100vw" className="h-auto w-full" />
+      {video ? (
+        <LoopingClip src={video} poster={src} label={alt} />
+      ) : (
+        <Image src={src} alt={alt} width={2880} height={1800} priority={priority} sizes="(min-width: 1024px) 640px, 100vw" className="h-auto w-full" />
+      )}
     </div>
+  );
+}
+
+/**
+ * A silent clip that loops like a GIF, at a fraction of a GIF's size. Anyone
+ * who asked for less motion gets the poster, with the controls to play it.
+ */
+function LoopingClip({ src, poster, label }: { src: string; poster: string; label: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    const showControls = () => {
+      video.controls = true;
+    };
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) showControls();
+    else video.play().catch(showControls);
+  }, []);
+
+  return (
+    <video
+      ref={ref}
+      muted
+      loop
+      playsInline
+      preload="auto"
+      poster={poster}
+      aria-label={label}
+      width={1280}
+      height={800}
+      className="block h-auto w-full"
+    >
+      <source src={src} type="video/mp4" />
+    </video>
   );
 }
 
@@ -272,15 +324,15 @@ function Hero({ loggedIn }: { loggedIn: boolean }) {
 
         <div className="relative animate-fade-in-up delay-200 lg:-mr-24">
           <BrowserFrame
-            src="/marketing/editor.png"
-            alt="The widget editor: layout options on the left, a live preview of a review carousel on the right"
+            src="/marketing/create-widget-poster.webp"
+            video="/marketing/create-widget.mp4"
+            alt="Creating a widget: search for the business, pick it, choose a carousel design, then copy the one-line embed code"
             url={`${APP_DOMAIN}/dashboard`}
-            priority
           />
           {/* the same widget on a phone */}
           <div className="absolute -bottom-12 -left-6 hidden w-[150px] overflow-hidden rounded-[1.9rem] border-[7px] border-ink bg-white shadow-[0_24px_60px_-12px_rgba(15,23,42,0.45)] sm:block md:w-[170px]">
             <div className="relative aspect-[9/17]">
-              <Image src="/marketing/phone.png" alt="The review widget on a phone" fill sizes="170px" className="object-cover object-top" />
+              <Image src="/marketing/phone-blue.png" alt="The review widget on a phone" fill sizes="170px" className="object-cover object-top" />
             </div>
           </div>
           <div className="absolute -top-5 right-4 flex items-center gap-2 rounded-2xl border border-line bg-card px-3.5 py-2.5 text-xs font-semibold shadow-panel animate-float lg:right-28">
@@ -478,7 +530,7 @@ function Spotlights() {
             "Choose what shows: rating, photos, dates, buttons and their icons",
             "Save once. Your live site updates without touching the code again",
           ]}
-          image="/marketing/editor.png"
+          image="/marketing/editor-blue.png"
           alt="The widget editor with layout, content, colors and style tabs next to a live preview"
           url={`${APP_DOMAIN}/dashboard/widgets`}
         />
@@ -492,7 +544,7 @@ function Spotlights() {
             "Numbers per widget and per website",
             "A heads-up before you reach your plan's monthly views",
           ]}
-          image="/marketing/analytics.png"
+          image="/marketing/analytics-blue.png"
           alt="The analytics page with monthly views, button clicks and a chart of views per day"
           url={`${APP_DOMAIN}/dashboard/analytics`}
         />
