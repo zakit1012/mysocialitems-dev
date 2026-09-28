@@ -24,7 +24,7 @@ import { LogoMark, Wordmark } from "./Logo";
 import { Loader } from "./Loader";
 
 const LINKS = [
-  { href: "/dashboard", label: "Widgets", icon: LayoutGrid },
+  { href: "/dashboard", label: "My widgets", icon: LayoutGrid },
   { href: "/dashboard/analytics", label: "Analytics", icon: ChartColumn },
   { href: "/dashboard/get-reviews", label: "Get reviews", icon: QrCode },
   { href: "/dashboard/sources", label: "Sources", icon: Globe },
@@ -123,7 +123,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               const active =
                 pathname === link.href ||
                 (link.href !== "/dashboard" && pathname.startsWith(link.href)) ||
-                // A widget's own page belongs under Widgets.
+                // A widget's own page belongs under My widgets.
                 (link.href === "/dashboard" && wide && pathname !== "/dashboard/widgets/new");
               return (
                 <Link

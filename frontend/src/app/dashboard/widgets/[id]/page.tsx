@@ -22,9 +22,10 @@ import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
 import { WidgetEditor } from "@/components/widget/WidgetEditor";
 import { WidgetPreview, type PreviewData, type PreviewReview } from "@/components/widget/WidgetPreview";
-import { filtersOf, newProChoices, proMessage, toPayload, type WidgetSettings } from "@/lib/widget-settings";
+import { filtersOf, newProChoices, toPayload, type WidgetSettings } from "@/lib/widget-settings";
 import { useLeaveGuard } from "@/lib/use-leave-guard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ProLockedDialog } from "@/components/ProLockedDialog";
 import { timeAgo } from "@/lib/time";
 import { Loader } from "@/components/Loader";
 
@@ -85,6 +86,8 @@ function WidgetStudio() {
 
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null);
+  // The Pro choices that stopped a Save, shown in a modal until closed.
+  const [blocked, setBlocked] = useState<string[]>([]);
 
   const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(saved), [draft, saved]);
 
@@ -148,6 +151,17 @@ function WidgetStudio() {
 
   // Do not lose edits to a stray tab close or a click on the sidebar.
   const leaveGuard = useLeaveGuard(dirty && !saving);
+
+  // Back from upgrading in another tab: the new plan counts straight away.
+  useEffect(() => {
+    if (!token) return;
+    const onFocus = () =>
+      api<{ plan: { id: string; name: string; reviews: number } }>("/billing", { token })
+        .then((b) => setPlan({ id: b.plan.id, name: b.plan.name, reviews: b.plan.reviews }))
+        .catch(() => {});
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [token]);
   const isPaid = plan.id !== "" && plan.id !== "FREE";
   // A Free owner can preview up to 10 reviews - what an upgrade adds - while
   // the site shows the plan's own number.
@@ -170,7 +184,7 @@ function WidgetStudio() {
   async function save(): Promise<boolean> {
     if (!widget) return false;
     if (proLocked.length) {
-      setFlash({ ok: false, text: proMessage(proLocked) });
+      setBlocked(proLocked);
       return false;
     }
     setSaving(true);
@@ -214,7 +228,7 @@ function WidgetStudio() {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-24">
         <p className="text-sm text-coral">{loadError}</p>
-        <Link href="/dashboard" className="text-sm font-semibold text-brand hover:underline">Back to widgets</Link>
+        <Link href="/dashboard" className="text-sm font-semibold text-brand hover:underline">Back to my widgets</Link>
       </div>
     );
   }
@@ -239,7 +253,7 @@ function WidgetStudio() {
     <div className="animate-fade-in-up">
       <Link href="/dashboard" className="inline-flex items-center gap-1 text-xs font-medium text-muted transition hover:text-brand">
         <ChevronLeft className="h-3.5 w-3.5" />
-        Back to widgets
+        Back to my widgets
       </Link>
 
       {/* header */}
@@ -356,6 +370,7 @@ function WidgetStudio() {
         onCancel={leaveGuard.stay}
         onAlt={leaveGuard.leave}
       />
+      <ProLockedDialog choices={blocked} action="save" onClose={() => setBlocked([])} />
     </div>
   );
 }

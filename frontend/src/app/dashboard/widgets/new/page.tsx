@@ -14,11 +14,11 @@ import {
   DEFAULT_SETTINGS,
   PAID_DEFAULT_SORT,
   newProChoices,
-  proMessage,
   toPayload,
   type WidgetSettings,
 } from "@/lib/widget-settings";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ProLockedDialog } from "@/components/ProLockedDialog";
 import { Loader } from "@/components/Loader";
 import { useLeaveGuard } from "@/lib/use-leave-guard";
 
@@ -38,6 +38,8 @@ export default function NewWidgetPage() {
   const [place, setPlace] = useState<PlaceSuggestion | null>(null);
   const [sessionToken, setSessionToken] = useState("");
   const [error, setError] = useState("");
+  // The Pro choices that stopped a Create, shown in a modal until closed.
+  const [blocked, setBlocked] = useState<string[]>([]);
 
   const [status, setStatus] = useState<"idle" | "importing" | "preview" | "saving">("idle");
   const [engine, setEngine] = useState<EngineResponse | null>(null);
@@ -64,17 +66,25 @@ export default function NewWidgetPage() {
 
   useEffect(() => {
     if (!token) return;
-    api<{
-      plan: { id: string; name: string; reviews: number; widgets: number };
-      usage: { widgets: number };
-    }>("/billing", { token })
-      .then((b) => {
-        setPlan({ id: b.plan.id, name: b.plan.name, reviews: b.plan.reviews });
-        setWidgets({ used: b.usage.widgets, max: b.plan.widgets });
-        // A paid account's new widget starts on Newest.
-        if (b.plan.id !== "FREE") setSettings((s) => (s.sort ? s : { ...s, sort: PAID_DEFAULT_SORT }));
-      })
-      .catch(() => setWidgets(null));
+    const load = (first: boolean) =>
+      api<{
+        plan: { id: string; name: string; reviews: number; widgets: number };
+        usage: { widgets: number };
+      }>("/billing", { token })
+        .then((b) => {
+          setPlan({ id: b.plan.id, name: b.plan.name, reviews: b.plan.reviews });
+          setWidgets({ used: b.usage.widgets, max: b.plan.widgets });
+          // A paid account's new widget starts on Newest.
+          if (first && b.plan.id !== "FREE") setSettings((s) => (s.sort ? s : { ...s, sort: PAID_DEFAULT_SORT }));
+        })
+        .catch(() => {
+          if (first) setWidgets(null);
+        });
+    void load(true);
+    // Back from upgrading in another tab: the new plan counts straight away.
+    const onFocus = () => void load(false);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [token]);
 
   // Ticks while the single import request is in flight, so the spinner
@@ -130,7 +140,7 @@ export default function NewWidgetPage() {
   async function createWidget() {
     if (!place) return;
     if (proLocked.length) {
-      setError(proMessage(proLocked));
+      setBlocked(proLocked);
       return;
     }
     setStatus("saving");
@@ -187,7 +197,7 @@ export default function NewWidgetPage() {
     <div className="animate-fade-in-up">
       <Link href="/dashboard" className="inline-flex items-center gap-1 text-xs font-medium text-muted transition hover:text-brand">
         <ChevronLeft className="h-3.5 w-3.5" />
-        Back to widgets
+        Back to my widgets
       </Link>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
@@ -269,7 +279,7 @@ export default function NewWidgetPage() {
                 href="/dashboard"
                 className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-card px-4 py-2 text-[13px] font-semibold text-ink transition hover:bg-sand"
               >
-                Back to widgets
+                Back to my widgets
               </Link>
             </div>
           </div>
@@ -366,6 +376,7 @@ export default function NewWidgetPage() {
         onCancel={leaveGuard.stay}
         onAlt={leaveGuard.leave}
       />
+      <ProLockedDialog choices={blocked} action="create" onClose={() => setBlocked([])} />
     </div>
   );
 }

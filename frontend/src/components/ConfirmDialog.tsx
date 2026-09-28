@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { TriangleAlert } from "lucide-react";
 
 /**
@@ -35,6 +35,8 @@ export function ConfirmDialog({
   icon?: React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // Two dialogs can sit on one page; each needs its own title id.
+  const titleId = useId();
 
   useEffect(() => {
     const dialog = ref.current;
@@ -46,7 +48,7 @@ export function ConfirmDialog({
   return (
     <dialog
       ref={ref}
-      aria-labelledby="confirm-title"
+      aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault();
         onCancel();
@@ -64,7 +66,7 @@ export function ConfirmDialog({
         >
           {icon ?? <TriangleAlert className="h-5 w-5" />}
         </span>
-        <h2 id="confirm-title" className="mt-4 text-lg font-bold tracking-tight">
+        <h2 id={titleId} className="mt-4 text-lg font-bold tracking-tight">
           {title}
         </h2>
         {message && <div className="mt-1.5 text-sm leading-relaxed text-muted">{message}</div>}

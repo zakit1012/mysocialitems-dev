@@ -212,14 +212,6 @@ export function newProChoices(next: WidgetSettings, saved?: WidgetSettings, revi
 export const filtersOf = (s: WidgetSettings) =>
   JSON.stringify([s.excludeWords ?? "", s.includeWords ?? "", s.photosOnly === true]);
 
-/** "X is part of Pro..." for one or more choices, as the API words it. */
-export function proMessage(labels: string[]): string {
-  const list =
-    labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}` : labels[0];
-  const them = labels.length > 1 ? "them" : "it";
-  return `${list.charAt(0).toUpperCase()}${list.slice(1)} ${labels.length > 1 ? "are" : "is"} part of Pro. Upgrade to use ${them}, or switch ${them} off to save.`;
-}
-
 export const SORT_OPTIONS: { value: Sort; label: string }[] = [
   { value: "newest", label: "Newest first (recommended)" },
   { value: "mostRelevant", label: "Most relevant" },
