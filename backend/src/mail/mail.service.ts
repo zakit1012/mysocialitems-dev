@@ -163,13 +163,16 @@ function setupHint(r: Setup): string {
   return parts.join(' ');
 }
 
-type Kind = 'login' | 'signup' | 'password' | 'notice' | 'test';
-type CodePurpose = 'login' | 'signup' | 'password';
+type Kind = 'login' | 'signup' | 'password' | 'delete' | 'notice' | 'test';
+type CodePurpose = 'login' | 'signup' | 'password' | 'delete';
 
-/** Subject, heading and first line of each code email. */
+const IGNORE_CODE =
+  'If you did not ask for this code, you can ignore this email - nobody can sign in without it.';
+
+/** Subject, heading and first line of each code email, and what to do if it was not you. */
 const CODE_EMAIL: Record<
   CodePurpose,
-  { subject: string; heading: string; lead: string }
+  { subject: string; heading: string; lead: string; ignore?: string }
 > = {
   login: {
     subject: `Your ${PRODUCT_NAME} login code`,
@@ -185,6 +188,13 @@ const CODE_EMAIL: Record<
     subject: `Reset your ${PRODUCT_NAME} password`,
     heading: 'Reset your password',
     lead: 'Enter this code in your account settings to set a new password.',
+  },
+  delete: {
+    subject: `Code to delete your ${PRODUCT_NAME} account`,
+    heading: 'Delete your account',
+    lead: 'Enter this code under Account to delete your account, its widgets and any subscription.',
+    ignore:
+      'If you did not ask for this, do not share the code - your account stays as it is. Someone may know your password, so change it under Account.',
   },
 };
 type Message = { to: string; subject: string; text: string; html: string };
@@ -458,10 +468,13 @@ export class MailService implements OnModuleInit {
   }
 
   async sendCode(email: string, code: string, purpose: CodePurpose) {
-    const { subject, heading, lead } = CODE_EMAIL[purpose];
-    const text =
-      `Your ${PRODUCT_NAME} code is ${code}. It expires in 10 minutes.\n\n` +
-      'If you did not ask for it, you can ignore this email - nobody can sign in without the code.';
+    const {
+      subject,
+      heading,
+      lead,
+      ignore = IGNORE_CODE,
+    } = CODE_EMAIL[purpose];
+    const text = `Your ${PRODUCT_NAME} code is ${code}. It expires in 10 minutes.\n\n${ignore}`;
 
     if (!this.transporter) {
       this.logger.warn(`DEV CODE for ${email} (${purpose}): ${code}`);
@@ -472,11 +485,7 @@ export class MailService implements OnModuleInit {
       `<div style="margin:24px 0;padding:20px 12px;border-radius:14px;background:${WASH};border:1px dashed #FDA4AF;text-align:center">` +
       `<div style="font:800 34px/1 'SFMono-Regular',Menlo,Consolas,monospace;letter-spacing:10px;color:${INK}">${escapeHtml(code)}</div>` +
       `<div style="margin-top:10px;font:13px/1.4 ${FONT};color:#64748B">Expires in 10 minutes</div></div>` +
-      paragraph(
-        'If you did not ask for this code, you can ignore this email - nobody can sign in without it.',
-        MUTED,
-        13,
-      );
+      paragraph(ignore, MUTED, 13);
 
     await this.deliver(purpose, {
       to: email,

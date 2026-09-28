@@ -1,15 +1,14 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
 import { KeyRound, Trash2, UserRound } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { User } from "@/lib/types";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Spinner } from "@/components/Spinner";
 import { Loader } from "@/components/Loader";
 import { useCooldown } from "@/lib/use-cooldown";
+import { siteHref } from "@/lib/site";
 
 type Session = { user: User; token: string };
 type Flash = { ok: boolean; text: string } | null;
@@ -40,7 +39,7 @@ export default function AccountPage() {
       <div className="space-y-6">
         <ProfileCard user={user} />
         <PasswordCard email={user.email} />
-        <DeleteCard isAdmin={user.role === "ADMIN"} />
+        <DeleteCard email={user.email} isAdmin={user.role === "ADMIN"} />
       </div>
     </div>
   );
@@ -242,28 +241,51 @@ function PasswordCard({ email }: { email: string }) {
   );
 }
 
-function DeleteCard({ isAdmin }: { isAdmin: boolean }) {
+function DeleteCard({ email, isAdmin }: { email: string; isAdmin: boolean }) {
   const { token, logout } = useAuth();
-  const router = useRouter();
-  const [password, setPassword] = useState("");
-  const [typed, setTyped] = useState("");
-  const [asking, setAsking] = useState(false);
+  // A code to the account's email, not the password: a shared password
+  // must not be enough to delete the account.
+  const [codeSent, setCodeSent] = useState(false);
+  const [code, setCode] = useState("");
+  const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<Flash>(null);
-  const ready = password.length > 0 && typed === "DELETE";
+  // Matches the API's 30 seconds between codes to one address.
+  const [wait, startWait] = useCooldown(30);
 
-  async function remove() {
-    setAsking(false);
+  async function sendCode() {
+    setSending(true);
+    setFlash(null);
+    try {
+      await api("/account/delete/code", { method: "POST", token });
+      setCodeSent(true);
+      startWait();
+      setFlash({ ok: true, text: `We sent a 6-digit code to ${email}. It works for 10 minutes.` });
+    } catch (err) {
+      setFlash({ ok: false, text: message(err, "Could not send the code") });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function remove(e: FormEvent) {
+    e.preventDefault();
     setBusy(true);
     setFlash(null);
     try {
-      await api("/account", { method: "DELETE", token, body: JSON.stringify({ password, confirm: typed }) });
+      await api("/account", { method: "DELETE", token, body: JSON.stringify({ code }) });
       logout();
-      router.replace("/");
+      window.location.assign(siteHref("/"));
     } catch (err) {
       setFlash({ ok: false, text: message(err, "Could not delete the account") });
       setBusy(false);
     }
+  }
+
+  function cancel() {
+    setCodeSent(false);
+    setCode("");
+    setFlash(null);
   }
 
   return (
@@ -282,39 +304,52 @@ function DeleteCard({ isAdmin }: { isAdmin: boolean }) {
       </div>
       {isAdmin ? (
         <p className="text-[13px] text-muted">Admin accounts cannot be deleted here. Make another account admin first, then remove your admin role.</p>
+      ) : !codeSent ? (
+        <button
+          type="button"
+          onClick={() => void sendCode()}
+          disabled={sending}
+          className="inline-flex items-center gap-2 rounded-lg border border-coral/40 px-4 py-2 text-[13px] font-semibold text-coral transition hover:bg-coral/10 disabled:opacity-50"
+        >
+          {sending ? <Spinner /> : <Trash2 className="h-4 w-4" />} Delete my account
+        </button>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className={label}>
-            Your password
-            <input className={field} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <form onSubmit={remove} className="flex flex-wrap items-end gap-3">
+          <label className={`${label} w-44`}>
+            Code from your email
+            <input
+              className={`${field} tracking-[0.3em]`}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              required
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="000000"
+            />
           </label>
-          <label className={label}>
-            Type DELETE to confirm
-            <input className={field} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="DELETE" />
-          </label>
-          <div className="sm:col-span-2">
-            <button
-              type="button"
-              onClick={() => setAsking(true)}
-              disabled={!ready || busy}
-              className="inline-flex items-center gap-2 rounded-lg bg-coral px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-coral-dark disabled:opacity-40"
-            >
-              {busy ? <Spinner /> : <Trash2 className="h-4 w-4" />} Delete my account
-            </button>
-          </div>
-        </div>
+          <button
+            type="submit"
+            disabled={busy || code.length !== 6}
+            className="inline-flex items-center gap-2 rounded-lg bg-coral px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-coral-dark disabled:opacity-40"
+          >
+            {busy ? <Spinner /> : <Trash2 className="h-4 w-4" />} Delete account
+          </button>
+          <button
+            type="button"
+            onClick={() => void sendCode()}
+            disabled={sending || wait > 0}
+            className="px-1 py-2 text-[13px] font-medium text-brand disabled:text-muted"
+          >
+            {wait > 0 ? `Resend code in ${wait}s` : "Resend code"}
+          </button>
+          <button type="button" onClick={cancel} className="px-1 py-2 text-[13px] font-medium text-muted hover:text-ink">
+            Cancel
+          </button>
+        </form>
       )}
       <Note flash={flash} />
-      <ConfirmDialog
-        open={asking}
-        danger
-        title="Delete your account for good?"
-        message="Everything goes: widgets, domains, settings and your subscription. There is no way to get it back."
-        confirmLabel="Delete everything"
-        cancelLabel="Keep my account"
-        onCancel={() => setAsking(false)}
-        onConfirm={remove}
-      />
     </section>
   );
 }

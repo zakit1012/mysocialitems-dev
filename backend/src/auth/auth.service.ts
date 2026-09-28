@@ -224,7 +224,7 @@ export class AuthService {
   private sendInBackground(
     email: string,
     code: string,
-    purpose: 'signup' | 'login' | 'password',
+    purpose: 'signup' | 'login' | 'password' | 'delete',
   ) {
     void this.mail
       .sendCode(email, code, purpose)
@@ -416,11 +416,52 @@ export class AuthService {
   }
 
   /**
-   * Deletes the account and everything in it (widgets, domains, settings).
-   * A running subscription is cancelled first, so nothing is charged again;
-   * payment records stay, without the account, for the books.
+   * Step 1 of deleting an account: a code to the account's own email. A
+   * password is not enough - it may be shared - so only whoever reads that
+   * inbox can delete the account.
    */
-  async deleteAccount(userId: string, password: string) {
+  async sendDeleteCode(userId: string) {
+    const user = await this.deletable(userId);
+    await this.guardSends(user.email);
+    const code = this.makeCode();
+    await this.redis.setJson(
+      this.accountDeleteKey(userId),
+      { code },
+      RESET_TTL,
+    );
+    await this.redis.del(`${this.accountDeleteKey(userId)}:tries`);
+    this.sendInBackground(user.email, code, 'delete');
+    return { pending: true, email: user.email };
+  }
+
+  /**
+   * Step 2: with the code, deletes the account and everything in it
+   * (widgets, domains, settings). A running subscription is cancelled first,
+   * so nothing is charged again - if that fails, nothing is deleted. Payment
+   * records stay, without the account, for the books.
+   */
+  async deleteAccount(userId: string, code: string) {
+    const user = await this.deletable(userId);
+    const key = this.accountDeleteKey(userId);
+    await this.guardAttempts(key, RESET_TTL);
+    const pending = await this.redis.getJson<{ code: string }>(key);
+    if (!pending || pending.code !== code) {
+      throw new BadRequestException('Invalid or expired code');
+    }
+    await this.billing.closeForDeletion(userId);
+    await this.prisma.user.delete({ where: { id: userId } });
+    await this.redis.del(key);
+    await this.redis.del(`${key}:tries`);
+    void this.mail.send(user.email, 'Your account is deleted', [
+      `Hi ${user.name},`,
+      `Your ${PRODUCT_NAME} account, widgets and settings are deleted, and any subscription is cancelled - you will not be charged again. Your widgets no longer show on your website.`,
+      `Thank you for trying ${PRODUCT_NAME}.`,
+    ]);
+    return { ok: true };
+  }
+
+  /** The account, if it may be deleted here (admins cannot be). */
+  private async deletable(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
     if (user.role === 'ADMIN') {
@@ -428,17 +469,11 @@ export class AuthService {
         'Admin accounts cannot be deleted here. Make another account admin first, then remove the role.',
       );
     }
-    if (!(await bcrypt.compare(password, user.password))) {
-      throw new BadRequestException('Your password is not right.');
-    }
-    await this.billing.closeForDeletion(userId);
-    await this.prisma.user.delete({ where: { id: userId } });
-    void this.mail.send(user.email, 'Your account is deleted', [
-      `Hi ${user.name},`,
-      `Your ${PRODUCT_NAME} account, widgets and settings are deleted, and any subscription is cancelled - you will not be charged again. Your widgets no longer show on your website.`,
-      `Thank you for trying ${PRODUCT_NAME}.`,
-    ]);
-    return { ok: true };
+    return user;
+  }
+
+  private accountDeleteKey(userId: string) {
+    return `account-delete:${userId}`;
   }
 
   private passwordResetKey(userId: string) {

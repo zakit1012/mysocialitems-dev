@@ -55,8 +55,14 @@ export class AccountController {
     return this.auth.resetPassword(user.id, dto.code, dto.newPassword);
   }
 
+  /** Sends a code to the account's email; deleting waits for that code. */
+  @Post('delete/code')
+  deleteCode(@CurrentUser() user: AuthUser) {
+    return this.auth.sendDeleteCode(user.id);
+  }
+
   @Delete()
   remove(@CurrentUser() user: AuthUser, @Body() dto: DeleteAccountDto) {
-    return this.auth.deleteAccount(user.id, dto.password);
+    return this.auth.deleteAccount(user.id, dto.code);
   }
 }

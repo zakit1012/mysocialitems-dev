@@ -1,4 +1,4 @@
-import { IsIn, IsString, Length, MaxLength, MinLength } from 'class-validator';
+import { IsString, Length, MaxLength, MinLength } from 'class-validator';
 
 export class ProfileDto {
   @IsString()
@@ -32,13 +32,9 @@ export class ResetPasswordDto {
   newPassword: string;
 }
 
+/** The code emailed to the account; a password alone cannot delete it. */
 export class DeleteAccountDto {
   @IsString()
-  @MinLength(1)
-  @MaxLength(200)
-  password: string;
-
-  /** Typed by the user, so a stray click cannot delete an account. */
-  @IsIn(['DELETE'])
-  confirm: string;
+  @Length(6, 6)
+  code: string;
 }
