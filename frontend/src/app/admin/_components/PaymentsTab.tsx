@@ -45,7 +45,12 @@ export function PaymentsTab({ token }: { token: string | null }) {
   const [rows, setRows] = useState<Payment[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [refund, setRefund] = useState<{ payment: Payment; amount: string } | null>(null);
+  // cancel: null follows the default - on for a full refund, off for part of one.
+  const [refund, setRefund] = useState<{ payment: Payment; amount: string; cancel: boolean | null } | null>(null);
+  const leftOf = (p: Payment) => p.amountCents - p.refundedCents;
+  const isFull = (r: { payment: Payment; amount: string }) =>
+    Math.round(Number(r.amount) * 100) >= leftOf(r.payment);
+  const cancelToo = (r: { payment: Payment; amount: string; cancel: boolean | null }) => r.cancel ?? isFull(r);
   const [busy, setBusy] = useState("");
 
   const fetchPayments = useCallback(
@@ -88,20 +93,25 @@ export function PaymentsTab({ token }: { token: string | null }) {
   async function doRefund() {
     if (!refund) return;
     const { payment, amount } = refund;
+    const cancel = cancelToo(refund);
     setRefund(null);
     setBusy(payment.id);
     setMsg(null);
     try {
-      const r = await api<{ pending: boolean }>(`/admin/billing/payments/${payment.id}/refund`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({ amount }),
-      });
+      const r = await api<{ pending: boolean; cancelled: boolean; cancelNote: string | null }>(
+        `/admin/billing/payments/${payment.id}/refund`,
+        { method: "POST", token, body: JSON.stringify({ amount, cancel }) },
+      );
+      const refunded = r.pending
+        ? `Refund of ${amount} ${payment.currency} on ${payment.number} sent to Dodo. It shows here, and the customer is emailed, once Dodo completes it.`
+        : `Refunded ${amount} ${payment.currency} on ${payment.number}. The customer has been emailed.`;
       setMsg({
-        ok: true,
-        text: r.pending
-          ? `Refund of ${amount} ${payment.currency} on ${payment.number} sent to Dodo. It shows here, and the customer is emailed, once Dodo completes it.`
-          : `Refunded ${amount} ${payment.currency} on ${payment.number}. The customer has been emailed.`,
+        ok: !cancel || r.cancelled,
+        text: !cancel
+          ? refunded
+          : r.cancelled
+            ? `${refunded} Their subscription is cancelled too: they are on Free and will not be charged again.`
+            : `${refunded} The subscription was not cancelled: ${r.cancelNote ?? "unknown reason"}`,
       });
       await load(mode);
     } catch (e) {
@@ -224,7 +234,7 @@ export function PaymentsTab({ token }: { token: string | null }) {
                         <button
                           type="button"
                           disabled={Boolean(busy)}
-                          onClick={() => setRefund({ payment: p, amount: (left / 100).toFixed(2) })}
+                          onClick={() => setRefund({ payment: p, amount: (left / 100).toFixed(2), cancel: null })}
                           className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[12px] text-coral hover:bg-coral/5 disabled:opacity-50"
                         >
                           {busy === p.id ? <Spinner className="h-3 w-3" /> : <RotateCcw className="h-3 w-3" />} Refund
@@ -250,8 +260,7 @@ export function PaymentsTab({ token }: { token: string | null }) {
                 {refund.payment.customerName} paid {fmtCents(refund.payment.amountCents, refund.payment.currency)}
                 {refund.payment.refundedCents > 0 &&
                   ` (${fmtCents(refund.payment.refundedCents, refund.payment.currency)} already refunded)`}
-                . Dodo sends the money back to their card or UPI; this cannot be undone. Refunding does not cancel
-                the subscription - use Subscriptions for that.
+                . Dodo sends the money back to their card or UPI; this cannot be undone.
               </p>
               <label className="mt-3 block text-[12.5px] font-semibold text-ink">
                 Amount in {refund.payment.currency}
@@ -264,6 +273,18 @@ export function PaymentsTab({ token }: { token: string | null }) {
                   onChange={(e) => setRefund({ ...refund, amount: e.target.value })}
                   className="mt-1 w-full rounded-lg border border-line bg-white px-3 py-2 text-[13px] outline-none focus:border-brand"
                 />
+              </label>
+              <label className="mt-3 flex items-start gap-2.5 text-[12.5px] text-ink">
+                <input
+                  type="checkbox"
+                  checked={cancelToo(refund)}
+                  onChange={(e) => setRefund({ ...refund, cancel: e.target.checked })}
+                  className="mt-0.5 h-4 w-4 accent-brand"
+                />
+                <span>
+                  <b>Also cancel their subscription now.</b> They move to Free at once and are not charged again.
+                  Done after the refund, and only if this payment is for their current subscription.
+                </span>
               </label>
             </>
           )

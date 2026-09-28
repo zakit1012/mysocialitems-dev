@@ -66,9 +66,13 @@ export class AdminBillingController {
     return this.billing.adminPayments(mode);
   }
 
+  /** `cancel: true` also stops their subscription, once the refund is sent. */
   @Post('payments/:id/refund')
-  refund(@Param('id') id: string, @Body() body: { amount?: unknown }) {
-    return this.billing.adminRefund(id, body?.amount);
+  refund(
+    @Param('id') id: string,
+    @Body() body: { amount?: unknown; cancel?: unknown },
+  ) {
+    return this.billing.adminRefund(id, body?.amount, body?.cancel === true);
   }
 
   @Get('invoice-settings')

@@ -1927,7 +1927,7 @@ export class BillingService {
   }
 
   /** Refund all that is left of a payment, or `amount` (in its currency) of it. */
-  async adminRefund(paymentId: string, amountRaw?: unknown) {
+  async adminRefund(paymentId: string, amountRaw?: unknown, cancel = false) {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
     });
@@ -1970,13 +1970,58 @@ export class BillingService {
     if (refund.status === 'succeeded') {
       await this.applyRefund(payment, refund.refund_id, cents);
     }
+    // The refund first, then the subscription: a cancel that fails must not
+    // keep the money from going back.
+    const stopped = cancel ? await this.cancelForRefund(payment) : null;
     return {
       payment: await this.prisma.payment.findUnique({
         where: { id: paymentId },
       }),
       // Dodo may review a refund first; the webhook books it when it clears.
       pending: refund.status !== 'succeeded',
+      cancelled: stopped?.cancelled ?? false,
+      /** Why the subscription was not cancelled, when it was asked for. */
+      cancelNote: stopped?.note ?? null,
     };
+  }
+
+  /**
+   * Stops the subscription a refunded payment was for, so the customer is
+   * not charged again - only if it is still their current one.
+   */
+  private async cancelForRefund(
+    payment: Payment,
+  ): Promise<{ cancelled: boolean; note: string | null }> {
+    if (!payment.userId) {
+      return { cancelled: false, note: 'The account is deleted already.' };
+    }
+    const sub = await this.prisma.subscription.findUnique({
+      where: { userId: payment.userId },
+    });
+    if (
+      !sub?.dodoSubscriptionId ||
+      sub.dodoSubscriptionId !== payment.dodoSubscriptionId
+    ) {
+      return {
+        cancelled: false,
+        note: 'This payment is not for their current subscription, so that was left as it is.',
+      };
+    }
+    if (sub.plan === FREE_KEY || sub.status === 'EXPIRED') {
+      return {
+        cancelled: false,
+        note: 'Their subscription had ended already.',
+      };
+    }
+    try {
+      await this.adminCancel(payment.userId);
+      return { cancelled: true, note: null };
+    } catch (err) {
+      return {
+        cancelled: false,
+        note: `Dodo did not cancel it (${err instanceof Error ? err.message : String(err)}). Cancel it from Subscriptions.`,
+      };
+    }
   }
 
   adminInvoiceSettings() {
