@@ -56,6 +56,10 @@ export default function PrivacyPage() {
         </li>
         <li>We count clicks on the widget&apos;s buttons. We do not set cookies on visitors&apos; devices.</li>
         <li>
+          When someone opens a business&apos;s review link or scans its QR code, we count the open for that day and
+          send them on to Google. We keep the count, not who opened it.
+        </li>
+        <li>
           Reviewer profile photos and review photos in a widget load straight from Google&apos;s image servers,
           so Google receives the visitor&apos;s IP address for those images, under Google&apos;s own privacy policy.
         </li>
@@ -78,8 +82,9 @@ export default function PrivacyPage() {
           Server logs with IP addresses and request details, kept for security and troubleshooting.
         </li>
         <li>
-          Your browser keeps a sign-in token in local storage so you stay logged in. We use no advertising or
-          tracking cookies.
+          Your browser keeps a sign-in token in local storage so you stay logged in, and a small cookie saying
+          that you are signed in (with your first name), so our home page can show your dashboard link. It is
+          removed when you log out. We use no advertising or tracking cookies.
         </li>
       </ul>
 

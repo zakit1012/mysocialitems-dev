@@ -19,7 +19,7 @@ export const LEGAL = {
   /** Courts of this city hear disputes; blank = the courts of India. */
   city: "",
   /** Change whenever a policy's text changes. */
-  updated: "26 September 2026",
+  updated: "28 September 2026",
 };
 
 /** A field's value, or a visible placeholder while it is still blank. */
