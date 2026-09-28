@@ -25,6 +25,18 @@ const PRO = {
   dodoYearlyIdLive: null,
 };
 
+const BUSINESS = {
+  key: 'BUSINESS',
+  name: 'Business',
+  active: true,
+  priceUsd: 10,
+  priceYearlyUsd: 100,
+  dodoMonthlyIdTest: 'prod_test_biz',
+  dodoMonthlyIdLive: 'prod_live_biz',
+  dodoYearlyIdTest: null,
+  dodoYearlyIdLive: 'prod_live_biz_year',
+};
+
 type Row = Record<string, unknown>;
 
 function setup(
@@ -103,7 +115,9 @@ function setup(
   };
   const plans = {
     get: jest.fn((key: string) =>
-      Promise.resolve(key === 'PRO' ? { ...pro } : FREE),
+      Promise.resolve(
+        key === 'PRO' ? { ...pro } : key === 'BUSINESS' ? BUSINESS : FREE,
+      ),
     ),
     byDodoProduct: jest.fn(() =>
       Promise.resolve({ plan: { ...pro }, yearly: false }),
@@ -162,6 +176,54 @@ const checkoutOf = (dodo: ReturnType<typeof setup>['dodo']) =>
   dodo.createCheckout.mock.calls[0] as unknown as [
     { india: boolean; productId: string; metadata: Record<string, string> },
   ];
+
+describe('when a plan change starts', () => {
+  /** Whether the change was sent to Dodo as an upgrade (at once). */
+  const startsNow = (dodo: ReturnType<typeof setup>['dodo']) =>
+    (dodo.changePlan.mock.calls[0] as unknown as [string, string, boolean])[2];
+
+  it('starts a dearer plan now', async () => {
+    const { service, dodo } = setup({
+      sub: { plan: 'PRO', dodoSubscriptionId: 'sub_1', pendingPlan: null },
+    });
+    await service.startCheckout('u1', 'BUSINESS', 'month');
+    expect(startsNow(dodo)).toBe(true);
+  });
+
+  it('moves monthly to yearly at the next billing date', async () => {
+    const { service, dodo } = setup({
+      sub: { plan: 'PRO', dodoSubscriptionId: 'sub_1', pendingPlan: null },
+      pro: { dodoYearlyIdLive: 'prod_live_pro_year' },
+    });
+    await service.startCheckout('u1', 'PRO', 'year');
+    expect(startsNow(dodo)).toBe(false);
+  });
+
+  it('moves yearly to monthly at the end of the paid year', async () => {
+    const { service, dodo } = setup({
+      sub: {
+        plan: 'PRO',
+        interval: 'year',
+        dodoSubscriptionId: 'sub_1',
+        pendingPlan: null,
+      },
+    });
+    await service.startCheckout('u1', 'PRO', 'month');
+    expect(startsNow(dodo)).toBe(false);
+  });
+
+  it('moves to a cheaper plan at the next billing date', async () => {
+    const { service, dodo } = setup({
+      sub: {
+        plan: 'BUSINESS',
+        dodoSubscriptionId: 'sub_1',
+        pendingPlan: null,
+      },
+    });
+    await service.startCheckout('u1', 'PRO', 'month');
+    expect(startsNow(dodo)).toBe(false);
+  });
+});
 
 describe('one dollar price for everyone', () => {
   it('sends a checkout from India to the dollar product, in rupees with UPI', async () => {

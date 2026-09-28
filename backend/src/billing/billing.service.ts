@@ -109,9 +109,12 @@ const checkoutCurrency = (metadata?: Record<string, string>) =>
     ? metadata.currency
     : null;
 
-/** What a plan costs over a year on a period, to tell an upgrade from a downgrade. */
-const yearlyValue = (plan: Plan, interval: string) =>
-  interval === 'year' ? plan.priceYearlyUsd : plan.priceUsd * 12;
+/**
+ * A move to a dearer plan starts now (an upgrade). A cheaper plan, or the
+ * same plan billed monthly instead of yearly or the other way round, starts
+ * at the next billing date: what is paid for runs out first.
+ */
+const isUpgrade = (from: Plan, to: Plan) => to.priceUsd > from.priceUsd;
 
 /**
  * Our state for a Dodo subscription. A failed renewal first opens Dodo's
@@ -539,8 +542,7 @@ export class BillingService {
           mode,
         );
       }
-      const upgrade =
-        yearlyValue(plan, interval) > yearlyValue(current, sub.interval);
+      const upgrade = isUpgrade(current, plan);
       await this.dodo.changePlan(id, productId, upgrade, mode);
       await this.sync(userId, await this.dodo.getSubscription(id, mode), {
         mode,

@@ -289,9 +289,11 @@ export class DodoClient {
   }
 
   /**
-   * Moves a subscription to another product. An upgrade is charged now
-   * (credit for unused time, then the new price) and stays on the old plan
-   * if that charge fails; a downgrade waits for the next billing date.
+   * Moves a subscription to another product. An upgrade applies at once -
+   * nobody waits days for a UPI or card mandate to settle - and the
+   * difference (credit for unused time, then the new price) is charged
+   * alongside. A downgrade applies at the next billing date, which is then
+   * charged the new plan's full price (the only mode Dodo allows there).
    */
   changePlan(id: string, productId: string, upgrade: boolean, mode?: DodoMode) {
     return this.request<unknown>(
@@ -302,12 +304,12 @@ export class DodoClient {
             product_id: productId,
             quantity: 1,
             proration_billing_mode: 'prorated_immediately',
-            on_payment_failure: 'prevent_change',
+            on_payment_failure: 'apply_change',
           }
         : {
             product_id: productId,
             quantity: 1,
-            proration_billing_mode: 'do_not_bill',
+            proration_billing_mode: 'full_immediately',
             effective_at: 'next_billing_date',
           },
       mode,

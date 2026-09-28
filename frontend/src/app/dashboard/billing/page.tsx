@@ -41,8 +41,11 @@ function guessRegion(): Region {
   }
 }
 
-/** What a plan costs over a year on a period, to tell an upgrade from a downgrade. */
-const yearlyValue = (p: PlanCard, every: Interval) => (every === "year" ? p.priceYearlyUsd : p.priceUsd * 12);
+/**
+ * A dearer plan starts now (an upgrade); a cheaper one, or the same plan on
+ * another billing period, at the next billing date. Matches the server.
+ */
+const isUpgrade = (from: PlanCard, to: PlanCard) => to.priceUsd > from.priceUsd;
 
 type CheckoutResult =
   | { checkoutUrl: string }
@@ -232,8 +235,43 @@ function Billing() {
     const running = Boolean(sub.hasSubscription) && (sub.status === "ACTIVE" || sub.status === "CANCELLED");
     if (!running) return void checkout(p.id, every);
     const current = data.plans.find((x) => x.id === sub.plan);
-    const upgrade = !current || yearlyValue(p, every) > yearlyValue(current, sub.interval ?? "month");
+    const upgrade = !current || isUpgrade(current, p);
     setChange({ plan: p, every, upgrade });
+  }
+
+  /** A notice at the top of the page, scrolled into view: the plan cards that lead here sit far below it. */
+  function announce(next: { kind: "ok" | "bad"; text: string }) {
+    setNotice(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // An upgrade applies at once on Dodo; if its news is a moment late, the
+  // page says it is switching and checks back, so it can say "done" without a reload.
+  const [switchingTo, setSwitchingTo] = useState<string | null>(null);
+  const watching = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearInterval(watching.current), []);
+
+  function watchUpgrade(planId: string, name: string) {
+    window.clearInterval(watching.current);
+    setSwitchingTo(name);
+    let checks = 0;
+    watching.current = window.setInterval(() => {
+      checks++;
+      fetchBilling()
+        .then(([overview, paid]) => {
+          if (overview.subscription.plan !== planId) return;
+          window.clearInterval(watching.current);
+          setSwitchingTo(null);
+          show([overview, paid]);
+          announce({ kind: "ok", text: `You are on ${name} now. Its limits apply straight away.` });
+        })
+        .catch(() => undefined);
+      // Two minutes; after that a reload shows it, and the email says so.
+      if (checks >= 24) {
+        window.clearInterval(watching.current);
+        setSwitchingTo(null);
+      }
+    }, 5000);
   }
 
   async function checkout(plan: string, every: Interval) {
@@ -251,21 +289,25 @@ function Billing() {
         return;
       }
       const name = data?.plans.find((x) => x.id === plan)?.name ?? plan;
-      setNotice({
-        kind: "ok",
-        text:
-          r.done === "resumed"
-            ? "Welcome back - your plan continues."
-            : r.done === "upgraded"
-              ? data?.subscription.currency === "INR"
-                ? `Moving you to ${name}. The difference is charged to your saved card or UPI, and the new limits switch on as soon as it goes through (this can take up to 2 days).`
-                : `Moving you to ${name}. The difference is charged to your saved card, and the new limits switch on as soon as it goes through.`
-              : `Done - you move to ${name}${"effectiveAt" in r && r.effectiveAt ? ` on ${fmtDay(r.effectiveAt)}` : " at your next billing date"}. Until then you keep your current plan.`,
-      });
-      await load();
+      const [overview, paid] = await fetchBilling();
+      show([overview, paid]);
       setBusy("");
+      if (r.done === "resumed") {
+        announce({ kind: "ok", text: "Welcome back - your plan continues." });
+      } else if (r.done === "upgraded" && overview.subscription.plan === plan) {
+        announce({ kind: "ok", text: `You are on ${name} now. Its limits apply straight away.` });
+      } else if (r.done === "upgraded") {
+        // The switch is immediate on Dodo; this only covers its news arriving a moment late.
+        announce({ kind: "ok", text: `Switching you to ${name} - it shows here in a moment.` });
+        watchUpgrade(plan, name);
+      } else {
+        announce({
+          kind: "ok",
+          text: `Done - you move to ${name}${"effectiveAt" in r && r.effectiveAt ? ` on ${fmtDay(r.effectiveAt)}` : " at your next billing date"}. Until then you keep your current plan.`,
+        });
+      }
     } catch (err) {
-      setNotice({ kind: "bad", text: err instanceof Error ? err.message : "Could not start checkout" });
+      announce({ kind: "bad", text: err instanceof Error ? err.message : "Could not change your plan" });
       setBusy("");
     }
   }
@@ -420,6 +462,11 @@ function Billing() {
                         ? "Active"
                         : "Free forever"}
             </p>
+            {switchingTo && (
+              <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-800">
+                <Spinner /> Switching to {switchingTo}...
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             {subscription.canManagePayment && (
@@ -465,7 +512,7 @@ function Billing() {
         message={
           change &&
           (change.upgrade
-            ? `You pay the difference now for the rest of your current period, from your saved card or UPI. After that it renews at ${price(change.plan, change.every)} a ${change.every}. The new limits apply as soon as the payment goes through.`
+            ? `${change.plan.name} starts right away. The difference for the rest of your current period is charged to your saved ${subscription.currency === "INR" ? "card or UPI" : "card"}; after that it renews at ${price(change.plan, change.every)} a ${change.every}.`
             : `Nothing is charged today. Your ${planName} plan continues until ${renews ?? "your next billing date"}; from then you pay ${price(change.plan, change.every)} a ${change.every} for ${change.plan.name}.`)
         }
         confirmLabel={change?.upgrade ? "Switch now" : "Schedule the change"}
