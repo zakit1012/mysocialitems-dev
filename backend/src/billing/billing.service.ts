@@ -63,6 +63,7 @@ const WEBHOOK_EVENTS = [
   'subscription.expired',
   'subscription.failed',
   'payment.succeeded',
+  'payment.failed',
   'refund.succeeded',
   'dispute.lost',
 ];
@@ -99,6 +100,21 @@ const fmtViews = (views: number) =>
 /** How the customer pays: UPI is for rupee subscriptions only. */
 const payMethod = (sub: { currency: string | null }) =>
   sub.currency === 'INR' ? 'card or UPI' : 'card';
+
+// A failed charge this soon after an upgrade is taken as the upgrade's own.
+const UPGRADE_CHARGE_WINDOW_MS = 7 * 86_400_000;
+/** No longer waiting on an upgrade's charge. */
+const UPGRADE_SETTLED = {
+  upgradeFrom: null,
+  upgradeAt: null,
+  upgradeUnpaid: false,
+} as const;
+
+/** A charge made at or after `since` (with a minute for clocks that differ); undated counts. */
+const madeSince = (payment: DodoPayment, since: Date | null) =>
+  !since ||
+  !payment.created_at ||
+  Date.parse(payment.created_at) >= since.getTime() - 60_000;
 
 /** A string field from an untrusted webhook payload, or ''. */
 const text = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -213,6 +229,10 @@ export class BillingService {
           paidThrough)) ||
       (sub.status === 'CANCELLED' && paidThrough);
     const plan = live ? await this.plans.get(sub.plan) : undefined;
+    // An upgrade whose difference did not go through: the plan paid for.
+    if (plan && sub.upgradeUnpaid && sub.upgradeFrom) {
+      return (await this.plans.get(sub.upgradeFrom)) ?? plan;
+    }
     return plan ?? (await this.plans.free());
   }
 
@@ -451,6 +471,9 @@ export class BillingService {
         pendingPlan: sub.pendingPlan,
         interval: sub.interval,
         currency,
+        /** An upgrade's difference did not go through: the plan it came from applies. */
+        upgradeUnpaid: sub.upgradeUnpaid && Boolean(sub.upgradeFrom),
+        upgradeFrom: sub.upgradeFrom,
         /** Billed through Dodo: can be cancelled, resumed or changed here. */
         hasSubscription: Boolean(sub.dodoSubscriptionId),
         /** Card or UPI can be updated in Dodo's customer portal. */
@@ -547,6 +570,18 @@ export class BillingService {
       await this.sync(userId, await this.dodo.getSubscription(id, mode), {
         mode,
       });
+      // It starts now; its difference is charged alongside. Remember what it
+      // came from, in case that charge fails.
+      if (upgrade) {
+        await this.prisma.subscription.update({
+          where: { userId },
+          data: {
+            upgradeFrom: current.key,
+            upgradeAt: new Date(),
+            upgradeUnpaid: false,
+          },
+        });
+      }
       return upgrade
         ? { done: 'upgraded' }
         : { done: 'scheduled', effectiveAt: sub.currentPeriodEnd };
@@ -786,6 +821,7 @@ export class BillingService {
           ? new Date(remote.next_billing_date)
           : before.currentPeriodEnd,
         pendingPlan: null,
+        ...(isNew ? UPGRADE_SETTLED : {}),
       },
     });
     await this.announce(before, after, plan, isNew, opts.quiet);
@@ -1159,6 +1195,10 @@ export class BillingService {
       await this.paymentReceived(userId, data as unknown as DodoPayment, mode);
       return;
     }
+    if (type === 'payment.failed') {
+      await this.upgradeChargeFailed(userId, data as unknown as DodoPayment);
+      return;
+    }
     if (type === 'refund.succeeded') {
       const refund = data as unknown as DodoRefund;
       const paid = await this.prisma.payment.findFirst({
@@ -1198,10 +1238,22 @@ export class BillingService {
     const before = await this.subscriptionFor(userId);
     // Quiet: the receipt below says "active again" itself.
     if (remote) await this.sync(userId, remote, { quiet: true, mode });
+    // A charge made since an upgrade settles it: its plan is paid for now.
+    const settles =
+      Boolean(before.upgradeFrom) &&
+      payment.subscription_id === before.dodoSubscriptionId &&
+      madeSince(payment, before.upgradeAt);
+    if (settles) {
+      await this.prisma.subscription.update({
+        where: { userId },
+        data: UPGRADE_SETTLED,
+      });
+    }
     const after = await this.subscriptionFor(userId);
     const back =
-      (before.status === 'PAST_DUE' || before.status === 'SUSPENDED') &&
-      after.status === 'ACTIVE';
+      ((before.status === 'PAST_DUE' || before.status === 'SUSPENDED') &&
+        after.status === 'ACTIVE') ||
+      (settles && before.upgradeUnpaid);
     // The first charge of a subscription comes with the welcome email; it
     // needs no "continues as before".
     const first =
@@ -1227,6 +1279,43 @@ export class BillingService {
         label: row.invoiceUrl ? 'Download invoice' : 'View receipt',
         url: row.invoiceUrl ?? `${this.appUrl()}/invoice/${row.id}`,
       },
+    );
+  }
+
+  /**
+   * A charge failed. If it is the difference for a recent upgrade, the
+   * account goes back to the plan it had paid for until a payment goes
+   * through, and the customer is told. Anything else (a renewal) is handled
+   * by the subscription's own news (past due, on hold).
+   */
+  private async upgradeChargeFailed(userId: string, payment: DodoPayment) {
+    const sub = await this.subscriptionFor(userId);
+    if (
+      !sub.upgradeFrom ||
+      !sub.upgradeAt ||
+      sub.upgradeUnpaid ||
+      payment.subscription_id !== sub.dodoSubscriptionId ||
+      Date.now() - sub.upgradeAt.getTime() > UPGRADE_CHARGE_WINDOW_MS ||
+      !madeSince(payment, sub.upgradeAt)
+    ) {
+      return;
+    }
+    await this.prisma.subscription.update({
+      where: { userId },
+      data: { upgradeUnpaid: true },
+    });
+    const [to, from] = await Promise.all([
+      this.plans.get(sub.plan),
+      this.plans.get(sub.upgradeFrom),
+    ]);
+    const toName = to?.name ?? sub.plan;
+    const fromName = from?.name ?? sub.upgradeFrom;
+    await this.notify(
+      userId,
+      `The payment for ${toName} did not go through`,
+      `We could not collect the difference for your move to ${toName}, so your account has ${fromName} for now - what you had paid for. ` +
+        `Update your ${payMethod(sub)} from Billing ("Update payment method"); ${toName} switches back on as soon as a payment goes through. ` +
+        `To stay on ${fromName} instead, choose it in Billing.`,
     );
   }
 
@@ -1787,6 +1876,7 @@ export class BillingService {
         dodoSubscriptionId: switching ? null : sub.dodoSubscriptionId,
         dodoMode: switching ? null : sub.dodoMode,
         currentPeriodEnd: endsAt,
+        ...UPGRADE_SETTLED,
       },
     });
     if (switching || sub.status !== 'ACTIVE') {
@@ -1815,6 +1905,7 @@ export class BillingService {
         dodoMode: null,
         cancelAtPeriodEnd: false,
         currentPeriodEnd: null,
+        ...UPGRADE_SETTLED,
       },
     });
     if (sub.plan !== FREE_KEY && sub.status !== 'EXPIRED') {

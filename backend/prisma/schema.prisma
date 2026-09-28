@@ -218,6 +218,13 @@ model Subscription {
   currentPeriodEnd     DateTime?
   /// Cancelled, but paid up until currentPeriodEnd.
   cancelAtPeriodEnd    Boolean   @default(false)
+  /// An upgrade starts at once, before its difference is paid: the plan it
+  /// came from and when. If that charge fails (upgradeUnpaid), the account
+  /// has upgradeFrom's limits - what was paid for - until a payment goes
+  /// through. Cleared by the next successful payment.
+  upgradeFrom          String?
+  upgradeAt            DateTime?
+  upgradeUnpaid        Boolean   @default(false)
   /// month | year
   interval             String    @default("month")
   /// Printed on invoices under "Billed to" (all optional).

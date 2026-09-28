@@ -64,6 +64,9 @@ type Overview = {
     pendingPlan: string | null;
     interval?: Interval;
     currency?: string | null;
+    /** An upgrade's difference did not go through: upgradeFrom's limits apply until it does. */
+    upgradeUnpaid?: boolean;
+    upgradeFrom?: string | null;
     /** Billed through Dodo: can be cancelled, resumed or changed here. */
     hasSubscription?: boolean;
     /** Card or UPI can be updated in Dodo's customer portal. */
@@ -396,6 +399,8 @@ function Billing() {
   const every: Interval = period ?? subscription.interval ?? "month";
   // Overdue or paused accounts are on Free limits; the dialog names the plan they pay for.
   const planName = data.plans.find((p) => p.id === subscription.plan)?.name ?? plan.name;
+  const subscribedTo =
+    subscription.hasSubscription && subscription.status !== "EXPIRED" ? subscription.plan : plan.id;
   const renews = subscription.currentPeriodEnd
     ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
     : null;
@@ -462,6 +467,13 @@ function Billing() {
                         ? "Active"
                         : "Free forever"}
             </p>
+            {subscription.upgradeUnpaid && (
+              <p className="mt-2 max-w-xl rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] leading-relaxed text-amber-800">
+                The payment for {planName} did not go through, so you have {plan.name} - what you paid for - until it
+                does. Update your {subscription.currency === "INR" ? "card or UPI" : "card"} and {planName} switches back
+                on. To stay on {plan.name}, choose it below.
+              </p>
+            )}
             {switchingTo && (
               <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-800">
                 <Spinner /> Switching to {switchingTo}...
@@ -563,10 +575,12 @@ function Billing() {
       <div className="grid gap-4 md:grid-cols-3">
         {data.plans.map((p) => {
           const free = p.id === "FREE";
-          // The plan in force (a cancelled plan runs to the end of its period),
-          // on the billing period shown.
-          const current = p.id === plan.id && (free || (subscription.interval ?? "month") === every);
-          const samePlanOtherPeriod = p.id === plan.id && !free && !current;
+          // The plan subscribed to (a cancelled plan runs to the end of its
+          // period), on the billing period shown - even while its limits are
+          // lower (an unpaid upgrade, an overdue renewal), so the plan they
+          // have instead stays a choice.
+          const current = p.id === subscribedTo && (free || (subscription.interval ?? "month") === every);
+          const samePlanOtherPeriod = p.id === subscribedTo && !free && !current;
           const yearly = every === "year" && !free;
           const available = yearly ? p.availableYearly : p.available;
           const resumable = !free && subscription.status === "CANCELLED" && Boolean(renews) && Boolean(available);
