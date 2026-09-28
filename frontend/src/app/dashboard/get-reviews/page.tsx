@@ -371,11 +371,11 @@ function Tools({
           <p className="text-sm text-muted">Print it for your counter, tables, menus or receipts. Customers scan and review.</p>
 
           <div className="mt-4 flex flex-wrap items-center gap-4">
-            <span className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl border border-line bg-sand">
+            <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-line bg-sand p-1.5">
               {business.logo ? (
                 // A data URL the browser already has; next/image adds nothing here.
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={business.logo} alt="Your logo" className="h-full w-full object-contain p-1.5" />
+                <img src={business.logo} alt="Your logo" className="max-h-full max-w-full object-contain" />
               ) : (
                 <ImagePlus className="h-6 w-6 text-hint" />
               )}

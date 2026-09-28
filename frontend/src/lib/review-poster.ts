@@ -58,6 +58,17 @@ function drawContained(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: 
   ctx.drawImage(img, x + (size - w) / 2, y + (size - h) / 2, w, h);
 }
 
+/**
+ * Draws the whole image inside a circle: the largest rectangle of its shape
+ * whose corners stay in the circle, so a tall or wide logo is never cut.
+ */
+function drawInCircle(ctx: CanvasRenderingContext2D, img: HTMLImageElement, cx: number, cy: number, r: number) {
+  const aspect = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+  const h = (2 * r) / Math.sqrt(1 + aspect * aspect);
+  const w = h * aspect;
+  ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+}
+
 /** Lines of text that fit a width, at most `max` lines (the last one ellipsed). */
 function wrap(ctx: CanvasRenderingContext2D, text: string, width: number, max: number): string[] {
   const words = text.split(/\s+/).filter(Boolean);
@@ -173,12 +184,8 @@ export async function drawPoster(canvas: HTMLCanvasElement, o: PosterOptions) {
     ctx.beginPath();
     ctx.arc(W / 2, top + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(W / 2, top + logoSize / 2, logoSize / 2 - 14, 0, Math.PI * 2);
-    ctx.clip();
-    drawContained(ctx, o.logo, W / 2 - logoSize / 2 + 22, top + 22, logoSize - 44);
-    ctx.restore();
+    // A little inside the white circle, so the logo keeps a margin.
+    drawInCircle(ctx, o.logo, W / 2, top + logoSize / 2, logoSize / 2 - 22);
   }
   // Dark text on a light colour, white on a dark one.
   ctx.fillStyle = luminance(color) > 0.6 ? "#111827" : "#ffffff";
