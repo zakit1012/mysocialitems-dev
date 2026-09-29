@@ -5,6 +5,7 @@ import { FileSpreadsheet } from "lucide-react";
 import { api } from "@/lib/api";
 import { fmt, isEmail, parseCsv, type Category } from "../_lib";
 import { CategoryPicker, Modal } from "../_ui";
+import { readXlsx } from "./_xlsx";
 
 export type UploadResult = { added: number; existing: number; invalid: number };
 
@@ -44,17 +45,13 @@ export async function uploadContacts(
 
 type Sheet = { name: string; rows: string[][] };
 
-const cellText = (v: unknown) => (v === null || v === undefined ? "" : v instanceof Date ? v.toISOString().slice(0, 10) : String(v)).trim();
-
 async function readFile(file: File): Promise<Sheet[]> {
   const lower = file.name.toLowerCase();
   if (lower.endsWith(".csv") || lower.endsWith(".txt")) {
     return [{ name: file.name, rows: parseCsv(await file.text()) }];
   }
   if (lower.endsWith(".xlsx")) {
-    const { default: readXlsxFile } = await import("read-excel-file/browser");
-    const sheets = await readXlsxFile(file);
-    return sheets.map((s) => ({ name: s.sheet, rows: s.data.map((row) => row.map(cellText)) }));
+    return readXlsx(file);
   }
   if (lower.endsWith(".xls")) {
     throw new Error("Old .xls files cannot be read. In Excel, choose File > Save As > Excel Workbook (.xlsx) or CSV.");
