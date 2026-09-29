@@ -17,6 +17,13 @@ type AuthContextValue = {
   user: User | null;
   token: string | null;
   loading: boolean;
+  /**
+   * Signed in, but the server could not be reached to say so (a restart, no
+   * internet). Pages wait and retry instead of sending anyone to log in.
+   */
+  unreachable: boolean;
+  /** Tries the sign-in again now (it also retries by itself). */
+  retry: () => void;
   login: (email: string, password: string) => Promise<User>;
   requestLoginCode: (email: string) => Promise<void>;
   loginWithCode: (email: string, code: string) => Promise<User>;
@@ -40,38 +47,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unreachable, setUnreachable] = useState(false);
 
-  useEffect(() => {
+  /**
+   * Swaps the stored token for a fresh one: every visit restarts the 7 days,
+   * so only someone away for a week has to sign in again. Nothing stored:
+   * signed out, settled in the same callback as the rest.
+   */
+  const check = useCallback(() => {
     const stored = localStorage.getItem("sd_token");
-    // Swap the stored token for a fresh one: every visit restarts the 7 days,
-    // so only someone away for a week has to sign in again. Nothing stored:
-    // signed out, settled in the same callback as the rest.
     const settle = stored
       ? api<{ user: User; token: string }>("/auth/refresh", { method: "POST", token: stored })
           .then((r) => {
             localStorage.setItem("sd_token", r.token);
             setToken(r.token);
             setUser(r.user);
+            setUnreachable(false);
             noteSignedIn(r.user.name);
           })
           .catch((err) => {
             // Only a rejected token signs out. A server that is down for a
-            // minute must not log everyone out: keep it for the next visit.
+            // minute must not log everyone out: keep it, and try again.
             if (err instanceof ApiError && err.status === 401) {
               localStorage.removeItem("sd_token");
+              setUnreachable(false);
               noteSignedOut();
             } else {
               setToken(stored);
+              setUnreachable(true);
             }
           })
-      : Promise.resolve().then(noteSignedOut);
-    void settle.finally(() => setLoading(false));
+      : Promise.resolve().then(() => {
+          setUnreachable(false);
+          noteSignedOut();
+        });
+    return settle.finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    void check();
+  }, [check]);
+
+  // Unreachable: try again every ten seconds, and as soon as the internet is back.
+  useEffect(() => {
+    if (!unreachable) return;
+    const again = () => void check();
+    const timer = window.setInterval(again, 10_000);
+    window.addEventListener("online", again);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("online", again);
+    };
+  }, [unreachable, check]);
+
+  const retry = useCallback(() => void check(), [check]);
 
   const persist = useCallback((nextUser: User, nextToken: string) => {
     localStorage.setItem("sd_token", nextToken);
     setUser(nextUser);
     setToken(nextToken);
+    setUnreachable(false);
     noteSignedIn(nextUser.name);
   }, []);
 
@@ -148,6 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("sd_token");
     setUser(null);
     setToken(null);
+    setUnreachable(false);
     noteSignedOut();
   }, []);
 
@@ -156,6 +192,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       token,
       loading,
+      unreachable,
+      retry,
       login,
       requestLoginCode,
       loginWithCode,
@@ -169,6 +207,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       token,
       loading,
+      unreachable,
+      retry,
       login,
       requestLoginCode,
       loginWithCode,

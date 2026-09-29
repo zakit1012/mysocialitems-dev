@@ -22,6 +22,7 @@ import { LogoutButton } from "./LogoutButton";
 import { SITE, adminHref, siteHref } from "@/lib/site";
 import { LogoMark, Wordmark } from "./Logo";
 import { Loader } from "./Loader";
+import { Unreachable } from "./Unreachable";
 
 const LINKS = [
   { href: "/dashboard", label: "My widgets", icon: LayoutGrid },
@@ -33,18 +34,18 @@ const LINKS = [
 ];
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, unreachable } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   // Phones: the menu folds into a button in a slim top bar.
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !user && !unreachable) {
       // Back to this same page after signing in, not the dashboard's front.
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
-  }, [loading, user, router, pathname]);
+  }, [loading, user, unreachable, router, pathname]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -60,6 +61,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       <Loader full label="Loading your dashboard" />
     );
   }
+
+  if (!user && unreachable) return <Unreachable />;
 
   if (!user) {
     return (

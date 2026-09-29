@@ -5,6 +5,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 // Some Google hosts resolve to IPv6 first. Without a working IPv6 route,
 // Node's fetch hangs on those addresses until it times out, so prefer IPv4.
@@ -97,8 +98,11 @@ async function bootstrap() {
     }),
   );
 
+  // The catch-all first, so the Prisma one takes the errors it knows.
+  const adapter = app.get(HttpAdapterHost).httpAdapter;
   app.useGlobalFilters(
-    new PrismaExceptionFilter(app.get(HttpAdapterHost).httpAdapter),
+    new AllExceptionsFilter(adapter),
+    new PrismaExceptionFilter(adapter),
   );
 
   // Lets Prisma and Redis close cleanly when pm2 restarts the process.

@@ -38,8 +38,6 @@ type Business = {
   posterColor: string | null;
   /** The short review link (widgetpop.com/r/...): opens Google's review form and is counted. */
   link: string;
-  opens30: number;
-  opensTotal: number;
 };
 
 const DEFAULT_HEADLINE = "Enjoyed your visit?";
@@ -311,16 +309,8 @@ function Tools({
         )}
 
         <section className="rounded-2xl border border-line bg-card p-5 shadow-card">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="font-bold">Your review link</h2>
-              <p className="text-sm text-muted">Opens the Google review form for {name} straight away.</p>
-            </div>
-            <div className="shrink-0 rounded-xl bg-sand px-3 py-2 text-right">
-              <p className="text-lg font-black leading-none tabular-nums">{business.opens30.toLocaleString()}</p>
-              <p className="mt-1 text-[11px] font-medium text-muted">opens in 30 days</p>
-            </div>
-          </div>
+          <h2 className="font-bold">Your review link</h2>
+          <p className="text-sm text-muted">Opens the Google review form for {name} straight away.</p>
           <div className="mt-3 flex gap-2">
             <input
               readOnly
@@ -360,8 +350,11 @@ function Tools({
             </a>
           </div>
           <p className="mt-3 text-xs leading-relaxed text-hint">
-            Every time someone opens this link or scans the QR code below, it counts ({business.opensTotal.toLocaleString()}{" "}
-            in all). Posters printed before these counts began still work, but go straight to Google - print a new one to
+            See how often it is opened, and the QR code below scanned, under{" "}
+            <Link href="/dashboard/analytics" className="font-semibold text-brand hover:underline">
+              Analytics
+            </Link>
+            . Posters printed before these counts began still work, but go straight to Google - print a new one to
             count its scans.
           </p>
         </section>

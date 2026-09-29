@@ -95,6 +95,11 @@ export class AdminController {
     return this.admin.sources();
   }
 
+  @Delete('users/:id')
+  deleteUser(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+    return this.admin.deleteUser(me.id, id);
+  }
+
   @Patch('users/:id/role')
   setRole(
     @CurrentUser() me: AuthUser,

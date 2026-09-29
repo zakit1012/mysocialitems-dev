@@ -7,8 +7,8 @@ export function AdminTable({ head, children, empty }: { head: string[]; children
       <table className="w-full min-w-[720px] text-[13px]">
         <thead>
           <tr className="border-b border-line bg-sand/60 text-left text-[11px] uppercase tracking-wide text-muted">
-            {head.map((h) => (
-              <th key={h} className="px-4 py-3 font-bold">
+            {head.map((h, i) => (
+              <th key={i} className="px-4 py-3 font-bold">
                 {h}
               </th>
             ))}

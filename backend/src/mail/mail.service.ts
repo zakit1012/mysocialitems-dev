@@ -8,16 +8,16 @@ import { PRODUCT_NAME, SUPPORT_EMAIL } from '../common/product';
 import { adminUrl, appUrl, siteUrl } from '../common/urls';
 import { PrismaService } from '../prisma/prisma.service';
 import { bounceHint } from './bounces';
-
-// Brand colours, the same as the website.
-const BRAND = '#0096D6';
-const BRAND_FROM = '#38BDF8';
-const INK = '#1E293B';
-const TEXT = '#334155';
-const MUTED = '#94A3B8';
-const WASH = '#E6F4FB';
-const FONT =
-  "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+import {
+  BRAND,
+  BRAND_FROM,
+  FONT,
+  INK,
+  MUTED,
+  TEXT,
+  WASH,
+  escapeHtml,
+} from './brand';
 
 const EMAIL = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
 
@@ -566,12 +566,74 @@ export class MailService implements OnModuleInit {
     }
   }
 
+  /** Whether emails can go out at all (SMTP is set up). */
+  get ready(): boolean {
+    return this.transporter !== null;
+  }
+
+  /**
+   * A campaign email in the frame every email shares: the same header and
+   * card, and a footer that says why they get it and how to stop.
+   */
+  campaignHtml(input: {
+    preheader: string;
+    heading: string;
+    body: string;
+    unsubscribeUrl: string;
+    pixelUrl?: string;
+  }) {
+    const link = `color:${MUTED};text-decoration:underline`;
+    return this.layout({
+      preheader: input.preheader,
+      heading: input.heading,
+      body: input.body,
+      pixel: input.pixelUrl,
+      footer:
+        `You are getting this email because you are on the ${PRODUCT_NAME} mailing list.<br>` +
+        `<a href="${escapeHtml(input.unsubscribeUrl)}" style="${link}">Unsubscribe</a> from these emails.<br>` +
+        `Questions? Write to <a href="mailto:${SUPPORT_EMAIL}" style="${link}">${SUPPORT_EMAIL}</a>.<br>`,
+    });
+  }
+
+  /**
+   * One campaign email. Not in the email log (a campaign keeps its own list);
+   * says how to unsubscribe in one click, as Gmail and Yahoo ask of bulk mail.
+   * Returns our Message-ID; a failure is thrown for the campaign to record.
+   */
+  async sendCampaign(
+    message: Message & { unsubscribeUrl: string },
+  ): Promise<string> {
+    if (!this.transporter) throw new Error('SMTP is not set up.');
+    const { unsubscribeUrl, ...mail } = message;
+    const messageId = `<wpop-${randomUUID()}@${this.from.address.split('@')[1]}>`;
+    await this.transporter.sendMail({
+      from: this.from,
+      replyTo: SUPPORT_EMAIL,
+      envelope: { from: this.returnPath, to: mail.to },
+      messageId,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
+      ...mail,
+    });
+    return messageId;
+  }
+
   /**
    * The frame every email shares: the wordmark, a white card with a brand
    * stripe, and a quiet footer. Tables and inline styles only, because that
    * is all Gmail, Outlook and phone mail apps agree on.
    */
-  private layout(input: { preheader: string; heading: string; body: string }) {
+  private layout(input: {
+    preheader: string;
+    heading: string;
+    body: string;
+    /** Replaces the account footer (campaigns: why they get it, unsubscribe). */
+    footer?: string;
+    /** An image that counts the open (campaigns). */
+    pixel?: string;
+  }) {
     const year = new Date().getUTCFullYear();
     return (
       `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
@@ -598,12 +660,15 @@ export class MailService implements OnModuleInit {
       // Card
       `<tr><td style="background:#FFFFFF;border:1px solid #E9EBF0;border-top:5px solid ${BRAND};border-radius:18px">` +
       `<div style="padding:30px 32px 30px">` +
-      `<h1 style="margin:0 0 18px;font:800 22px/1.3 ${FONT};color:${INK};letter-spacing:-0.2px">${escapeHtml(input.heading)}</h1>` +
+      (input.heading
+        ? `<h1 style="margin:0 0 18px;font:800 22px/1.3 ${FONT};color:${INK};letter-spacing:-0.2px">${escapeHtml(input.heading)}</h1>`
+        : '') +
       input.body +
       `</div></td></tr>` +
       // Footer
       `<tr><td style="padding:22px 12px 8px;text-align:center;font:12px/1.7 ${FONT};color:${MUTED}">` +
-      `You are getting this email because you have an account at ${PRODUCT_NAME}.<br>` +
+      (input.footer ??
+        `You are getting this email because you have an account at ${PRODUCT_NAME}.<br>`) +
       `Questions? Write to <a href="mailto:${SUPPORT_EMAIL}" style="color:${MUTED};text-decoration:underline">${SUPPORT_EMAIL}</a>.<br>` +
       `<a href="${escapeHtml(this.app)}/dashboard" style="color:${MUTED};text-decoration:underline">Dashboard</a>` +
       ` &nbsp;&middot;&nbsp; ` +
@@ -611,7 +676,11 @@ export class MailService implements OnModuleInit {
       ` &nbsp;&middot;&nbsp; ` +
       `<a href="${escapeHtml(this.site)}/privacy" style="color:${MUTED};text-decoration:underline">Privacy</a>` +
       `<br>&copy; ${year} ${PRODUCT_NAME}` +
-      `</td></tr></table></td></tr></table></body></html>`
+      `</td></tr></table></td></tr></table>` +
+      (input.pixel
+        ? `<img src="${escapeHtml(input.pixel)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">`
+        : '') +
+      `</body></html>`
     );
   }
 }
@@ -630,13 +699,5 @@ function button(cta: { label: string; url: string }) {
     `</td></tr></table>` +
     `<p style="margin:14px 0 0;font:12px/1.6 ${FONT};color:${MUTED}">Button not working? Open this link:<br>` +
     `<a href="${escapeHtml(cta.url)}" style="color:${BRAND};word-break:break-all">${escapeHtml(cta.url)}</a></p>`
-  );
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(
-    /[&<>"]/g,
-    (c) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
   );
 }

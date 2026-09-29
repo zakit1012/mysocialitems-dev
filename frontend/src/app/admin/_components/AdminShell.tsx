@@ -12,6 +12,7 @@ import {
   LayoutGrid,
   LogOut,
   Mail,
+  Megaphone,
   Package,
   Receipt,
   ShieldAlert,
@@ -24,6 +25,7 @@ import { SITE, appHref } from "@/lib/site";
 import { LogoMark, Wordmark } from "@/components/Logo";
 import { TwoFactorGate } from "./TwoFactorGate";
 import { Loader } from "@/components/Loader";
+import { Unreachable } from "@/components/Unreachable";
 
 const NAV = [
   { href: "/admin", label: "Overview", icon: Gauge },
@@ -33,6 +35,7 @@ const NAV = [
   { href: "/admin/plans", label: "Plans", icon: Package },
   { href: "/admin/dodo", label: "Dodo Payments", icon: Wallet },
   { href: "/admin/emails", label: "Emails", icon: Mail },
+  { href: "/admin/campaigns", label: "Email campaigns", icon: Megaphone },
   { href: "/admin/widgets", label: "Widgets", icon: LayoutGrid },
   { href: "/admin/sources", label: "Sources", icon: Globe },
   { href: "/admin/hidden-reviews", label: "Hidden reviews", icon: EyeOff },
@@ -43,13 +46,15 @@ const NAV = [
  * dashboard, and only for accounts with the ADMIN role.
  */
 export function AdminShell({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, unreachable } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !user) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-  }, [loading, user, router, pathname]);
+    if (!loading && !user && !unreachable) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+  }, [loading, user, unreachable, router, pathname]);
+
+  if (!loading && !user && unreachable) return <Unreachable />;
 
   if (loading || !user) {
     return (

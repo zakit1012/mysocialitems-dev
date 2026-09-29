@@ -17,6 +17,7 @@ import { BillingModule } from './billing/billing.module';
 import { SettingsModule } from './settings/settings.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { ModerationModule } from './moderation/moderation.module';
+import { EmailCampaignsModule } from './email-campaigns/email-campaigns.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -43,6 +44,7 @@ import { AppService } from './app.service';
     BillingModule,
     AnalyticsModule,
     ModerationModule,
+    EmailCampaignsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -88,7 +88,8 @@ export class HiddenReviewsService {
 
   async remove(id: string) {
     const row = await this.prisma.hiddenReview.findUnique({ where: { id } });
-    if (!row) throw new NotFoundException();
+    if (!row)
+      throw new NotFoundException('That review is not hidden any more.');
     await this.prisma.hiddenReview.delete({ where: { id } });
     this.cache.delete(row.placeId);
     return { ok: true };

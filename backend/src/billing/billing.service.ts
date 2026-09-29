@@ -549,7 +549,7 @@ export class BillingService {
     const interval: BillingInterval = intervalRaw === 'year' ? 'year' : 'month';
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException();
+    if (!user) throw new NotFoundException('That account is gone.');
     const sub = await this.subscriptionFor(userId);
     const paidAhead = Boolean(
       sub.currentPeriodEnd && sub.currentPeriodEnd > new Date(),
@@ -1883,7 +1883,10 @@ export class BillingService {
    * Before an account is deleted: stop any running subscription at once, so
    * nobody is billed for an account that no longer exists.
    */
-  async closeForDeletion(userId: string) {
+  async closeForDeletion(
+    userId: string,
+    why = 'because they deleted their account',
+  ) {
     const sub = await this.prisma.subscription.findUnique({
       where: { userId },
     });
@@ -1896,7 +1899,7 @@ export class BillingService {
       const plan = await this.plans.get(sub.plan);
       await this.tellTeamCancelled(
         sub,
-        `${plan?.name ?? sub.plan} was cancelled because they deleted their account.`,
+        `${plan?.name ?? sub.plan} was cancelled ${why}.`,
         'It was stopped at once; no further charges.',
       );
     }

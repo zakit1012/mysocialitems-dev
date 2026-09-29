@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { Unreachable } from "@/components/Unreachable";
 import { fmtCents, fmtDay, PAYMENT_STATUS } from "@/lib/payments";
 import { appHref } from "@/lib/site";
 import { Loader } from "@/components/Loader";
@@ -33,14 +34,14 @@ type Invoice = {
  */
 export default function InvoicePage() {
   const { id } = useParams<{ id: string }>();
-  const { token, user, loading } = useAuth();
+  const { token, user, loading, unreachable } = useAuth();
   const router = useRouter();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!loading && !user) router.replace(`/login?next=/invoice/${id}`);
-  }, [loading, user, router, id]);
+    if (!loading && !user && !unreachable) router.replace(`/login?next=/invoice/${id}`);
+  }, [loading, user, unreachable, router, id]);
 
   useEffect(() => {
     if (!token) return;
@@ -52,6 +53,8 @@ export default function InvoicePage() {
       cancelled = true;
     };
   }, [token, id]);
+
+  if (!loading && !user && unreachable) return <Unreachable />;
 
   if (error) {
     return (

@@ -66,20 +66,6 @@ function setup(opts: { widgets?: Row[]; paid?: boolean } = {}) {
         else opens.push({ ...create });
         return Promise.resolve({});
       }),
-      groupBy: jest.fn(({ where }: { where: { day?: { gte: string } } }) => {
-        const sums = new Map<string, number>();
-        for (const o of opens) {
-          if (where.day && (o.day as string) < where.day.gte) continue;
-          const id = o.businessId as string;
-          sums.set(id, (sums.get(id) ?? 0) + (o.opens as number));
-        }
-        return Promise.resolve(
-          [...sums].map(([businessId, n]) => ({
-            businessId,
-            _sum: { opens: n },
-          })),
-        );
-      }),
     },
   };
   const billing = {
@@ -126,15 +112,15 @@ describe('businesses for the review tools', () => {
   });
 
   it('counts a person opening the link and sends them to Google', async () => {
-    const { service, businesses } = setup();
+    const { service, businesses, opens } = setup();
     await service.list('u1');
     const slug = businesses[0].slug as string;
     const url = await service.open(slug, BROWSER);
     expect(url).toBe('https://search.google.com/local/writereview?placeid=P1');
     await service.open(slug, BROWSER);
-    const [cafe] = await service.list('u1');
-    expect(cafe.opens30).toBe(2);
-    expect(cafe.opensTotal).toBe(2);
+    expect(opens).toEqual([
+      expect.objectContaining({ businessId: businesses[0].id, opens: 2 }),
+    ]);
   });
 
   it('does not count link previews and bots', async () => {

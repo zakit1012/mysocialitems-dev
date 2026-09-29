@@ -10,7 +10,7 @@ import {
   UseGuards,
   NotFoundException,
 } from '@nestjs/common';
-import { WidgetsService } from './widgets.service';
+import { WIDGET_GONE, WidgetsService } from './widgets.service';
 import { CreateWidgetDto } from './dto/create-widget.dto';
 import { UpdateWidgetDto } from './dto/update-widget.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -46,7 +46,7 @@ export class WidgetsController {
     @Query('sort') sort?: string,
   ) {
     const widget = await this.widgets.get(user.id, id);
-    if (!widget) throw new NotFoundException();
+    if (!widget) throw new NotFoundException(WIDGET_GONE);
     const plan = await this.billing.planFor(user.id);
     const paid = isPaidPlan(plan);
     const settings = normalizeSettings(widget.settings);
@@ -101,7 +101,7 @@ export class WidgetsController {
   @Get(':id')
   async get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const widget = await this.widgets.get(user.id, id);
-    if (!widget) throw new NotFoundException();
+    if (!widget) throw new NotFoundException(WIDGET_GONE);
     return this.widgets.asShown(user.id, widget);
   }
 

@@ -38,6 +38,7 @@ model User {
   subscription Subscription?
   usage        Usage[]
   payments     Payment[]
+  emailContact EmailContact?
 }
 
 /// Category, Deal, Favorite, Voucher and Review belong to the old deals app.
@@ -81,6 +82,7 @@ model Deal {
   @@index([city])
   @@index([categoryId])
   @@index([featured])
+  @@index([merchantId])
 }
 
 model Favorite {
@@ -93,6 +95,7 @@ model Favorite {
   deal Deal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@unique([userId, dealId])
+  @@index([dealId])
 }
 
 model Voucher {
@@ -108,6 +111,9 @@ model Voucher {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   deal Deal @relation(fields: [dealId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([dealId])
 }
 
 model Review {
@@ -122,6 +128,7 @@ model Review {
   deal Deal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@unique([userId, dealId])
+  @@index([dealId])
 }
 
 model Widget {
@@ -442,4 +449,132 @@ model ReviewLinkOpen {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@id([businessId, day])
+}
+
+// ---- Email campaigns: product news and alerts the admin sends in bulk
+
+/// Someone the admin can email about the product: an account holder (linked
+/// by userId and kept in step with the account), or an address added by hand
+/// or imported. Deleting the account removes the contact.
+model EmailContact {
+  id        String   @id @default(cuid())
+  /// Lower-case.
+  email     String   @unique
+  name      String?
+  userId    String?  @unique
+  /// USER (an account), MANUAL or IMPORT
+  source    String   @default("MANUAL")
+  createdAt DateTime @default(now())
+
+  user       User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories EmailCategoryMember[]
+}
+
+/// The admin's own groups of contacts ("Agencies", "Newsletter"), picked when
+/// adding or importing them and when choosing who a campaign goes to.
+model EmailCategory {
+  id        String                @id @default(cuid())
+  name      String                @unique
+  createdAt DateTime              @default(now())
+  members   EmailCategoryMember[]
+}
+
+model EmailCategoryMember {
+  contactId  String
+  categoryId String
+
+  contact  EmailContact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  category EmailCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, categoryId])
+  @@index([categoryId])
+}
+
+/// Addresses no campaign goes to: they unsubscribed, mail to them bounced, or
+/// the admin took them off. Account emails (codes, billing) still go out.
+model EmailSuppression {
+  /// Lower-case.
+  email     String   @id
+  /// UNSUBSCRIBED, BOUNCED or ADMIN
+  reason    String
+  createdAt DateTime @default(now())
+}
+
+/// A saved email: what goes between the fixed header and footer.
+model EmailTemplate {
+  id        String          @id @default(cuid())
+  name      String
+  subject   String
+  /// The inbox preview line next to the subject.
+  preheader String          @default("")
+  /// The big title at the top of the card; empty for none.
+  heading   String          @default("")
+  /// Simple formatting: # headings, **bold**, [links](https://...), lists,
+  /// [button: Label](https://...), images, > callouts, and {{name}}.
+  content   String
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  campaigns EmailCampaign[]
+}
+
+/// One send of an email to an audience. The email is copied in when it
+/// starts, so editing the template afterwards does not change what went out.
+/// Sent in the background, a few at a time (EMAIL_CAMPAIGN_PER_MINUTE).
+model EmailCampaign {
+  id         String    @id @default(cuid())
+  name       String
+  templateId String?
+  subject    String
+  preheader  String    @default("")
+  heading    String    @default("")
+  content    String
+  /// Who it was for: { segments: string[], categoryIds: string[] }
+  audience   Json
+  /// SENDING, SENT or STOPPED
+  status     String    @default("SENDING")
+  /// The admin who sent it.
+  sentBy     String?
+  /// Why sending is waiting (the mail server refused or could not be
+  /// reached); cleared by the next email that goes out.
+  lastError  String?
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  template   EmailTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  deliveries EmailDelivery[]
+
+  @@index([status])
+  @@index([templateId])
+}
+
+/// One recipient of a campaign: whether it went out, and whether it was opened.
+model EmailDelivery {
+  id          String    @id @default(cuid())
+  campaignId  String
+  /// Lower-case.
+  email       String
+  name        String?
+  /// In the open pixel and the unsubscribe link.
+  token       String    @unique
+  /// QUEUED, SENDING, SENT, FAILED, BOUNCED, or SKIPPED (unsubscribed
+  /// meanwhile, or the campaign was stopped)
+  status      String    @default("QUEUED")
+  error       String?
+  /// Times the receiving server said "try later" for this address.
+  attempts    Int       @default(0)
+  /// Ours (<wpop-...@domain>): how a bounce report finds it.
+  messageId   String?
+  attemptedAt DateTime?
+  sentAt      DateTime?
+  /// The first time its images loaded. Approximate: some apps load images
+  /// for privacy without anyone reading, others block them.
+  openedAt    DateTime?
+  opens       Int       @default(0)
+
+  campaign EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, email])
+  @@index([campaignId, status])
+  @@index([messageId])
+  @@index([email])
 }

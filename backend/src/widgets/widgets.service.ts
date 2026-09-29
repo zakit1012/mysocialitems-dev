@@ -20,6 +20,10 @@ import {
   type WidgetSettings,
 } from './widget-settings';
 
+/** A widget that is not in this account, or no longer exists. */
+export const WIDGET_GONE =
+  'That widget is not in your account. It may have been deleted.';
+
 /** Stored settings may predate the current format; always hand out the current one. */
 function withSettings<T extends { settings: unknown }>(widget: T): T {
   return { ...widget, settings: normalizeSettings(widget.settings) };
@@ -132,7 +136,7 @@ export class WidgetsService {
       where: { id, userId },
       select: { settings: true },
     });
-    if (!current) throw new NotFoundException('Widget not found.');
+    if (!current) throw new NotFoundException(WIDGET_GONE);
     if (dto.settings === undefined) return withSettings(current);
     const merged = mergeSettings(current.settings, dto.settings);
     await this.assertProAllowed(
@@ -152,7 +156,7 @@ export class WidgetsService {
     const { count } = await this.prisma.widget.deleteMany({
       where: { id, userId },
     });
-    if (!count) throw new NotFoundException('Widget not found.');
+    if (!count) throw new NotFoundException(WIDGET_GONE);
     return { ok: true };
   }
 }

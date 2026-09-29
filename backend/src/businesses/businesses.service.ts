@@ -17,7 +17,6 @@ import { siteUrl } from '../common/urls';
 /** Letters and digits nobody mixes up when typing a link off a poster. */
 const SLUG_CHARS = 'abcdefghijkmnpqrstuvwxyz23456789';
 const SLUG_LENGTH = 7;
-const DAY_MS = 86_400_000;
 /** Link previews and crawlers open links too; they are not people scanning. */
 const NOT_A_PERSON =
   /bot|crawl|spider|preview|facebookexternalhit|whatsapp|telegram|slack|discord|skype|linkedin|embedly|curl|wget|python|axios|node-fetch|go-http/i;
@@ -85,22 +84,7 @@ export class BusinessesService {
       }
     }
 
-    const ids = [...byPlace.values()].map((b) => b.id);
-    const since = statDay(new Date(Date.now() - 29 * DAY_MS));
-    const [total, recent] = await Promise.all([
-      this.prisma.reviewLinkOpen.groupBy({
-        by: ['businessId'],
-        where: { businessId: { in: ids } },
-        _sum: { opens: true },
-      }),
-      this.prisma.reviewLinkOpen.groupBy({
-        by: ['businessId'],
-        where: { businessId: { in: ids }, day: { gte: since } },
-        _sum: { opens: true },
-      }),
-    ]);
-    const sum = (rows: typeof total, id: string) =>
-      rows.find((r) => r.businessId === id)?._sum.opens ?? 0;
+    // How often each link is opened shows on the analytics page.
     const site = siteUrl(this.config);
 
     return [...places].map(([placeId, place]) => {
@@ -113,8 +97,6 @@ export class BusinessesService {
         logo: b.logo,
         posterColor: b.posterColor,
         link: `${site}/r/${b.slug}`,
-        opens30: sum(recent, b.id),
-        opensTotal: sum(total, b.id),
       };
     });
   }

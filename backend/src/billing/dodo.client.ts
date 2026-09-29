@@ -1,14 +1,36 @@
 import {
-  BadGatewayException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { SettingsService } from '../settings/settings.service';
 
 export type DodoMode = 'test' | 'live';
+
+/**
+ * Dodo said no, did not answer, or is not set up. Customers read a plain
+ * sentence; Dodo's own words (`detail`) are logged, and shown in the admin
+ * panel, where they help.
+ */
+export class PaymentServiceError extends HttpException {
+  constructor(
+    message: string,
+    readonly detail: string,
+    status = HttpStatus.BAD_GATEWAY,
+  ) {
+    super(message, status);
+  }
+}
+
+const NOT_SET_UP =
+  'Payments are not available right now. Please try again later, or write to support@widgetpop.com.';
+const NO_ANSWER =
+  'The payment service did not answer in time. Please try again in a minute.';
+const REFUSED =
+  'The payment service could not do that right now. Please try again in a minute; if it keeps happening, write to support@widgetpop.com.';
 
 const TIMEOUT_MS = 20_000;
 // Standard Webhooks: a signature older (or newer) than this is a replay.
@@ -102,8 +124,10 @@ export class DodoClient {
     const m = mode ?? (await this.mode());
     const apiKey = await this.key(m, 'API_KEY');
     if (!apiKey) {
-      throw new ServiceUnavailableException(
+      throw new PaymentServiceError(
+        NOT_SET_UP,
         `Dodo Payments ${m} keys are not set.`,
+        HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
     const res = await fetch(`${this.base(m)}${path}`, {
@@ -118,9 +142,7 @@ export class DodoClient {
       body: body === undefined ? undefined : JSON.stringify(body),
     }).catch((err: unknown) => {
       this.log.error(`Dodo ${m} ${method} ${path} failed: ${String(err)}`);
-      throw new BadGatewayException(
-        'The payment service did not answer in time. Please try again in a minute.',
-      );
+      throw new PaymentServiceError(NO_ANSWER, String(err));
     });
     const text = await res.text();
     if (!res.ok) {
@@ -132,11 +154,22 @@ export class DodoClient {
       } catch {
         /* keep generic */
       }
-      throw new BadGatewayException(
-        `Payment service ${res.status}${detail ? `: ${detail}` : ''}`,
+      throw new PaymentServiceError(
+        REFUSED,
+        `Dodo ${res.status}${detail ? `: ${detail}` : ''}`,
       );
     }
-    return (text ? JSON.parse(text) : {}) as T;
+    try {
+      return (text ? JSON.parse(text) : {}) as T;
+    } catch {
+      this.log.error(
+        `Dodo ${m} ${method} ${path}: not JSON: ${text.slice(0, 200)}`,
+      );
+      throw new PaymentServiceError(
+        REFUSED,
+        'Dodo answered with something that is not JSON.',
+      );
+    }
   }
 
   /** Cheapest call that proves a key works. */

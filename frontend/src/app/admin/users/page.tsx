@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -31,6 +32,10 @@ export default function AdminUsersPage() {
   // So does making someone a developer (test-mode payments).
   const [developer, setDeveloper] = useState<AdminUser | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);
+  // Deleting an account waits for a yes too; `deleting` is the one on its way.
+  const [removing, setRemoving] = useState<AdminUser | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -71,6 +76,21 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function deleteUser(u: AdminUser) {
+    setError("");
+    setNotice("");
+    setDeleting(u.id);
+    try {
+      await api(`/admin/users/${u.id}`, { method: "DELETE", token });
+      setUsers((rows) => rows?.filter((r) => r.id !== u.id) ?? rows);
+      setNotice(`${u.email} is deleted, with its widgets and websites. They were emailed about it.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete this account");
+    } finally {
+      setDeleting(null);
+    }
+  }
+
   const q = query.trim().toLowerCase();
   const shown = (users ?? []).filter((u) => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
 
@@ -78,10 +98,11 @@ export default function AdminUsersPage() {
     <div>
       <SearchBox value={query} onChange={setQuery} placeholder="Search name or email" />
       {error && <p className="mb-4 rounded-xl bg-coral/10 px-4 py-2.5 text-coral">{error}</p>}
+      {notice && <p className="mb-4 rounded-xl bg-emerald-wash px-4 py-2.5 text-emerald-dark">{notice}</p>}
       {!users ? (
         <Loader label="Loading users" />
       ) : (
-        <AdminTable head={["User", "Role", "Payments", "Plan", "Widgets", "Websites", "Joined"]} empty={shown.length === 0}>
+        <AdminTable head={["User", "Role", "Payments", "Plan", "Widgets", "Websites", "Joined", ""]} empty={shown.length === 0}>
           {shown.map((u) => (
             <tr key={u.id} className="border-b border-line/60 last:border-0 hover:bg-sand/50">
               <td className="px-4 py-3">
@@ -141,6 +162,25 @@ export default function AdminUsersPage() {
               <td className="px-4 py-3 tabular-nums">{u._count.widgets}</td>
               <td className="px-4 py-3 tabular-nums">{u._count.sources}</td>
               <td className="px-4 py-3 text-muted">{new Date(u.createdAt).toLocaleDateString()}</td>
+              <td className="px-4 py-3 text-right">
+                <button
+                  type="button"
+                  disabled={u.id === me?.id || u.role === "ADMIN" || deleting === u.id}
+                  onClick={() => setRemoving(u)}
+                  title={
+                    u.id === me?.id
+                      ? "You cannot delete your own account here"
+                      : u.role === "ADMIN"
+                        ? "Remove the admin role first"
+                        : `Delete ${u.email}`
+                  }
+                  aria-label={`Delete ${u.email}`}
+                  className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[12px] font-semibold text-coral transition hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {deleting === u.id ? "Deleting..." : "Delete"}
+                </button>
+              </td>
             </tr>
           ))}
         </AdminTable>
@@ -160,6 +200,37 @@ export default function AdminUsersPage() {
         onConfirm={() => {
           if (pending) void setRole(pending.user, pending.role);
           setPending(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(removing)}
+        danger
+        title={`Delete ${removing?.name}'s account?`}
+        message={
+          removing && (
+            <>
+              <p>
+                <b className="text-ink">{removing.email}</b> and everything in it go for good: {removing._count.widgets}{" "}
+                widget{removing._count.widgets === 1 ? "" : "s"}, {removing._count.sources} website
+                {removing._count.sources === 1 ? "" : "s"}, review links and QR posters. Their widgets stop showing and
+                printed QR codes stop working.
+              </p>
+              <p className="mt-2">
+                {removing.subscription && removing.subscription.plan !== "FREE"
+                  ? `Their ${removing.subscription.plan} subscription is cancelled first, with no more charges. `
+                  : ""}
+                Payment records stay for the books. They get an email saying the account was deleted. This cannot be
+                undone.
+              </p>
+            </>
+          )
+        }
+        confirmLabel="Delete account"
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          if (removing) void deleteUser(removing);
+          setRemoving(null);
         }}
       />
 

@@ -215,6 +215,9 @@ export class BounceService implements OnModuleInit, OnModuleDestroy {
     const data = report.permanent
       ? { status: 'BOUNCED', error, bouncedAt: new Date() }
       : { error };
+    if (report.permanent) {
+      await this.bounceCampaign(report.ids, report.recipient, error);
+    }
 
     if (report.ids.length) {
       const { count } = await this.prisma.emailLog.updateMany({
@@ -244,6 +247,39 @@ export class BounceService implements OnModuleInit, OnModuleDestroy {
     if (!row) return 0;
     await this.prisma.emailLog.update({ where: { id: row.id }, data });
     return report.permanent ? 1 : 0;
+  }
+
+  /**
+   * Refused for good: a campaign email among them is marked bounced, and the
+   * address gets no more campaigns (sending to dead addresses hurts how
+   * mail providers treat all our email).
+   */
+  private async bounceCampaign(
+    ids: string[],
+    recipient: string | null,
+    error: string,
+  ) {
+    const rows = ids.length
+      ? await this.prisma.emailDelivery.findMany({
+          where: { OR: ids.map((id) => ({ messageId: { contains: id } })) },
+          select: { id: true, email: true },
+        })
+      : [];
+    if (rows.length) {
+      await this.prisma.emailDelivery.updateMany({
+        where: { id: { in: rows.map((r) => r.id) } },
+        data: { status: 'BOUNCED', error },
+      });
+    }
+    const emails = new Set(rows.map((r) => r.email));
+    if (recipient) emails.add(recipient.toLowerCase());
+    for (const email of emails) {
+      await this.prisma.emailSuppression.upsert({
+        where: { email },
+        create: { email, reason: 'BOUNCED' },
+        update: {},
+      });
+    }
   }
 
   private async cursor(): Promise<{ validity: string; uid: number } | null> {

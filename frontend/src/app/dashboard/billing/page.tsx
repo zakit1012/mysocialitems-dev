@@ -102,10 +102,10 @@ function Billing() {
   const [busy, setBusy] = useState(() =>
     params.get("checkout") === "return" && params.get("subscription_id") ? "confirm" : "",
   );
-  const [notice, setNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(() => {
+  const [notice, setNotice] = useState<{ kind: "ok" | "bad" | "info"; text: string } | null>(() => {
     const status = params.get("checkout");
     return status === "cancel" || (status === "return" && !params.get("subscription_id"))
-      ? { kind: "bad", text: "Checkout was cancelled. Nothing was charged." }
+      ? { kind: "info", text: "Checkout was cancelled. Nothing was charged." }
       : null;
   });
   const [period, setPeriod] = useState<Interval | null>(null);
@@ -246,7 +246,7 @@ function Billing() {
   }
 
   /** A notice at the top of the page, scrolled into view: the plan cards that lead here sit far below it. */
-  function announce(next: { kind: "ok" | "bad"; text: string }) {
+  function announce(next: { kind: "ok" | "bad" | "info"; text: string }) {
     setNotice(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -426,7 +426,11 @@ function Billing() {
       {notice && (
         <p
           className={`mb-5 rounded-xl px-4 py-3 text-[13px] ${
-            notice.kind === "ok" ? "bg-emerald-wash text-emerald-dark" : "bg-coral/10 text-coral"
+            notice.kind === "ok"
+              ? "bg-emerald-wash text-emerald-dark"
+              : notice.kind === "info"
+                ? "border border-line bg-card text-ink-soft"
+                : "bg-coral/10 text-coral"
           }`}
         >
           {notice.text}
@@ -935,9 +939,9 @@ function Meter({ label, used, limit }: { label: string; used: number; limit: num
   const tone = pct >= 100 ? "bg-coral" : pct >= 80 ? "bg-amber-500" : "gradient-brand";
   return (
     <div>
-      <div className="flex items-baseline justify-between text-[13px]">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-[13px]">
         <span className="text-muted">{label}</span>
-        <span className="font-semibold">
+        <span className="font-semibold whitespace-nowrap">
           {used.toLocaleString()}
           <span className="text-muted"> / {unlimited ? "unlimited" : limit.toLocaleString()}</span>
         </span>
